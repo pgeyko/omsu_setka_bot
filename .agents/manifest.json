@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "project": "omsu_bot",
+  "canonical_instructions": "AGENTS.md",
+  "shared_registry": ".agents/README.md",
+  "model_entrypoints": {
+    "codex": "AGENTS.md",
+    "claude": "CLAUDE.md",
+    "gemini": "GEMINI.md"
+  },
+  "skills_dir": ".agents/skills",
+  "skill_groups": {
+    "backend": [
+      "golang-pro",
+      "sql-pro",
+      "api-endpoint-builder",
+      "api-documentation",
+      "performance-optimizer"
+    ],
+    "infrastructure": [
+      "docker-expert",
+      "bash-pro"
+    ],
+    "standards": [
+      "lint-and-validate",
+      "writing-plans",
+      "blueprint",
+      "commit"
+    ]
+  },
+  "skills": [
+    { "name": "golang-pro",           "path": ".agents/skills/golang-pro.md",           "group": "backend" },
+    { "name": "sql-pro",              "path": ".agents/skills/sql-pro.md",              "group": "backend" },
+    { "name": "api-endpoint-builder", "path": ".agents/skills/api-endpoint-builder.md", "group": "backend" },
+    { "name": "api-documentation",    "path": ".agents/skills/api-documentation.md",    "group": "backend" },
+    { "name": "performance-optimizer","path": ".agents/skills/performance-optimizer.md","group": "backend" },
+    { "name": "docker-expert",        "path": ".agents/skills/docker-expert.md",        "group": "infrastructure" },
+    { "name": "bash-pro",             "path": ".agents/skills/bash-pro.md",             "group": "infrastructure" },
+    { "name": "lint-and-validate",    "path": ".agents/skills/lint-and-validate.md",    "group": "standards", "mandatory_after_code_change": true },
+    { "name": "writing-plans",        "path": ".agents/skills/writing-plans.md",        "group": "standards" },
+    { "name": "blueprint",            "path": ".agents/skills/blueprint.md",            "group": "standards" },
+    { "name": "commit",               "path": ".agents/skills/commit.md",               "group": "standards", "mandatory_for_commit": true }
+  ]
+}
