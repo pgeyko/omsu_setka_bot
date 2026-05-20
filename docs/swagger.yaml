@@ -1,0 +1,44 @@
+basePath: /api
+host: localhost:8081
+info:
+  contact: {}
+  description: Telegram bot for student group — Admin REST API
+  title: GroupBot API
+  version: "1.0"
+paths:
+  /api/auth/token:
+    post:
+      consumes:
+      - application/json
+      description: Authenticate with admin_secret and receive a JWT token
+      parameters:
+      - description: admin_secret
+        in: body
+        name: body
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get JWT token
+      tags:
+      - Auth
+securityDefinitions:
+  BearerAuth:
+    description: Type "Bearer <JWT>" to authenticate
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

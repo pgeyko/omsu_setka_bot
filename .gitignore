@@ -1,0 +1,42 @@
+# Binaries
+groupbot
+*.exe
+*.test
+*.out
+
+# Dependencies
+vendor/
+node_modules/
+
+# Frontend build
+admin/dist/
+admin/node_modules/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Project specific
+data/
+coverage.out
+*.log
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# System
+.DS_Store
+Thumbs.db
+
+# Go
+go.work
+go.work.sum

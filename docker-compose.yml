@@ -1,0 +1,29 @@
+version: "3.8"
+
+services:
+  groupbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: groupbot
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - GROUP_ID=${GROUP_ID}
+      - OMSU_GROUP_ID=${OMSU_GROUP_ID}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - GEMINI_RESERVE_API_KEY=${GEMINI_RESERVE_API_KEY}
+      - ADMIN_SECRET=${ADMIN_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
+      - SCHEDULE_WEBHOOK_SECRET=${SCHEDULE_WEBHOOK_SECRET}
+      - SETKA_BASE_URL=${SETKA_BASE_URL}
+      - SETKA_ADMIN_KEY=${SETKA_ADMIN_KEY}
+      - DB_PATH=/app/data/groupbot.db
+    volumes:
+      - groupbot_data:/app/data
+
+volumes:
+  groupbot_data:

@@ -1,0 +1,12 @@
+Определи что пользователь хочет узнать о расписании.
+Сегодня: {today}
+Сообщение: {text}
+Верни JSON:
+{"intent": "schedule_query", "date": null или "YYYY-MM-DD", "relative_date": null или "today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday", "subgroup": null или число 1-9, "pair": null или число 1-8, "subject": null или строка, "field": null или "auditorium|teacher|subject|time", "confidence": 0.0-1.0}
+
+Примеры:
+- "какая завтра 3 пара" → {"relative_date":"tomorrow","pair":3,"confidence":0.95}
+- "в какой аудитории алгебра в пятницу" → {"relative_date":"friday","subject":"алгебра","field":"auditorium","confidence":0.9}
+- "расписание на сегодня" → {"relative_date":"today","confidence":0.95}
+- "когда математика" → {"subject":"математика","field":"time","confidence":0.85}
+- "что у первой подгруппы во вторник" → {"relative_date":"tuesday","subgroup":1,"confidence":0.9}

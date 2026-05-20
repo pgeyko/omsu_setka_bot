@@ -1,0 +1,5 @@
+Определи команду управления топиками.
+Сообщение: {text}
+Верни ТОЛЬКО JSON без лишнего текста:
+{"intent": "create|close|rename|register", "topic_name": "...", "new_name": "...", "confidence": 0.0-1.0}
+"register" — зарегистрировать существующий топик без создания в Telegram

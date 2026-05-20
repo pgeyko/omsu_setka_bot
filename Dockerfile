@@ -1,0 +1,30 @@
+FROM node:24-alpine AS frontend
+WORKDIR /app/admin
+COPY admin/package*.json ./
+RUN npm ci
+COPY admin/ ./
+RUN npm run build
+
+FROM golang:alpine AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go vet ./... && go test ./... -count=1
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -trimpath -o groupbot ./cmd/bot/main.go
+
+FROM alpine:3.19
+WORKDIR /app
+RUN apk add --no-cache ca-certificates tzdata curl
+RUN adduser -D -g '' appuser
+
+COPY --from=builder /app/groupbot .
+COPY --from=builder /app/prompts prompts/
+COPY --from=builder /app/persona.md .
+COPY --from=builder /app/config.yaml .
+COPY --from=frontend /app/admin/dist admin/dist
+
+RUN mkdir -p /app/data && chown -R appuser:appuser /app
+USER appuser
+EXPOSE 8081
+ENTRYPOINT ["/app/groupbot"]

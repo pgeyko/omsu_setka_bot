@@ -1,0 +1,59 @@
+telegram:
+  token: "${BOT_TOKEN}"
+  group_id: -1000000000000
+  omsu_group_id: 12345
+
+llm:
+  daily_token_limit: 100000
+  classify_confidence_threshold: 0.75
+  request_timeout_sec: 10
+  circuit_breaker_failures: 3
+  circuit_breaker_cooldown_min: 5
+  skip_fallback_model: false
+
+  providers:
+    - name: gemini-primary
+      type: gemini
+      api_key: "${GEMINI_API_KEY}"
+      model: gemini-3.1-flash-lite
+      fallback_models:
+        - gemini-2.5-flash-lite
+      multimodal: true
+      priority: 1
+
+    - name: gemini-reserve
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemini-3.1-flash-lite
+      fallback_models:
+        - gemini-2.5-flash-lite
+      multimodal: true
+      priority: 2
+
+    - name: deepseek-fallback
+      type: deepseek
+      api_key: "${DEEPSEEK_API_KEY}"
+      model: deepseek-chat
+      multimodal: false
+      priority: 3
+
+api:
+  listen: ":8081"
+  admin_secret: "${ADMIN_SECRET}"
+  jwt_secret: "${JWT_SECRET}"
+  cors_origin: "*"
+
+webhook:
+  schedule_secret: "${SCHEDULE_WEBHOOK_SECRET}"
+  announce_thread_id: 10
+
+db:
+  path: "./data/groupbot.db"
+
+rate_limit:
+  global_per_user_per_min: 5
+  summary_per_user_min: 30
+
+setka:
+  base_url: ""
+  admin_key: ""

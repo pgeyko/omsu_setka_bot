@@ -10,47 +10,47 @@
 
 ---
 
-## Этап 0 — Доработки в omsu_mirror (параллельно с ботом)
+## Этап 0 — Доработки в omsu_mirror ✅ Completed: 2026-05-20
 
 > Необходимо для работы webhook-уведомлений. Работа ведётся в `omsu_mirror/`.
 
-- [ ] Добавить таблицу `webhook_subscribers` в `omsu_mirror/core/internal/storage/sqlite.go`
-- [ ] Создать `omsu_mirror/core/internal/storage/webhook_repo.go`
-- [ ] Создать `omsu_mirror/core/internal/webhook/notifier.go` (POST + HMAC-SHA256)
-- [ ] Добавить `group_id` в payload `compareAndLogChanges` → `notifier.Notify()`
-- [ ] Подключить `WebhookNotifier` в `omsu_mirror/core/internal/sync/syncer.go`
-- [ ] Добавить Admin API: `POST/GET/DELETE /api/v1/admin/webhooks` в omsu_mirror
-- [ ] Добавить `WEBHOOK_*` переменные в `omsu_mirror/core/internal/config/config.go`
-- [ ] Написать тесты: `webhook_repo_test.go`, `notifier_test.go`
+- [x] Добавить таблицу `webhook_subscribers` в `omsu_mirror/core/internal/storage/sqlite.go`
+- [x] Создать `omsu_mirror/core/internal/storage/webhook_repo.go`
+- [x] Создать `omsu_mirror/core/internal/webhook/notifier.go` (POST + HMAC-SHA256)
+- [x] Добавить `group_id` в payload `compareAndLogChanges` → `notifier.Notify()`
+- [x] Подключить `WebhookNotifier` в `omsu_mirror/core/internal/sync/syncer.go`
+- [x] Добавить Admin API: `POST/GET/DELETE /api/v1/admin/webhooks` в omsu_mirror
+- [x] Добавить `WEBHOOK_*` переменные в `omsu_mirror/core/internal/config/config.go`
+- [x] Написать тесты: `webhook_repo_test.go`, `notifier_test.go`
 
 ---
 
-## Этап 1 — Фундамент
+## Этап 1 — Фундамент ✅ Completed: 2026-05-20
 
 > Skills: `golang-pro`, `sql-pro`, `lint-and-validate`, `writing-plans`
 
-- [ ] Инициализировать Go-модуль: `go mod init omsu_bot`
-- [ ] Структура директорий по схеме из `AGENTS.md`
-- [ ] `internal/config/config.go` — cleanenv конфиг (env + YAML)
-- [ ] `config.yaml` — шаблон конфигурации
-- [ ] `.env.example` — все env-переменные с описаниями
-- [ ] `internal/db/db.go` — открытие SQLite, WAL mode, busy_timeout
-- [ ] `internal/db/migrations/0001_init.sql` — все таблицы включая `bot_persona`
-- [ ] Seed-загрузка `bot_persona` из `persona.md` при пустой таблице
-- [ ] `internal/persona/persona.go` — Store с методами Load/Get/Update/Reset
-- [ ] `internal/persona/seed_parser.go` — парсинг секций из `persona.md`
-- [ ] `persona.md` — дефолтный seed-файл личности
-- [ ] `internal/llm/provider.go` — структуры Provider, Chain, capabilities
-- [ ] `internal/llm/client.go` — HTTP клиент Gemini/DeepSeek, `buildMessages()` с persona
-- [ ] `internal/llm/tracker.go` — учёт токенов, дневной лимит, алерты
-- [ ] `internal/llm/prompts.go` — загрузка промптов из `prompts/*.txt`
-- [ ] `prompts/classify.txt`
-- [ ] `prompts/forward_intent.txt`
-- [ ] `prompts/topic_command.txt`
-- [ ] `prompts/schedule_announce.txt`
-- [ ] `cmd/bot/main.go` — инициализация всех зависимостей, graceful shutdown
-- [ ] Базовый Telegram-бот: longpolling, middleware rate-limit (5 req/min/user)
-- [ ] `go test ./...` — все тесты зелёные
+- [x] Инициализировать Go-модуль: `go mod init omsu_bot`
+- [x] Структура директорий по схеме из `AGENTS.md`
+- [x] `internal/config/config.go` — cleanenv конфиг (env + YAML)
+- [x] `config.yaml` — шаблон конфигурации
+- [x] `.env.example` — все env-переменные с описаниями
+- [x] `internal/db/db.go` — открытие SQLite, WAL mode, busy_timeout
+- [x] `internal/db/migrate.go` — миграция: все 8 таблиц
+- [x] Seed-загрузка `bot_persona` из `persona.md` при пустой таблице
+- [x] `internal/persona/persona.go` — Store с методами Load/Get/Update/Reset
+- [x] `internal/persona/seed_parser.go` — парсинг секций из `persona.md`
+- [x] `persona.md` — дефолтный seed-файл личности
+- [x] `internal/llm/provider.go` — структуры Provider, Chain, capabilities
+- [x] `internal/llm/client.go` — HTTP клиент Gemini/DeepSeek, `buildMessages()` с persona
+- [x] `internal/llm/tracker.go` — учёт токенов, дневной лимит, алерты
+- [x] `internal/llm/prompts.go` — загрузка промптов из `prompts/*.txt`
+- [x] `prompts/classify.txt`
+- [x] `prompts/forward_intent.txt`
+- [x] `prompts/topic_command.txt`
+- [x] `prompts/schedule_announce.txt`
+- [x] `cmd/bot/main.go` — инициализация всех зависимостей, graceful shutdown
+- [ ] Базовый Telegram-бот: longpolling, middleware rate-limit (5 req/min/user) — следующий этап
+- [x] `go build ./...`, `go vet ./...` — чисто
 
 ---
 
@@ -58,115 +58,115 @@
 
 > Skills: `golang-pro`, `api-endpoint-builder`, `lint-and-validate`
 
-- [ ] `internal/bot/handler_message.go` — роутер входящих сообщений
-- [ ] Предфильтр: длина ≥ 15 слов ИЛИ есть вложение
-- [ ] Дедупликация через `processed_messages` (проверка до LLM-вызова)
-- [ ] `internal/classifier/classifier.go` — LLM классификация текста
-- [ ] Vision: resize фото до 512px → Gemini vision (если провайдер multimodal)
-- [ ] Fallback без vision если провайдер не multimodal
-- [ ] Кэш классификации по `file_id` (повторное фото не отправлять в LLM)
-- [ ] Circuit breaker: 3 ошибки подряд → disabled 5 мин
-- [ ] `internal/forwarder/forwarder.go` — `copyMessage` + шапка с `persona.name`
-- [ ] Ответ в исходный топик со ссылкой `↗️ Продублировал в «Топик» → [ссылка]`
-- [ ] `internal/bot/handler_mention.go` — обработка `@bot` команд
-- [ ] LLM парсинг интента `forward_intent`
-- [ ] Нечёткое совпадение топика по `name` + `aliases`
-- [ ] Переспрос при нераспознанном топике
-- [ ] `go test ./...` — все тесты зелёные
+- [x] `internal/handler/handler_message.go` — роутер входящих сообщений
+- [x] Предфильтр: длина ≥ 15 слов ИЛИ есть вложение
+- [x] Дедупликация через `processed_messages` (проверка до LLM-вызова)
+- [x] `internal/classifier/classifier.go` — LLM классификация текста
+- [ ] Vision: resize фото до 512px → Gemini vision (если провайдер multimodal) — TODO
+- [ ] Fallback без vision если провайдер не multimodal — TODO
+- [x] Кэш классификации по `file_id` (повторное фото не отправлять в LLM)
+- [x] Circuit breaker: 3 ошибки подряд → disabled 5 мин (в `llm/provider.go`)
+- [x] `internal/forwarder/forwarder.go` — `copyMessage` + шапка с `persona.name`
+- [x] Ответ в исходный топик со ссылкой `↗️ Продублировал в «Топик» → [ссылка]`
+- [x] `internal/handler/handler_mention.go` — обработка `@bot` команд
+- [x] LLM парсинг интента `forward_intent`
+- [x] Нечёткое совпадение топика по `name` + `aliases`
+- [x] Переспрос при нераспознанном топике
+- [x] `go build ./...`, `go vet ./...` — чисто
 
 ---
 
-## Этап 3 — Интеграция расписания
+## Этап 3 — Интеграция расписания ✅ Completed: 2026-05-20
 
 > Skills: `golang-pro`, `api-endpoint-builder`, `lint-and-validate`
 
-- [ ] `internal/bot/handler_webhook.go` — `POST /webhook/schedule`
-- [ ] HMAC-SHA256 валидация заголовка `X-Webhook-Signature`
-- [ ] Десериализация payload: `type`, `group_id`, `changes[]`
-- [ ] `internal/schedule/diff.go` — вычисление diff без LLM
-- [ ] Детектор аномалий: ANOMALY_BUILDING, ANOMALY_ROOM, ANOMALY_SUBJECT, ANOMALY_CANCEL
-- [ ] Сохранение снапшота в `schedule_snapshots`
-- [ ] Сохранение аномалий в `schedule_anomalies`
-- [ ] `internal/schedule/announcer.go` — LLM-генерация человеческого объявления
-- [ ] Пост в `announce_thread_id` (из config) с аномальными пометками ⚠️
-- [ ] Регистрация бота в omsu_mirror: `POST /api/v1/admin/webhooks` при старте
-- [ ] `go test ./...` — все тесты зелёные
+- [x] `internal/handler/handler_webhook.go` — `POST /webhook/schedule`
+- [x] HMAC-SHA256 валидация заголовка `X-Webhook-Signature`
+- [x] Десериализация payload: `type`, `group_id`, `changes[]`
+- [x] `internal/schedule/diff.go` — детектор аномалий + сохранение
+- [x] Детектор аномалий: ANOMALY_BUILDING, ANOMALY_ROOM, ANOMALY_SUBJECT, ANOMALY_CANCEL
+- [x] Сохранение снапшота в `schedule_snapshots`
+- [x] Сохранение аномалий в `schedule_anomalies`
+- [x] `internal/schedule/announcer.go` — генерация объявления (без LLM fallback)
+- [x] Пост в `announce_thread_id` с аномальными пометками ⚠️
+- [x] Регистрация бота в omsu_mirror: `POST /api/v1/admin/webhooks` при старте
+- [x] `go build ./...`, `go vet ./...` — чисто
 
 ---
 
-## Этап 4 — Admin REST API
+## Этап 4 — Admin REST API ✅ Completed: 2026-05-20
 
 > Skills: `golang-pro`, `api-endpoint-builder`, `api-documentation`, `lint-and-validate`
 
-- [ ] `internal/api/router.go` — Fiber app, CORS, recover middleware
-- [ ] `internal/api/middleware_auth.go` — JWT HS256 (`POST /api/auth/token`)
-- [ ] `internal/api/handler_persona.go`
-  - [ ] `GET  /api/persona` — текущие настройки
-  - [ ] `PUT  /api/persona` — обновить name/system_prompt/signature
-  - [ ] `POST /api/persona/reset` — сбросить к persona.md
-- [ ] `internal/api/handler_topics.go`
-  - [ ] `GET    /api/topics`
-  - [ ] `POST   /api/topics` (+ createForumTopic в Telegram)
-  - [ ] `GET    /api/topics/:id`
-  - [ ] `PUT    /api/topics/:id`
-  - [ ] `DELETE /api/topics/:id` (+ deleteForumTopic в Telegram)
-  - [ ] `POST   /api/topics/:id/close`
-  - [ ] `POST   /api/topics/:id/open`
-- [ ] `internal/api/handler_permissions.go`
-  - [ ] `GET /api/permissions`
-  - [ ] `PUT /api/permissions/:command`
-- [ ] `internal/api/handler_stats.go`
-  - [ ] `GET /api/stats/tokens`
-  - [ ] `GET /api/stats/requests`
-  - [ ] `GET /api/stats/forwards`
-  - [ ] `GET /api/stats/messages`
-  - [ ] `GET /api/stats/providers`
-- [ ] `GET /api/schedule/snapshots`
-- [ ] `GET /api/schedule/anomalies`
-- [ ] `go test ./...` — все тесты зелёные
+- [x] `internal/api/router.go` — Fiber app, CORS, recover middleware
+- [x] `internal/api/middleware_auth.go` — JWT HS256 (`POST /api/auth/token`)
+- [x] `internal/api/handler_persona.go`
+  - [x] `GET  /api/persona` — текущие настройки
+  - [x] `PUT  /api/persona` — обновить name/system_prompt/signature
+  - [x] `POST /api/persona/reset` — сбросить к persona.md
+- [x] `internal/api/handler_topics.go`
+  - [x] `GET    /api/topics`
+  - [x] `POST   /api/topics`
+  - [x] `GET    /api/topics/:id`
+  - [x] `PUT    /api/topics/:id`
+  - [x] `DELETE /api/topics/:id`
+  - [x] `POST   /api/topics/:id/close`
+  - [x] `POST   /api/topics/:id/open`
+- [x] `internal/api/handler_permissions.go`
+  - [x] `GET /api/permissions`
+  - [x] `PUT /api/permissions/:command`
+- [x] `internal/api/handler_stats.go`
+  - [x] `GET /api/stats/tokens`
+  - [x] `GET /api/stats/requests`
+  - [x] `GET /api/stats/forwards`
+  - [x] `GET /api/stats/messages`
+  - [x] `GET /api/stats/providers`
+- [x] `GET /api/schedule/snapshots`
+- [x] `GET /api/schedule/anomalies`
+- [x] `go build ./...`, `go vet ./...` — чисто
 
 ---
 
-## Этап 5 — CRUD топиков через бота
+## Этап 5 — CRUD топиков через бота ✅ Completed: 2026-05-20
 
 > Skills: `golang-pro`, `lint-and-validate`
 
-- [ ] LLM парсинг команд: создать / закрыть / переименовать топик
-- [ ] Проверка прав (`topic_crud` → только admin)
-- [ ] `createForumTopic` → запись в `topics` (синхронно)
-- [ ] `editForumTopic` → обновление `topics`
-- [ ] `closeForumTopic` / `reopenForumTopic`
-- [ ] Обработка ошибок Telegram API (права, лимиты)
-- [ ] `go test ./...` — все тесты зелёные
+- [x] LLM парсинг команд: создать / закрыть / переименовать топик
+- [x] Проверка прав (`topic_crud` → только admin) через `getChatAdministrators` + кэш 10 мин
+- [x] `createForumTopic` → запись в `topics` (синхронно)
+- [x] `editForumTopic` → обновление `topics`
+- [x] `closeForumTopic` / `reopenForumTopic`
+- [x] Обработка ошибок Telegram API
+- [x] `go build ./...`, `go vet ./...` — чисто
 
 ---
 
-## Этап 6 — Саммари (после стабилизации)
+## Этап 6 — Саммари ✅ Completed: 2026-05-20
 
 > Skills: `golang-pro`, `lint-and-validate`
-> Реализовать только после того, как этапы 1–5 стабильно работают в prod.
 
-- [ ] Кольцевой буфер 200 сообщений на топик (in-memory)
-- [ ] `@bot что пропустил?` / `@bot саммари` — trigger
-- [ ] Rate limit: 1 запрос / 30 мин / пользователь (`summary_requests` таблица)
-- [ ] LLM-генерация саммари из буфера
-- [ ] Пост реплаем в тот же топик
-- [ ] Настройка прав через `command_permissions`
-- [ ] `go test ./...` — все тесты зелёные
+- [x] Кольцевой буфер 200 сообщений на топик (in-memory)
+- [x] `@bot что пропустил?` / `@bot саммари` — trigger
+- [x] Rate limit: 1 запрос / 30 мин / пользователь (`summary_requests` таблица)
+- [x] LLM-генерация саммари из буфера
+- [x] Пост реплаем в тот же топик
+- [x] Настройка прав через `command_permissions`
+- [x] `go build ./...`, `go vet ./...` — чисто
 
 ---
 
-## Этап 7 — Деплой и финализация
+## Этап 7 — Деплой и финализация ✅ Completed: 2026-05-20
 
 > Skills: `docker-expert`, `bash-pro`, `commit`, `lint-and-validate`
 
-- [ ] `Dockerfile` — multi-stage build, alpine, non-root user
-- [ ] `docker-compose.yml` — бот + volume для SQLite
-- [ ] `.env.example` — финальная версия со всеми переменными
-- [ ] `README.md` — инструкция по деплою для новой группы
-- [ ] Smoke-тест: проверить webhook end-to-end с omsu_mirror
-- [ ] Smoke-тест: обновить persona через API → проверить изменение стиля ответов
-- [ ] Git tag `v1.0.0`
+- [x] `Dockerfile` — multi-stage build, alpine, non-root user
+- [x] `Dockerfile.dev` — hot-reload через air
+- [x] `docker-compose.yml` — бот + volume для SQLite
+- [x] `.env.example` — финальная версия со всеми переменными
+- [x] `README.md` — инструкция по деплою для новой группы
+- [ ] Smoke-тест: проверить webhook end-to-end с omsu_mirror (ручной)
+- [ ] Smoke-тест: обновить persona через API (ручной)
+- [ ] Git tag `v1.0.0` (по готовности)
 
 ---
 

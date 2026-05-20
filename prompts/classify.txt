@@ -1,0 +1,4 @@
+Топики группы: {topics}
+Сообщение: {text}
+Верни ТОЛЬКО JSON без лишнего текста:
+{"topic": "slug_или_null", "hashtags": ["a","b"], "confidence": 0.0-1.0}
