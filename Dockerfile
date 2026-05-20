@@ -20,6 +20,7 @@ RUN adduser -D -g '' appuser
 
 COPY --from=builder /app/groupbot .
 COPY --from=builder /app/prompts prompts/
+COPY --from=builder /app/commands.json .
 COPY --from=builder /app/persona.md .
 COPY --from=builder /app/config.yaml .
 COPY --from=frontend /app/admin/dist admin/dist
