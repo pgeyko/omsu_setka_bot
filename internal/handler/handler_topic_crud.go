@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/telegram"
 
@@ -23,13 +24,13 @@ type TopicCRUD struct {
 	bot         *tgbot.Bot
 	groupID     int64
 	botUsername string
-	buffer      *SummaryBuffer
+	buffer      *buffer.SummaryBuffer
 
 	mu         sync.RWMutex
 	adminCache *telegram.AdminCache
 }
 
-func NewTopicCRUD(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB, bot *tgbot.Bot, groupID int64, botUsername string, buffer *SummaryBuffer, adminCache *telegram.AdminCache) *TopicCRUD {
+func NewTopicCRUD(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB, bot *tgbot.Bot, groupID int64, botUsername string, buffer *buffer.SummaryBuffer, adminCache *telegram.AdminCache) *TopicCRUD {
 	return &TopicCRUD{
 		llmClient:   llmClient,
 		prompts:     prompts,
@@ -43,21 +44,26 @@ func NewTopicCRUD(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB
 }
 
 type TopicIntent struct {
-	Intent    string  `json:"intent"`
-	TopicName string  `json:"topic_name"`
-	NewName   string  `json:"new_name,omitempty"`
+	Intent     string  `json:"intent"`
+	TopicName  string  `json:"topic_name"`
+	NewName    string  `json:"new_name,omitempty"`
 	Confidence float64 `json:"confidence"`
 }
 
 func (t *TopicCRUD) Handle(ctx context.Context, update *models.Update) {
-	if update.Message == nil || update.Message.Chat.ID != t.groupID {
+	if update.Message == nil {
+		return
+	}
+
+	var active int
+	if err := t.db.QueryRowContext(ctx, "SELECT is_active FROM groups WHERE chat_id = ?", update.Message.Chat.ID).Scan(&active); err != nil || active != 1 {
 		return
 	}
 
 	msg := update.Message
 	userID := msg.From.ID
 
-	if !t.isAdmin(ctx, userID) {
+	if !t.isAdmin(ctx, msg.Chat.ID, userID) {
 		t.reply(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID,
 			"⛔ Только администраторы могут управлять топиками.")
 		return
@@ -121,9 +127,9 @@ func (t *TopicCRUD) handleCreate(ctx context.Context, msg *models.Message, inten
 	}
 
 	_, err = t.db.ExecContext(ctx,
-		`INSERT INTO topics (tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
-		 VALUES (?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
-		forum.MessageThreadID, intent.TopicName, slug)
+		`INSERT INTO topics (group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
+		 VALUES (?, ?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
+		msg.Chat.ID, forum.MessageThreadID, intent.TopicName, slug)
 	if err != nil {
 		slog.Error("failed to save topic to DB", "error", err)
 	}
@@ -132,7 +138,7 @@ func (t *TopicCRUD) handleCreate(ctx context.Context, msg *models.Message, inten
 		fmt.Sprintf("✅ Топик «%s» создан!", intent.TopicName))
 
 	if t.buffer != nil && t.llmClient != nil {
-		msgs := t.buffer.GetMessages(0)
+		msgs := t.buffer.GetMessages(msg.Chat.ID, 0)
 		if msgs != "" {
 			summaryPrompt := fmt.Sprintf(
 				"Сделай краткое саммари последних сообщений (2-3 предложения). Выдели главные темы.\n\nСообщения:\n%s", msgs)
@@ -164,7 +170,7 @@ func (t *TopicCRUD) handleRegister(ctx context.Context, msg *models.Message, int
 
 	var existing int
 	t.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM topics WHERE tg_thread_id = ?`, msg.MessageThreadID,
+		`SELECT COUNT(*) FROM topics WHERE group_id = ? AND tg_thread_id = ?`, msg.Chat.ID, msg.MessageThreadID,
 	).Scan(&existing)
 	if existing > 0 {
 		t.reply(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID,
@@ -181,7 +187,7 @@ func (t *TopicCRUD) handleRegister(ctx context.Context, msg *models.Message, int
 
 	slug := makeSlug(topicName)
 	var exists string
-	t.db.QueryRowContext(ctx, `SELECT name FROM topics WHERE slug = ?`, slug).Scan(&exists)
+	t.db.QueryRowContext(ctx, `SELECT name FROM topics WHERE group_id = ? AND slug = ?`, msg.Chat.ID, slug).Scan(&exists)
 	if exists != "" {
 		t.reply(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID,
 			fmt.Sprintf("❌ Топик со slug «%s» уже существует.", slug))
@@ -189,9 +195,9 @@ func (t *TopicCRUD) handleRegister(ctx context.Context, msg *models.Message, int
 	}
 
 	_, err := t.db.ExecContext(ctx,
-		`INSERT INTO topics (tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
-		 VALUES (?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
-		msg.MessageThreadID, topicName, slug)
+		`INSERT INTO topics (group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
+		 VALUES (?, ?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
+		msg.Chat.ID, msg.MessageThreadID, topicName, slug)
 	if err != nil {
 		slog.Error("failed to register topic", "error", err)
 		t.reply(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, "❌ Ошибка при регистрации топика.")
@@ -219,7 +225,7 @@ func (t *TopicCRUD) parseIntent(ctx context.Context, text string) (*TopicIntent,
 }
 
 func (t *TopicCRUD) handleClose(ctx context.Context, msg *models.Message, intent TopicIntent) {
-	topic := t.findTopic(ctx, intent.TopicName)
+	topic := t.findTopic(ctx, msg.Chat.ID, intent.TopicName)
 	if topic == nil {
 		t.reply(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID,
 			fmt.Sprintf("Топик «%s» не найден.", intent.TopicName))
@@ -250,7 +256,7 @@ func (t *TopicCRUD) handleRename(ctx context.Context, msg *models.Message, inten
 		return
 	}
 
-	topic := t.findTopic(ctx, intent.TopicName)
+	topic := t.findTopic(ctx, msg.Chat.ID, intent.TopicName)
 	if topic == nil {
 		t.reply(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID,
 			fmt.Sprintf("Топик «%s» не найден.", intent.TopicName))
@@ -285,11 +291,11 @@ type topicInfo struct {
 	Slug       string
 }
 
-func (t *TopicCRUD) findTopic(ctx context.Context, nameOrSlug string) *topicInfo {
+func (t *TopicCRUD) findTopic(ctx context.Context, chatID int64, nameOrSlug string) *topicInfo {
 	row := t.db.QueryRowContext(ctx,
 		`SELECT id, tg_thread_id, name, slug FROM topics
-		 WHERE (name = ? OR slug = ?) AND is_active = 1
-		 LIMIT 1`, nameOrSlug, nameOrSlug)
+		 WHERE group_id = ? AND (name = ? OR slug = ?) AND is_active = 1
+		 LIMIT 1`, chatID, nameOrSlug, nameOrSlug)
 
 	var ti topicInfo
 	err := row.Scan(&ti.ID, &ti.TgThreadID, &ti.Name, &ti.Slug)
@@ -299,8 +305,8 @@ func (t *TopicCRUD) findTopic(ctx context.Context, nameOrSlug string) *topicInfo
 	return &ti
 }
 
-func (t *TopicCRUD) isAdmin(ctx context.Context, userID int64) bool {
-	return t.adminCache.IsAdmin(ctx, userID)
+func (t *TopicCRUD) isAdmin(ctx context.Context, chatID int64, userID int64) bool {
+	return t.adminCache.IsAdmin(ctx, chatID, userID)
 }
 
 func (t *TopicCRUD) reply(ctx context.Context, chatID int64, threadID int, replyToID int, text string) {
@@ -313,8 +319,6 @@ func (t *TopicCRUD) reply(ctx context.Context, chatID int64, threadID int, reply
 		},
 	})
 }
-
-
 
 var cyrToLat = strings.NewReplacer(
 	"а", "a", "б", "b", "в", "v", "г", "g", "д", "d", "е", "e", "ё", "e",

@@ -9,6 +9,7 @@ import (
 
 type topicResponse struct {
 	ID          int      `json:"id"`
+	GroupID     int64    `json:"group_id"`
 	TgThreadID  int64    `json:"tg_thread_id"`
 	Name        string   `json:"name"`
 	Slug        string   `json:"slug"`
@@ -20,6 +21,7 @@ type topicResponse struct {
 }
 
 type topicCreateRequest struct {
+	GroupID     int64    `json:"group_id"`
 	TgThreadID  int64    `json:"tg_thread_id"`
 	Name        string   `json:"name"`
 	Slug        string   `json:"slug"`
@@ -41,16 +43,18 @@ func scanTopic(scanner interface {
 }) (topicResponse, error) {
 	var t topicResponse
 	var id int
+	var groupID int64
 	var tgThreadID int64
 	var name, slug, aliasesJSON, description, hashtagsJSON, createdAt string
 	var isActive int
 
-	err := scanner.Scan(&id, &tgThreadID, &name, &slug, &aliasesJSON, &description, &hashtagsJSON, &isActive, &createdAt)
+	err := scanner.Scan(&id, &groupID, &tgThreadID, &name, &slug, &aliasesJSON, &description, &hashtagsJSON, &isActive, &createdAt)
 	if err != nil {
 		return t, err
 	}
 
 	t.ID = id
+	t.GroupID = groupID
 	t.TgThreadID = tgThreadID
 	t.Name = name
 	t.Slug = slug
@@ -72,14 +76,22 @@ func scanTopic(scanner interface {
 }
 
 func (s *Server) handleGetTopics(c *fiber.Ctx) error {
+	groupIDStr := c.Query("group_id")
+	var groupID int64
+	if groupIDStr != "" {
+		groupID, _ = strconv.ParseInt(groupIDStr, 10, 64)
+	} else {
+		groupID = s.TelegramGroupID
+	}
+
 	limit, offset := parsePagination(c)
 
 	var total int
-	s.DB.QueryRowContext(c.Context(), `SELECT COUNT(*) FROM topics`).Scan(&total)
+	s.DB.QueryRowContext(c.Context(), `SELECT COUNT(*) FROM topics WHERE group_id = ?`, groupID).Scan(&total)
 
 	rows, err := s.DB.QueryContext(c.Context(),
-		`SELECT id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at
-		 FROM topics ORDER BY created_at ASC LIMIT ? OFFSET ?`, limit, offset)
+		`SELECT id, group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at
+		 FROM topics WHERE group_id = ? ORDER BY created_at ASC LIMIT ? OFFSET ?`, groupID, limit, offset)
 	if err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to fetch topics")
 	}
@@ -104,7 +116,7 @@ func (s *Server) handleGetTopic(c *fiber.Ctx) error {
 	}
 
 	row := s.DB.QueryRowContext(c.Context(),
-		`SELECT id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at
+		`SELECT id, group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at
 		 FROM topics WHERE id = ?`, id)
 
 	t, err := scanTopic(row)
@@ -128,13 +140,23 @@ func (s *Server) handleCreateTopic(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusUnprocessableEntity, ErrValidation, "slug is required (max 64)")
 	}
 
+	groupID := req.GroupID
+	if groupID == 0 {
+		groupIDStr := c.Query("group_id")
+		if groupIDStr != "" {
+			groupID, _ = strconv.ParseInt(groupIDStr, 10, 64)
+		} else {
+			groupID = s.TelegramGroupID
+		}
+	}
+
 	aliasesJSON, _ := json.Marshal(req.Aliases)
 	hashtagsJSON, _ := json.Marshal(req.Hashtags)
 
 	result, err := s.DB.ExecContext(c.Context(),
-		`INSERT INTO topics (tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
-		req.TgThreadID, req.Name, req.Slug, string(aliasesJSON), req.Description, string(hashtagsJSON))
+		`INSERT INTO topics (group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)`,
+		groupID, req.TgThreadID, req.Name, req.Slug, string(aliasesJSON), req.Description, string(hashtagsJSON))
 	if err != nil {
 		return respondError(c, fiber.StatusConflict, ErrConflict, "slug or tg_thread_id already exists")
 	}

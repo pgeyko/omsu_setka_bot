@@ -10,11 +10,11 @@ import (
 )
 
 type providerStatus struct {
-	Name     string `json:"name"`
-	Model    string `json:"model"`
-	Reachable bool  `json:"reachable"`
-	Latency  string `json:"latency,omitempty"`
-	Error    string `json:"error,omitempty"`
+	Name      string `json:"name"`
+	Model     string `json:"model"`
+	Reachable bool   `json:"reachable"`
+	Latency   string `json:"latency,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type testModelRequest struct {

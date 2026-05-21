@@ -26,7 +26,10 @@ func TestCommandRegistry_Load(t *testing.T) {
 func TestCommandRegistry_IsTopicCommand(t *testing.T) {
 	r := &CommandRegistry{TopicCommands: []string{"создай топик", "закрой топик"}}
 
-	tests := []struct{ text string; result bool }{
+	tests := []struct {
+		text   string
+		result bool
+	}{
 		{"создай топик Практика", true},
 		{"закрой топик сессия", true},
 		{"перешли в сессию", false},
@@ -43,7 +46,10 @@ func TestCommandRegistry_IsTopicCommand(t *testing.T) {
 func TestCommandRegistry_IsSummaryCommand(t *testing.T) {
 	r := &CommandRegistry{SummaryCmds: []string{"саммари", "что пропустил"}}
 
-	tests := []struct{ text string; result bool }{
+	tests := []struct {
+		text   string
+		result bool
+	}{
 		{"саммари", true},
 		{"что пропустил?", true},
 		{"перешли в сессию", false},
@@ -59,7 +65,10 @@ func TestCommandRegistry_IsSummaryCommand(t *testing.T) {
 func TestCommandRegistry_IsTopicIDQuery(t *testing.T) {
 	r := &CommandRegistry{IDQueries: []string{"какой id", "id топика"}}
 
-	tests := []struct{ text string; result bool }{
+	tests := []struct {
+		text   string
+		result bool
+	}{
 		{"какой id этого топика?", true},
 		{"id топика", true},
 		{"привет", false},

@@ -26,16 +26,28 @@ func setupTestServer(t *testing.T) *Server {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
+	_, err = database.Exec(`INSERT INTO groups (chat_id, title, api_token) VALUES (0, 'Test Group', 'test-api-token')`)
+	if err != nil {
+		t.Fatalf("failed to seed test group: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	personaPath := tmpDir + "/persona.md"
+	err = os.WriteFile(personaPath, []byte("# name\nTestBot\n# system_prompt\nYou are a test bot\n# signature\n"), 0644)
+	if err != nil {
+		t.Fatalf("failed to write mock persona.md: %v", err)
+	}
+
 	personaStore := persona.NewStore(database.DB)
-	database.DB.Exec(`INSERT INTO bot_persona (id, name, system_prompt, signature, updated_at)
-		VALUES (1, 'TestBot', 'You are a test bot', '', CURRENT_TIMESTAMP)`)
-	personaStore.Load(context.Background(), "")
+	if err := personaStore.Load(context.Background(), personaPath); err != nil {
+		t.Fatalf("failed to load mock persona: %v", err)
+	}
 
 	auth := NewAuthMiddleware("test-admin-secret", "test-jwt-secret")
 
-	tmpDir := t.TempDir()
-	os.WriteFile(tmpDir+"/classify.txt", []byte("test prompt"), 0644)
-	prompts, err := llm.NewPromptRegistry(tmpDir)
+	promptsDir := t.TempDir()
+	os.WriteFile(promptsDir+"/classify.txt", []byte("test prompt"), 0644)
+	prompts, err := llm.NewPromptRegistry(promptsDir)
 	if err != nil {
 		t.Fatalf("failed to create prompts: %v", err)
 	}

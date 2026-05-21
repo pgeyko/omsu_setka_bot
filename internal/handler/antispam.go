@@ -1,0 +1,307 @@
+package handlers
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"math/rand"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	tgbot "github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
+)
+
+type Antispam struct {
+	mu           sync.Mutex
+	joinedUsers  map[string]time.Time
+	messageTimes map[string][]time.Time
+}
+
+func NewAntispam() *Antispam {
+	return &Antispam{
+		joinedUsers:  make(map[string]time.Time),
+		messageTimes: make(map[string][]time.Time),
+	}
+}
+
+func (a *Antispam) HandleNewChatMembers(ctx context.Context, b *tgbot.Bot, chatID int64, newMembers []models.User) {
+	for _, member := range newMembers {
+		if member.IsBot {
+			continue
+		}
+
+		key := fmt.Sprintf("%d:%d", chatID, member.ID)
+		a.mu.Lock()
+		a.joinedUsers[key] = time.Now()
+		a.mu.Unlock()
+
+		if b != nil {
+			_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+				ChatID: chatID,
+				UserID: member.ID,
+				Permissions: &models.ChatPermissions{
+					CanSendMessages:       false,
+					CanSendAudios:         false,
+					CanSendDocuments:      false,
+					CanSendPhotos:         false,
+					CanSendVideos:         false,
+					CanSendVideoNotes:     false,
+					CanSendVoiceNotes:     false,
+					CanSendPolls:          false,
+					CanSendOtherMessages:  false,
+					CanAddWebPagePreviews: false,
+				},
+			})
+			if err != nil {
+				slog.Error("failed to restrict new member", "userID", member.ID, "error", err)
+			}
+		}
+
+		x := rand.Intn(9) + 1
+		y := rand.Intn(9) + 1
+		correct := x + y
+
+		name := member.Username
+		if name == "" {
+			name = member.FirstName
+		} else {
+			name = "@" + name
+		}
+
+		text := fmt.Sprintf("👋 Привет, %s! Реши пример, чтобы получить возможность писать в группу:\n\n<b>%d + %d = ?</b>", name, x, y)
+
+		opts := []int{correct, correct + 1, correct - 2, correct + 3}
+		uniqueOpts := make(map[int]bool)
+		var shuffled []int
+		for _, o := range opts {
+			if o <= 0 {
+				o = correct + rand.Intn(5) + 4
+			}
+			if uniqueOpts[o] {
+				continue
+			}
+			uniqueOpts[o] = true
+			shuffled = append(shuffled, o)
+		}
+
+		rand.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+
+		var keyboard [][]models.InlineKeyboardButton
+		var row []models.InlineKeyboardButton
+		for _, o := range shuffled {
+			row = append(row, models.InlineKeyboardButton{
+				Text:         strconv.Itoa(o),
+				CallbackData: fmt.Sprintf("captcha:%d:%d:%d", member.ID, correct, o),
+			})
+		}
+		keyboard = append(keyboard, row)
+
+		if b != nil {
+			_, err := b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID:    chatID,
+				Text:      text,
+				ParseMode: models.ParseModeHTML,
+				ReplyMarkup: &models.InlineKeyboardMarkup{
+					InlineKeyboard: keyboard,
+				},
+			})
+			if err != nil {
+				slog.Error("failed to send captcha message", "error", err)
+			}
+		}
+	}
+}
+
+func (a *Antispam) CheckFloodAndLinks(ctx context.Context, b *tgbot.Bot, msg *models.Message) bool {
+	chatID := msg.Chat.ID
+	userID := msg.From.ID
+	username := msg.From.Username
+	if username == "" {
+		username = msg.From.FirstName
+	}
+	key := fmt.Sprintf("%d:%d", chatID, userID)
+
+	now := time.Now()
+
+	// 1. Link filtering
+	hasLink := false
+	entities := msg.Entities
+	if len(entities) == 0 {
+		entities = msg.CaptionEntities
+	}
+	for _, ent := range entities {
+		if ent.Type == models.MessageEntityTypeURL || ent.Type == models.MessageEntityTypeTextLink {
+			hasLink = true
+			break
+		}
+	}
+
+	if hasLink {
+		a.mu.Lock()
+		joinTime, exists := a.joinedUsers[key]
+		a.mu.Unlock()
+
+		if exists && now.Sub(joinTime) < 24*time.Hour {
+			slog.Info("Deleting link message from new user", "userID", userID, "chatID", chatID)
+			if b != nil {
+				b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+					ChatID:    chatID,
+					MessageID: msg.ID,
+				})
+			}
+			return true
+		}
+	}
+
+	// 2. Flood Control
+	a.mu.Lock()
+	times := a.messageTimes[key]
+	var validTimes []time.Time
+	for _, t := range times {
+		if now.Sub(t) <= 10*time.Second {
+			validTimes = append(validTimes, t)
+		}
+	}
+	validTimes = append(validTimes, now)
+	a.messageTimes[key] = validTimes
+	floodDetected := len(validTimes) > 5
+	a.mu.Unlock()
+
+	if floodDetected {
+		slog.Warn("Flood detected", "userID", userID, "chatID", chatID)
+		untilDate := now.Add(5 * time.Minute).Unix()
+		if b != nil {
+			_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+				ChatID: chatID,
+				UserID: userID,
+				Permissions: &models.ChatPermissions{
+					CanSendMessages:       false,
+					CanSendAudios:         false,
+					CanSendDocuments:      false,
+					CanSendPhotos:         false,
+					CanSendVideos:         false,
+					CanSendVideoNotes:     false,
+					CanSendVoiceNotes:     false,
+					CanSendPolls:          false,
+					CanSendOtherMessages:  false,
+					CanAddWebPagePreviews: false,
+				},
+				UntilDate: int(untilDate),
+			})
+			if err != nil {
+				slog.Error("failed to restrict user after flood", "userID", userID, "error", err)
+			}
+
+			b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+				ChatID:    chatID,
+				MessageID: msg.ID,
+			})
+
+			warnText := fmt.Sprintf("⚠️ @%s временно заблокирован на 5 минут за спам.", username)
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: chatID,
+				Text:   warnText,
+			})
+		}
+		return true
+	}
+
+	return false
+}
+
+func (a *Antispam) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+	if update.CallbackQuery == nil {
+		return
+	}
+	cb := update.CallbackQuery
+	data := cb.Data
+	if !strings.HasPrefix(data, "captcha:") {
+		return
+	}
+
+	parts := strings.Split(data, ":")
+	if len(parts) != 4 {
+		if b != nil {
+			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+				CallbackQueryID: cb.ID,
+				Text:            "Ошибка обработки капчи.",
+			})
+		}
+		return
+	}
+
+	targetUserID, _ := strconv.ParseInt(parts[1], 10, 64)
+	correctAnswer, _ := strconv.Atoi(parts[2])
+	chosenAnswer, _ := strconv.Atoi(parts[3])
+
+	if cb.From.ID != targetUserID {
+		if b != nil {
+			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+				CallbackQueryID: cb.ID,
+				Text:            "❌ Этот пример предназначен для другого пользователя!",
+				ShowAlert:       true,
+			})
+		}
+		return
+	}
+
+	chatID, msgID := getChatAndMsgID(cb.Message)
+
+	if chosenAnswer == correctAnswer {
+		if b != nil {
+			_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+				ChatID: chatID,
+				UserID: targetUserID,
+				Permissions: &models.ChatPermissions{
+					CanSendMessages:       true,
+					CanSendAudios:         true,
+					CanSendDocuments:      true,
+					CanSendPhotos:         true,
+					CanSendVideos:         true,
+					CanSendVideoNotes:     true,
+					CanSendVoiceNotes:     true,
+					CanSendPolls:          true,
+					CanSendOtherMessages:  true,
+					CanAddWebPagePreviews: true,
+				},
+			})
+			if err != nil {
+				slog.Error("failed to unmute user after captcha", "userID", targetUserID, "error", err)
+			}
+
+			b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+				ChatID:    chatID,
+				MessageID: msgID,
+			})
+
+			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+				CallbackQueryID: cb.ID,
+				Text:            "✅ Капча решена! Вы можете общаться.",
+				ShowAlert:       true,
+			})
+		}
+	} else {
+		if b != nil {
+			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+				CallbackQueryID: cb.ID,
+				Text:            "❌ Неверный ответ! Попробуйте еще раз.",
+				ShowAlert:       true,
+			})
+		}
+	}
+}
+
+func getChatAndMsgID(mim models.MaybeInaccessibleMessage) (int64, int) {
+	if mim.Message != nil {
+		return mim.Message.Chat.ID, mim.Message.ID
+	}
+	if mim.InaccessibleMessage != nil {
+		return mim.InaccessibleMessage.Chat.ID, mim.InaccessibleMessage.MessageID
+	}
+	return 0, 0
+}

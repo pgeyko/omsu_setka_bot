@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/telegram"
 
@@ -20,12 +21,12 @@ type SummaryHandler struct {
 	db          *sql.DB
 	bot         *tgbot.Bot
 	groupID     int64
-	buffer      *SummaryBuffer
+	buffer      *buffer.SummaryBuffer
 	botUsername string
 	adminCache  *telegram.AdminCache
 }
 
-func NewSummaryHandler(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB, bot *tgbot.Bot, groupID int64, buffer *SummaryBuffer, botUsername string, adminCache *telegram.AdminCache) *SummaryHandler {
+func NewSummaryHandler(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB, bot *tgbot.Bot, groupID int64, buffer *buffer.SummaryBuffer, botUsername string, adminCache *telegram.AdminCache) *SummaryHandler {
 	return &SummaryHandler{
 		llmClient:   llmClient,
 		prompts:     prompts,
@@ -46,7 +47,7 @@ func (h *SummaryHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 	msg := update.Message
 	userID := msg.From.ID
 
-	allowed, err := h.checkPermission(ctx, userID)
+	allowed, err := h.checkPermission(ctx, msg.Chat.ID, userID)
 	if err != nil {
 		slog.Error("permission check failed", "error", err)
 		return
@@ -65,9 +66,9 @@ func (h *SummaryHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 
 	threadID := msg.MessageThreadID
 
-	messages := h.buffer.GetMessages(threadID)
+	messages := h.buffer.GetMessages(msg.Chat.ID, threadID)
 	if messages == "" && threadID != 0 {
-		messages = h.buffer.GetMessages(0)
+		messages = h.buffer.GetMessages(msg.Chat.ID, 0)
 	}
 	if messages == "" {
 		h.reply(ctx, b, msg.Chat.ID, msg.MessageThreadID, msg.ID,
@@ -105,7 +106,7 @@ func (h *SummaryHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 	}
 }
 
-func (h *SummaryHandler) checkPermission(ctx context.Context, userID int64) (bool, error) {
+func (h *SummaryHandler) checkPermission(ctx context.Context, chatID int64, userID int64) (bool, error) {
 	role := "everyone"
 	err := h.db.QueryRowContext(ctx,
 		`SELECT COALESCE(allowed_role, 'everyone') FROM command_permissions WHERE command = 'summary'`,
@@ -119,7 +120,7 @@ func (h *SummaryHandler) checkPermission(ctx context.Context, userID int64) (boo
 	}
 
 	if role == "admin" {
-		return h.adminCache.IsAdmin(ctx, userID), nil
+		return h.adminCache.IsAdmin(ctx, chatID, userID), nil
 	}
 
 	return true, nil
@@ -140,8 +141,8 @@ func (h *SummaryHandler) checkRateLimit(ctx context.Context, userID int64, chatI
 		return false
 	}
 
-	h.db.ExecContext(ctx,
-		`INSERT INTO summary_requests (user_id, chat_id, requested_at)
+	_, _ = h.db.ExecContext(ctx,
+		`INSERT OR REPLACE INTO summary_requests (user_id, chat_id, requested_at)
 		 VALUES (?, ?, CURRENT_TIMESTAMP)`,
 		userID, chatID,
 	)

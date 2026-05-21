@@ -14,13 +14,13 @@ type telegramConfig struct {
 }
 
 type llmConfig struct {
-	DailyTokenLimit           int                `yaml:"daily_token_limit" env:"DAILY_TOKEN_LIMIT" env-default:"100000"`
-	ClassifyConfidenceThreshold float64           `yaml:"classify_confidence_threshold" env:"CLASSIFY_CONFIDENCE_THRESHOLD" env-default:"0.75"`
-	RequestTimeoutSec          int                `yaml:"request_timeout_sec" env:"LLM_REQUEST_TIMEOUT_SEC" env-default:"10"`
-	CircuitBreakerFailures     int                `yaml:"circuit_breaker_failures" env:"CIRCUIT_BREAKER_FAILURES" env-default:"3"`
-	CircuitBreakerCooldownMin  int                `yaml:"circuit_breaker_cooldown_min" env:"CIRCUIT_BREAKER_COOLDOWN_MIN" env-default:"5"`
-	SkipFallbackModel          bool               `yaml:"skip_fallback_model" env:"LLM_SKIP_FALLBACK_MODEL" env-default:"false"`
-	Providers                  []LLMProviderConfig `yaml:"providers" env:"-"`
+	DailyTokenLimit             int                 `yaml:"daily_token_limit" env:"DAILY_TOKEN_LIMIT" env-default:"100000"`
+	ClassifyConfidenceThreshold float64             `yaml:"classify_confidence_threshold" env:"CLASSIFY_CONFIDENCE_THRESHOLD" env-default:"0.75"`
+	RequestTimeoutSec           int                 `yaml:"request_timeout_sec" env:"LLM_REQUEST_TIMEOUT_SEC" env-default:"10"`
+	CircuitBreakerFailures      int                 `yaml:"circuit_breaker_failures" env:"CIRCUIT_BREAKER_FAILURES" env-default:"3"`
+	CircuitBreakerCooldownMin   int                 `yaml:"circuit_breaker_cooldown_min" env:"CIRCUIT_BREAKER_COOLDOWN_MIN" env-default:"5"`
+	SkipFallbackModel           bool                `yaml:"skip_fallback_model" env:"LLM_SKIP_FALLBACK_MODEL" env-default:"false"`
+	Providers                   []LLMProviderConfig `yaml:"providers" env:"-"`
 }
 
 type apiConfig struct {
@@ -62,14 +62,14 @@ type Config struct {
 	AppEnv         string `yaml:"app_env" env:"APP_ENV" envDefault:"development"`
 	SwaggerEnabled bool   `yaml:"swagger_enabled" env:"SWAGGER_ENABLED" envDefault:"false"`
 
-	Telegram   telegramConfig  `yaml:"telegram"`
-	LLM        llmConfig       `yaml:"llm"`
-	API        apiConfig       `yaml:"api"`
-	Webhook    webhookConfig   `yaml:"webhook"`
-	DB         dbConfig        `yaml:"db"`
-	RateLimit  rateLimitConfig `yaml:"rate_limit"`
-	Setka      setkaConfig     `yaml:"setka"`
-	Logging    loggingConfig   `yaml:"logging"`
+	Telegram  telegramConfig  `yaml:"telegram"`
+	LLM       llmConfig       `yaml:"llm"`
+	API       apiConfig       `yaml:"api"`
+	Webhook   webhookConfig   `yaml:"webhook"`
+	DB        dbConfig        `yaml:"db"`
+	RateLimit rateLimitConfig `yaml:"rate_limit"`
+	Setka     setkaConfig     `yaml:"setka"`
+	Logging   loggingConfig   `yaml:"logging"`
 }
 
 type LLMProviderConfig struct {

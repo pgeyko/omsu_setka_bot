@@ -13,8 +13,8 @@ import (
 )
 
 type WebhookHandler struct {
-	diffEngine     *schedule.DiffEngine
-	scheduleSecret string
+	diffEngine       *schedule.DiffEngine
+	scheduleSecret   string
 	announceThreadID int
 }
 

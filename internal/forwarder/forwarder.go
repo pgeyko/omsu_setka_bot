@@ -25,8 +25,8 @@ func (f *Forwarder) Duplicate(ctx context.Context, fromChatID int64, fromThreadI
 	header := f.buildHeader(fromTopicName, username, hashtags)
 
 	copied, err := f.b.CopyMessage(ctx, &tgbot.CopyMessageParams{
-		ChatID:     fromChatID,
-		MessageID:  messageID,
+		ChatID:    fromChatID,
+		MessageID: messageID,
 		ReplyMarkup: &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{

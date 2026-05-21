@@ -6,37 +6,47 @@ import (
 	"log/slog"
 	"strings"
 
+	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/classifier"
 	"omsu_bot/internal/forwarder"
+	"omsu_bot/internal/telegram"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
 type Handler struct {
-	classifier *classifier.Classifier
-	forwarder  *forwarder.Forwarder
-	db         *sql.DB
-	groupID    int64
-	buffer     *SummaryBuffer
+	classifier    *classifier.Classifier
+	forwarder     *forwarder.Forwarder
+	db            *sql.DB
+	buffer        *buffer.SummaryBuffer
+	usernameCache *telegram.UsernameCache
 }
 
-func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, db *sql.DB, groupID int64, buffer *SummaryBuffer) *Handler {
+func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
 	return &Handler{
-		classifier: classifier,
-		forwarder:  forwarder,
-		db:         db,
-		groupID:    groupID,
-		buffer:     buffer,
+		classifier:    classifier,
+		forwarder:     forwarder,
+		db:            db,
+		buffer:        buffer,
+		usernameCache: usernameCache,
 	}
 }
 
 func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-	if update.Message == nil || update.Message.Chat.ID != h.groupID {
+	if update.Message == nil {
 		return
 	}
 
 	msg := update.Message
+	if h.usernameCache != nil && msg.From != nil {
+		h.usernameCache.Store(msg.From.Username, msg.From.ID)
+	}
+
+	var active int
+	if err := h.db.QueryRowContext(ctx, "SELECT is_active FROM groups WHERE chat_id = ?", msg.Chat.ID).Scan(&active); err != nil || active != 1 {
+		return
+	}
 	slog.Debug("tg message",
 		"msg_id", msg.ID,
 		"from", msg.From.ID,
@@ -52,7 +62,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	}
 
 	if h.buffer != nil && text != "" {
-		h.buffer.Push(msg.MessageThreadID, msg.From.Username, text)
+		h.buffer.Push(msg.Chat.ID, msg.MessageThreadID, msg.From.Username, text)
 	}
 
 	if h.isProcessed(ctx, msg.ID, msg.Chat.ID) {
@@ -76,7 +86,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	result, err := h.classifier.ClassifyMessage(ctx, text, fileID)
+	result, err := h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
 	if err != nil {
 		slog.Warn("classification skipped", "reason", err, "msg_id", msg.ID)
 		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
@@ -88,7 +98,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	targetThreadID, err := h.lookupThreadID(ctx, result.Topic)
+	targetThreadID, err := h.lookupThreadID(ctx, msg.Chat.ID, result.Topic)
 	if err != nil || targetThreadID == 0 {
 		slog.Warn("target topic not found", "topic", result.Topic)
 		return
@@ -96,7 +106,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 
 	fromTopicName := ""
 	if msg.MessageThreadID != 0 {
-		fromTopicName = h.getTopicName(ctx, msg.MessageThreadID)
+		fromTopicName = h.getTopicName(ctx, msg.Chat.ID, msg.MessageThreadID)
 	}
 
 	_, err = h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, fromTopicName, result.Hashtags, msg.ID)
@@ -148,16 +158,16 @@ func (h *Handler) markProcessed(ctx context.Context, messageID int, chatID int64
 	)
 }
 
-func (h *Handler) getTopicName(ctx context.Context, threadID int) string {
+func (h *Handler) getTopicName(ctx context.Context, chatID int64, threadID int) string {
 	var name string
-	h.db.QueryRowContext(ctx, `SELECT name FROM topics WHERE tg_thread_id = ?`, threadID).Scan(&name)
+	h.db.QueryRowContext(ctx, `SELECT name FROM topics WHERE group_id = ? AND tg_thread_id = ?`, chatID, threadID).Scan(&name)
 	return name
 }
 
-func (h *Handler) lookupThreadID(ctx context.Context, slug string) (int, error) {
+func (h *Handler) lookupThreadID(ctx context.Context, chatID int64, slug string) (int, error) {
 	var tgThreadID int
 	err := h.db.QueryRowContext(ctx,
-		`SELECT tg_thread_id FROM topics WHERE slug = ? AND is_active = 1`, slug,
+		`SELECT tg_thread_id FROM topics WHERE group_id = ? AND slug = ? AND is_active = 1`, chatID, slug,
 	).Scan(&tgThreadID)
 	return tgThreadID, err
 }

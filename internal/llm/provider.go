@@ -20,7 +20,7 @@ type providerState struct {
 
 type Provider struct {
 	Name           string
-	Type           string   // "gemini" or "deepseek" or "openai"
+	Type           string // "gemini" or "deepseek" or "openai"
 	BaseURL        string
 	APIKey         string
 	Model          string   // primary model

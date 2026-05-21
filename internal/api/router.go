@@ -23,18 +23,18 @@ type BotSender interface {
 }
 
 type Server struct {
-	App              *fiber.App
-	DB               *sql.DB
-	Persona          *persona.Store
-	Prompts          *llm.PromptRegistry
-	AuthMiddleware   *AuthMiddleware
-	SwaggerEnabled   bool
-	AppEnv           string
-	CORSOrigin       string
-	Chain            *llm.Chain
-	LLMClient        *llm.Client
-	TelegramBot      BotSender
-	TelegramGroupID  int64
+	App               *fiber.App
+	DB                *sql.DB
+	Persona           *persona.Store
+	Prompts           *llm.PromptRegistry
+	AuthMiddleware    *AuthMiddleware
+	SwaggerEnabled    bool
+	AppEnv            string
+	CORSOrigin        string
+	Chain             *llm.Chain
+	LLMClient         *llm.Client
+	TelegramBot       BotSender
+	TelegramGroupID   int64
 	SkipFallbackModel bool
 }
 
@@ -144,6 +144,22 @@ func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowS
 	api.Get("/persona", s.handleGetPersona)
 	api.Put("/persona", s.handleUpdatePersona)
 	api.Post("/persona/reset", s.handleResetPersona)
+
+	// Group CRUD and Context Routes
+	api.Get("/groups", s.handleListGroups)
+	api.Post("/groups", s.handleCreateGroup)
+	api.Get("/groups/:chat_id", s.handleGetGroup)
+	api.Put("/groups/:chat_id", s.handleUpdateGroup)
+	api.Delete("/groups/:chat_id", s.handleDeleteGroup)
+
+	api.Get("/groups/:chat_id/context/persona", s.handleGetGroupPersona)
+	api.Put("/groups/:chat_id/context/persona", s.handleUploadPersona)
+	api.Get("/groups/:chat_id/context/system-prompt", s.handleGetGroupSystemPrompt)
+	api.Put("/groups/:chat_id/context/system-prompt", s.handleUploadSystemPrompt)
+	api.Get("/groups/:chat_id/context/knowledge", s.handleGetGroupKnowledge)
+	api.Put("/groups/:chat_id/context/knowledge", s.handleUploadKnowledge)
+	api.Get("/groups/:chat_id/context/features", s.handleGetGroupFeatures)
+	api.Put("/groups/:chat_id/context/features", s.handleUploadFeatures)
 
 	api.Get("/topics", s.handleGetTopics)
 	api.Post("/topics", s.handleCreateTopic)

@@ -1,4 +1,4 @@
-package handlers
+package buffer
 
 import (
 	"testing"
@@ -7,10 +7,10 @@ import (
 func TestSummaryBuffer_PushAndGet(t *testing.T) {
 	buf := NewSummaryBuffer(nil, 3)
 
-	buf.Push(1, "user1", "hello")
-	buf.Push(1, "user2", "world")
+	buf.Push(12345, 1, "user1", "hello")
+	buf.Push(12345, 1, "user2", "world")
 
-	msgs := buf.GetMessages(1)
+	msgs := buf.GetMessages(12345, 1)
 	if msgs == "" {
 		t.Fatal("expected non-empty messages")
 	}
@@ -19,7 +19,7 @@ func TestSummaryBuffer_PushAndGet(t *testing.T) {
 func TestSummaryBuffer_EmptyTopic(t *testing.T) {
 	buf := NewSummaryBuffer(nil, 10)
 
-	msgs := buf.GetMessages(999)
+	msgs := buf.GetMessages(12345, 999)
 	if msgs != "" {
 		t.Errorf("expected empty messages for unknown topic, got '%s'", msgs)
 	}
@@ -29,10 +29,10 @@ func TestSummaryBuffer_Capacity(t *testing.T) {
 	buf := NewSummaryBuffer(nil, 3)
 
 	for i := 0; i < 10; i++ {
-		buf.Push(1, "user", "msg")
+		buf.Push(12345, 1, "user", "msg")
 	}
 
-	msgs := buf.GetMessages(1)
+	msgs := buf.GetMessages(12345, 1)
 	if msgs == "" {
 		t.Fatal("expected messages even after overflow")
 	}
@@ -41,9 +41,9 @@ func TestSummaryBuffer_Capacity(t *testing.T) {
 func TestSummaryBuffer_IgnoresEmptyText(t *testing.T) {
 	buf := NewSummaryBuffer(nil, 10)
 
-	buf.Push(1, "user", "")
+	buf.Push(12345, 1, "user", "")
 
-	msgs := buf.GetMessages(1)
+	msgs := buf.GetMessages(12345, 1)
 	if msgs != "" {
 		t.Errorf("expected no messages for empty text, got '%s'", msgs)
 	}
@@ -52,11 +52,11 @@ func TestSummaryBuffer_IgnoresEmptyText(t *testing.T) {
 func TestSummaryBuffer_MultipleTopics(t *testing.T) {
 	buf := NewSummaryBuffer(nil, 10)
 
-	buf.Push(1, "user1", "topic1 msg")
-	buf.Push(2, "user2", "topic2 msg")
+	buf.Push(12345, 1, "user1", "topic1 msg")
+	buf.Push(12345, 2, "user2", "topic2 msg")
 
-	msgs1 := buf.GetMessages(1)
-	msgs2 := buf.GetMessages(2)
+	msgs1 := buf.GetMessages(12345, 1)
+	msgs2 := buf.GetMessages(12345, 2)
 
 	if msgs1 == "" {
 		t.Error("expected messages for topic 1")

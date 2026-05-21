@@ -29,7 +29,8 @@ func TestMigration(t *testing.T) {
 
 	// Verify all tables exist
 	tables := []string{
-		"bot_persona",
+		"groups",
+		"superadmins",
 		"topics",
 		"processed_messages",
 		"llm_requests",
@@ -37,6 +38,7 @@ func TestMigration(t *testing.T) {
 		"schedule_anomalies",
 		"command_permissions",
 		"summary_requests",
+		"message_buffer",
 	}
 
 	for _, table := range tables {
