@@ -35,6 +35,7 @@ import (
 	"omsu_bot/internal/forwarder"
 	handlers "omsu_bot/internal/handler"
 	"omsu_bot/internal/llm"
+	"omsu_bot/internal/telegram"
 	"omsu_bot/internal/persona"
 	"omsu_bot/internal/schedule"
 )
@@ -192,10 +193,11 @@ func main() {
 	if tgBot != nil {
 		classif := classifier.New(llmClient, prompts, nil)
 		fwd := forwarder.New(tgBot, personaStore)
-		summaryBuf := handlers.NewSummaryBuffer(200)
+		summaryBuf := handlers.NewSummaryBuffer(database.DB, 200)
 		h := handlers.NewHandler(classif, fwd, database.DB, cfg.Telegram.GroupID, summaryBuf)
-		topicCRUD := handlers.NewTopicCRUD(llmClient, prompts, database.DB, tgBot, cfg.Telegram.GroupID, botUsername, summaryBuf)
-		summaryHandler := handlers.NewSummaryHandler(llmClient, prompts, database.DB, tgBot, cfg.Telegram.GroupID, summaryBuf, botUsername)
+		adminCache := telegram.NewAdminCache(tgBot, cfg.Telegram.GroupID)
+		topicCRUD := handlers.NewTopicCRUD(llmClient, prompts, database.DB, tgBot, cfg.Telegram.GroupID, botUsername, summaryBuf, adminCache)
+		summaryHandler := handlers.NewSummaryHandler(llmClient, prompts, database.DB, tgBot, cfg.Telegram.GroupID, summaryBuf, botUsername, adminCache)
 		scheduleQHandler := handlers.NewScheduleQueryHandler(llmClient, prompts, cfg.Setka.BaseURL, cfg.Setka.PublicURL, cfg.Telegram.OmsuGroupID, cmdReg)
 		mentionHandler := handlers.NewMentionHandler(llmClient, prompts, database.DB, cfg.Telegram.GroupID, topicCRUD, summaryHandler, scheduleQHandler, botUsername, personaStore.Get().Name, cmdReg)
 

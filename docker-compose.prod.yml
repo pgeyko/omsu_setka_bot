@@ -9,11 +9,12 @@ services:
       - .env.prod
     volumes:
       - bot_data:/app/data
+      - bot_prompts:/app/prompts
     networks:
       - nginx-network
       - default
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8081/api/auth/token"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8081/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -21,6 +22,7 @@ services:
 
 volumes:
   bot_data:
+  bot_prompts:
 
 networks:
   nginx-network:

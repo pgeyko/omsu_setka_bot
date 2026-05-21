@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"omsu_bot/internal/llm"
+	"omsu_bot/internal/telegram"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -21,9 +22,10 @@ type SummaryHandler struct {
 	groupID     int64
 	buffer      *SummaryBuffer
 	botUsername string
+	adminCache  *telegram.AdminCache
 }
 
-func NewSummaryHandler(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB, bot *tgbot.Bot, groupID int64, buffer *SummaryBuffer, botUsername string) *SummaryHandler {
+func NewSummaryHandler(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB, bot *tgbot.Bot, groupID int64, buffer *SummaryBuffer, botUsername string, adminCache *telegram.AdminCache) *SummaryHandler {
 	return &SummaryHandler{
 		llmClient:   llmClient,
 		prompts:     prompts,
@@ -32,6 +34,7 @@ func NewSummaryHandler(llmClient *llm.Client, prompts *llm.PromptRegistry, db *s
 		groupID:     groupID,
 		buffer:      buffer,
 		botUsername: botUsername,
+		adminCache:  adminCache,
 	}
 }
 
@@ -116,18 +119,7 @@ func (h *SummaryHandler) checkPermission(ctx context.Context, userID int64) (boo
 	}
 
 	if role == "admin" {
-		members, err := h.bot.GetChatAdministrators(ctx, &tgbot.GetChatAdministratorsParams{
-			ChatID: h.groupID,
-		})
-		if err != nil {
-			return false, err
-		}
-		for _, m := range members {
-			if uid := getChatMemberUserID(m); uid == userID {
-				return true, nil
-			}
-		}
-		return false, nil
+		return h.adminCache.IsAdmin(ctx, userID), nil
 	}
 
 	return true, nil
