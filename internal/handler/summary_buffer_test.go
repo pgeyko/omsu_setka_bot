@@ -5,7 +5,7 @@ import (
 )
 
 func TestSummaryBuffer_PushAndGet(t *testing.T) {
-	buf := NewSummaryBuffer(3)
+	buf := NewSummaryBuffer(nil, 3)
 
 	buf.Push(1, "user1", "hello")
 	buf.Push(1, "user2", "world")
@@ -17,7 +17,7 @@ func TestSummaryBuffer_PushAndGet(t *testing.T) {
 }
 
 func TestSummaryBuffer_EmptyTopic(t *testing.T) {
-	buf := NewSummaryBuffer(10)
+	buf := NewSummaryBuffer(nil, 10)
 
 	msgs := buf.GetMessages(999)
 	if msgs != "" {
@@ -26,7 +26,7 @@ func TestSummaryBuffer_EmptyTopic(t *testing.T) {
 }
 
 func TestSummaryBuffer_Capacity(t *testing.T) {
-	buf := NewSummaryBuffer(3)
+	buf := NewSummaryBuffer(nil, 3)
 
 	for i := 0; i < 10; i++ {
 		buf.Push(1, "user", "msg")
@@ -39,7 +39,7 @@ func TestSummaryBuffer_Capacity(t *testing.T) {
 }
 
 func TestSummaryBuffer_IgnoresEmptyText(t *testing.T) {
-	buf := NewSummaryBuffer(10)
+	buf := NewSummaryBuffer(nil, 10)
 
 	buf.Push(1, "user", "")
 
@@ -50,7 +50,7 @@ func TestSummaryBuffer_IgnoresEmptyText(t *testing.T) {
 }
 
 func TestSummaryBuffer_MultipleTopics(t *testing.T) {
-	buf := NewSummaryBuffer(10)
+	buf := NewSummaryBuffer(nil, 10)
 
 	buf.Push(1, "user1", "topic1 msg")
 	buf.Push(2, "user2", "topic2 msg")

@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
-	"time"
 
 	"omsu_bot/internal/llm"
+	"omsu_bot/internal/telegram"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -26,10 +26,10 @@ type TopicCRUD struct {
 	buffer      *SummaryBuffer
 
 	mu         sync.RWMutex
-	adminCache map[int64]time.Time
+	adminCache *telegram.AdminCache
 }
 
-func NewTopicCRUD(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB, bot *tgbot.Bot, groupID int64, botUsername string, buffer *SummaryBuffer) *TopicCRUD {
+func NewTopicCRUD(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB, bot *tgbot.Bot, groupID int64, botUsername string, buffer *SummaryBuffer, adminCache *telegram.AdminCache) *TopicCRUD {
 	return &TopicCRUD{
 		llmClient:   llmClient,
 		prompts:     prompts,
@@ -38,7 +38,7 @@ func NewTopicCRUD(llmClient *llm.Client, prompts *llm.PromptRegistry, db *sql.DB
 		groupID:     groupID,
 		botUsername: botUsername,
 		buffer:      buffer,
-		adminCache:  make(map[int64]time.Time),
+		adminCache:  adminCache,
 	}
 }
 
@@ -300,41 +300,7 @@ func (t *TopicCRUD) findTopic(ctx context.Context, nameOrSlug string) *topicInfo
 }
 
 func (t *TopicCRUD) isAdmin(ctx context.Context, userID int64) bool {
-	t.mu.RLock()
-	cached, ok := t.adminCache[userID]
-	t.mu.RUnlock()
-
-	if ok && time.Since(cached) < 10*time.Minute {
-		return true
-	}
-
-	members, err := t.bot.GetChatAdministrators(ctx, &tgbot.GetChatAdministratorsParams{
-		ChatID: t.groupID,
-	})
-	if err != nil {
-		slog.Error("failed to get admins", "error", err)
-		return false
-	}
-
-	adminIDs := make(map[int64]bool)
-	for _, m := range members {
-		if uid := getChatMemberUserID(m); uid != 0 {
-			adminIDs[uid] = true
-		}
-	}
-
-	t.mu.Lock()
-	for uid := range t.adminCache {
-		if time.Since(t.adminCache[uid]) > 10*time.Minute {
-			delete(t.adminCache, uid)
-		}
-	}
-	for uid := range adminIDs {
-		t.adminCache[uid] = time.Now()
-	}
-	t.mu.Unlock()
-
-	return adminIDs[userID]
+	return t.adminCache.IsAdmin(ctx, userID)
 }
 
 func (t *TopicCRUD) reply(ctx context.Context, chatID int64, threadID int, replyToID int, text string) {
@@ -348,19 +314,7 @@ func (t *TopicCRUD) reply(ctx context.Context, chatID int64, threadID int, reply
 	})
 }
 
-func getChatMemberUserID(m models.ChatMember) int64 {
-	switch m.Type {
-	case models.ChatMemberTypeOwner:
-		if m.Owner != nil {
-			return m.Owner.User.ID
-		}
-	case models.ChatMemberTypeAdministrator:
-		if m.Administrator != nil {
-			return m.Administrator.User.ID
-		}
-	}
-	return 0
-}
+
 
 var cyrToLat = strings.NewReplacer(
 	"а", "a", "б", "b", "в", "v", "г", "g", "д", "d", "е", "e", "ё", "e",

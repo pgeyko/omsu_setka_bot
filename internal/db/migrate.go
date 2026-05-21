@@ -76,9 +76,17 @@ func (d *DB) Migrate() error {
 			PRIMARY KEY (user_id, chat_id)
 		);`,
 
+		`CREATE TABLE IF NOT EXISTS message_buffer (
+			thread_id  INTEGER NOT NULL,
+			username   TEXT NOT NULL,
+			text       TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+
 		`CREATE INDEX IF NOT EXISTS idx_processed_messages_chat ON processed_messages(chat_id, message_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_llm_requests_date ON llm_requests(created_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_anomalies_notified ON schedule_anomalies(notified);`,
+		`CREATE INDEX IF NOT EXISTS idx_buffer_thread ON message_buffer(thread_id, created_at DESC);`,
 	}
 
 	for _, q := range queries {

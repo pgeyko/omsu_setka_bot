@@ -82,6 +82,14 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 		SkipFallbackModel: skipFallbackModel,
 	}
 
+	startTime := time.Now()
+	app.Get("/health", func(c *fiber.Ctx) error {
+		if err := db.PingContext(c.Context()); err != nil {
+			return c.Status(503).JSON(fiber.Map{"status": "unhealthy", "db": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "uptime": time.Since(startTime).String()})
+	})
+
 	s.setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowSec)
 	return s
 }
