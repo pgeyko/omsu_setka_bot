@@ -99,11 +99,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	cmdReg, err := handlers.LoadCommands("commands.json")
-	if err != nil {
-		slog.Warn("failed to load commands.json, using defaults", "error", err)
-		cmdReg = &handlers.CommandRegistry{}
-	}
+	cmdReg := handlers.NewCommandRegistry()
 
 	var providers []*llm.Provider
 	for _, pcfg := range cfg.LLM.Providers {
@@ -236,7 +232,7 @@ func main() {
 		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL)
 		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor)
 		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername, cmdReg)
-		antispam := handlers.NewAntispam()
+		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
 		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient)
 
 		helpText := fmt.Sprintf(`🤖 <b>Пятница</b> — ИИ-ассистент группы
@@ -315,7 +311,9 @@ func main() {
 				return
 			}
 
-			if msg.Voice != nil {
+			features := settingsHandler.LoadFeatures(msg.Chat.ID)
+
+			if msg.Voice != nil && apiServer.GlobalVoiceTranscription && features["enable_voice_transcription"] {
 				txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
 				if err != nil {
 					slog.Error("failed to process voice", "error", err)
@@ -324,7 +322,7 @@ func main() {
 				}
 			}
 
-			if len(msg.Photo) > 0 {
+			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing && features["enable_photo_processing"] {
 				ocrText, err := mediaProcessor.ProcessPhoto(ctx, msg.Photo[len(msg.Photo)-1].FileID)
 				if err != nil {
 					slog.Error("failed to process photo", "error", err)
@@ -342,11 +340,27 @@ func main() {
 				text = msg.Caption
 			}
 
+			p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
+			isMentionOrAlias := false
+			if isBotMention(msg) {
+				isMentionOrAlias = true
+			} else if text != "" {
+				lowerText := strings.ToLower(text)
+				if p.Name != "" && strings.Contains(lowerText, strings.ToLower(p.Name)) {
+					isMentionOrAlias = true
+				} else {
+					for _, alias := range p.Aliases {
+						if strings.Contains(lowerText, strings.ToLower(alias)) {
+							isMentionOrAlias = true
+							break
+						}
+					}
+				}
+			}
+
 			if isBotCommand(msg) {
 				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler)
-			} else if isBotMention(msg) {
-				mentionHandler.Handle(ctx, b, update)
-			} else if cmdReg != nil && text != "" && cmdReg.IsPersonaMention(text, personaStore.Get().Name) {
+			} else if isMentionOrAlias {
 				mentionHandler.Handle(ctx, b, update)
 			} else {
 				h.HandleMessage(ctx, b, update)
