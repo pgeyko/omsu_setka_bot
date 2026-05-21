@@ -173,7 +173,27 @@ func main() {
 	}
 
 	authMw := api.NewAuthMiddleware(cfg.API.AdminSecret, cfg.API.JWTSecret)
-	apiServer := api.NewServer(database.DB, personaStore, prompts, authMw, cfg.SwaggerEnabled, cfg.AppEnv, cfg.API.CORSOrigin, llmChain, llmClient, botSender, cfg.Telegram.GroupID, cfg.LLM.SkipFallbackModel, cfg.RateLimit.APIGeneral, cfg.RateLimit.APISearch, cfg.RateLimit.APIWindow)
+	apiServer := api.NewServer(
+		database.DB,
+		personaStore,
+		prompts,
+		authMw,
+		cfg.SwaggerEnabled,
+		cfg.AppEnv,
+		cfg.API.CORSOrigin,
+		llmChain,
+		llmClient,
+		botSender,
+		cfg.Telegram.GroupID,
+		cfg.LLM.SkipFallbackModel,
+		cfg.RateLimit.APIGeneral,
+		cfg.RateLimit.APISearch,
+		cfg.RateLimit.APIWindow,
+		cfg.Setka.BaseURL,
+		cfg.Setka.AdminKey,
+		cfg.Webhook.ScheduleSecret,
+		cfg.API.Listen,
+	)
 
 	apiServer.App.Static("/admin", "./admin/dist", fiber.Static{Index: "index.html"})
 	apiServer.App.Get("/admin/*", func(c *fiber.Ctx) error {
@@ -201,7 +221,18 @@ func main() {
 		usernameCache := telegram.NewUsernameCache()
 		h := handlers.NewHandler(classif, fwd, database.DB, summaryBuf, usernameCache)
 
-		
+		sessionStore := telegram.NewSessionStore()
+		adminCache := telegram.NewAdminCache(tgBot, cfg.Telegram.GroupID)
+		settingsHandler := handlers.NewSettingsHandler(
+			database.DB,
+			sessionStore,
+			adminCache,
+			cfg.Setka.BaseURL,
+			cfg.Setka.AdminKey,
+			cfg.Webhook.ScheduleSecret,
+			cfg.API.Listen,
+		)
+
 		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL)
 		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor)
 		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername, cmdReg)
@@ -217,6 +248,7 @@ func main() {
 /resend — переслать в топик
 /register — зарегистрировать топик (админ)
 /summary — саммари
+/settings — настройки группы (админ)
 /status — состояние
 
 Подробнее: @%s`, botUsername)
@@ -254,6 +286,13 @@ func main() {
 			antispam.HandleCallbackQuery(ctx, b, update)
 		})
 
+		// Settings callbacks
+		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+			return update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "settings:")
+		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			settingsHandler.HandleCallbackQuery(ctx, b, update)
+		})
+
 		// New Chat Members captcha prompt
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
 			return update.Message != nil && len(update.Message.NewChatMembers) > 0 && database.IsGroupActive(context.Background(), update.Message.Chat.ID)
@@ -270,6 +309,12 @@ func main() {
 			}
 
 			msg := update.Message
+			state := sessionStore.Get(msg.Chat.ID, msg.From.ID)
+			if state != telegram.StateNone {
+				settingsHandler.HandleAdminInput(ctx, b, update, state)
+				return
+			}
+
 			if msg.Voice != nil {
 				txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
 				if err != nil {
@@ -298,7 +343,7 @@ func main() {
 			}
 
 			if isBotCommand(msg) {
-				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg)
+				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler)
 			} else if isBotMention(msg) {
 				mentionHandler.Handle(ctx, b, update)
 			} else if cmdReg != nil && text != "" && cmdReg.IsPersonaMention(text, personaStore.Get().Name) {
@@ -346,7 +391,7 @@ var (
 	globalLLM     *llm.Client
 )
 
-func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry) {
+func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry, settingsHandler *handlers.SettingsHandler) {
 	msg := update.Message
 	text := msg.Text
 
@@ -359,6 +404,11 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 	}
 
 	switch command {
+	case "settings", "настройки":
+		if settingsHandler != nil {
+			settingsHandler.HandleSettingsCommand(ctx, b, update)
+		}
+
 	case "help":
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID:          msg.Chat.ID,

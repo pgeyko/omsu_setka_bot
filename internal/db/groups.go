@@ -156,6 +156,41 @@ func (d *DB) RemoveSuperadmin(ctx context.Context, userID int64) error {
 	return err
 }
 
+// ListSuperadmins returns all superadmins
+func (d *DB) ListSuperadmins(ctx context.Context) ([]Superadmin, error) {
+	rows, err := d.QueryContext(ctx, "SELECT user_id, note, created_at FROM superadmins ORDER BY created_at DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var admins []Superadmin
+	for rows.Next() {
+		var sa Superadmin
+		var createdAt string
+		if err := rows.Scan(&sa.UserID, &sa.Note, &createdAt); err != nil {
+			return nil, err
+		}
+		t, err := time.Parse("2006-01-02 15:04:05", createdAt)
+		if err == nil {
+			sa.CreatedAt = t
+		} else {
+			t, err = time.Parse(time.RFC3339, createdAt)
+			if err == nil {
+				sa.CreatedAt = t
+			}
+		}
+		admins = append(admins, sa)
+	}
+	return admins, nil
+}
+
+// UpdateGroupOmsuID updates only the Setka group ID for a chat
+func (d *DB) UpdateGroupOmsuID(ctx context.Context, chatID int64, omsuGroupID int) error {
+	_, err := d.ExecContext(ctx, "UPDATE groups SET omsu_group_id = ? WHERE chat_id = ?", omsuGroupID, chatID)
+	return err
+}
+
 // IsGroupActive checks if the group exists and is active in the database
 func (d *DB) IsGroupActive(ctx context.Context, chatID int64) bool {
 	var active int
@@ -165,3 +200,4 @@ func (d *DB) IsGroupActive(ctx context.Context, chatID int64) bool {
 	}
 	return active == 1
 }
+

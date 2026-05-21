@@ -96,6 +96,15 @@ func TestGroupsCRUD(t *testing.T) {
 		t.Fatal("expected true for registered superadmin")
 	}
 
+	// Test ListSuperadmins
+	saList, err := d.ListSuperadmins(ctx)
+	if err != nil {
+		t.Fatalf("failed to list superadmins: %v", err)
+	}
+	if len(saList) != 1 || saList[0].UserID != 999 || saList[0].Note != "my note" {
+		t.Errorf("expected 1 superadmin, got: %+v", saList)
+	}
+
 	if err := d.RemoveSuperadmin(ctx, 999); err != nil {
 		t.Fatalf("failed to remove superadmin: %v", err)
 	}
@@ -106,6 +115,18 @@ func TestGroupsCRUD(t *testing.T) {
 	}
 	if isSA3 {
 		t.Fatal("expected false after removal")
+	}
+
+	// Test UpdateGroupOmsuID
+	if err := d.UpdateGroupOmsuID(ctx, -1001234567, 9999); err != nil {
+		t.Fatalf("failed to update group omsu id: %v", err)
+	}
+	updatedOmsu, err := d.GetGroup(ctx, -1001234567)
+	if err != nil {
+		t.Fatalf("failed to get group after update: %v", err)
+	}
+	if updatedOmsu.OmsuGroupID != 9999 {
+		t.Errorf("expected OmsuGroupID to be 9999, got %d", updatedOmsu.OmsuGroupID)
 	}
 
 	// Test Delete

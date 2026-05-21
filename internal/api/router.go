@@ -36,12 +36,17 @@ type Server struct {
 	TelegramBot       BotSender
 	TelegramGroupID   int64
 	SkipFallbackModel bool
+	SetkaBaseURL      string
+	SetkaAdminKey     string
+	WebhookSecret     string
+	ListenAddr        string
 }
 
 func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, auth *AuthMiddleware,
 	swaggerEnabled bool, appEnv string, corsOrigin string, chain *llm.Chain, llmClient *llm.Client,
 	tgBot BotSender, tgGroupID int64, skipFallbackModel bool,
-	rateLimitGeneral, rateLimitSearch, rateLimitWindowSec int) *Server {
+	rateLimitGeneral, rateLimitSearch, rateLimitWindowSec int,
+	setkaBaseURL, setkaAdminKey, webhookSecret, listenAddr string) *Server {
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -80,6 +85,10 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 		TelegramBot:       tgBot,
 		TelegramGroupID:   tgGroupID,
 		SkipFallbackModel: skipFallbackModel,
+		SetkaBaseURL:      setkaBaseURL,
+		SetkaAdminKey:     setkaAdminKey,
+		WebhookSecret:     webhookSecret,
+		ListenAddr:        listenAddr,
 	}
 
 	startTime := time.Now()
@@ -151,6 +160,12 @@ func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowS
 	api.Get("/groups/:chat_id", s.handleGetGroup)
 	api.Put("/groups/:chat_id", s.handleUpdateGroup)
 	api.Delete("/groups/:chat_id", s.handleDeleteGroup)
+
+	// Superadmin Routes
+	api.Get("/admin/superadmins", s.handleListSuperadmins)
+	api.Post("/admin/superadmins", s.handleAddSuperadmin)
+	api.Delete("/admin/superadmins/:user_id", s.handleRemoveSuperadmin)
+	api.Post("/admin/groups/register-webhooks", s.handleRegisterWebhooks)
 
 	api.Get("/groups/:chat_id/context/persona", s.handleGetGroupPersona)
 	api.Put("/groups/:chat_id/context/persona", s.handleUploadPersona)

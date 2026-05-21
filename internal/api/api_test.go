@@ -52,7 +52,7 @@ func setupTestServer(t *testing.T) *Server {
 		t.Fatalf("failed to create prompts: %v", err)
 	}
 
-	s := NewServer(database.DB, personaStore, prompts, auth, false, "test", "*", nil, nil, nil, 0, false, 9999, 9999, 60)
+	s := NewServer(database.DB, personaStore, prompts, auth, false, "test", "*", nil, nil, nil, 0, false, 9999, 9999, 60, "http://localhost:8080", "test-setka-key", "test-webhook-secret", ":8081")
 	return s
 }
 
@@ -249,5 +249,65 @@ func TestScheduleEndpoints(t *testing.T) {
 	resp = performRequest(s, "GET", "/api/schedule/anomalies", "", token)
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("anomalies expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestSuperadminEndpoints(t *testing.T) {
+	s := setupTestServer(t)
+	token := getAuthToken(s)
+
+	// List initially empty
+	resp := performRequest(s, "GET", "/api/admin/superadmins", "", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	data, ok := body["data"].([]interface{})
+	if !ok || len(data) != 0 {
+		t.Errorf("expected empty list of superadmins, got %+v", body["data"])
+	}
+
+	// Add superadmin
+	resp = performRequest(s, "POST", "/api/admin/superadmins", `{"user_id": 99999, "note": "API test superadmin"}`, token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// List again
+	resp = performRequest(s, "GET", "/api/admin/superadmins", "", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	var body2 map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body2)
+	data2, ok := body2["data"].([]interface{})
+	if !ok || len(data2) != 1 {
+		t.Errorf("expected 1 superadmin, got %+v", body2["data"])
+	}
+	item := data2[0].(map[string]interface{})
+	if int64(item["user_id"].(float64)) != 99999 {
+		t.Errorf("expected user_id 99999, got %v", item["user_id"])
+	}
+
+	// Delete superadmin
+	resp = performRequest(s, "DELETE", "/api/admin/superadmins/99999", "", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// List again to verify deletion
+	resp = performRequest(s, "GET", "/api/admin/superadmins", "", token)
+	var body3 map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body3)
+	data3 := body3["data"].([]interface{})
+	if len(data3) != 0 {
+		t.Errorf("expected empty list of superadmins, got %d", len(data3))
+	}
+
+	// Test register webhooks with no active groups
+	resp = performRequest(s, "POST", "/api/admin/groups/register-webhooks", "", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
 }

@@ -42,6 +42,10 @@ func (ac *AdminCache) IsAdmin(ctx context.Context, chatID int64, userID int64) b
 		return entry.isAdmin
 	}
 
+	if ac.bot == nil {
+		return false
+	}
+
 	members, err := ac.bot.GetChatAdministrators(ctx, &tgbot.GetChatAdministratorsParams{
 		ChatID: chatID,
 	})

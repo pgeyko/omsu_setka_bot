@@ -69,6 +69,13 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
+	var activeTopicsCount int
+	err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM topics WHERE group_id = ? AND is_active = 1", msg.Chat.ID).Scan(&activeTopicsCount)
+	if err != nil || activeTopicsCount == 0 {
+		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped_no_topics", 0)
+		return
+	}
+
 	if !h.prefilter(msg) {
 		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
 		return
