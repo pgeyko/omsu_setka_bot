@@ -1,12 +1,10 @@
 services:
   bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/pgeyko/omsu_setka_bot/bot:latest
     container_name: omsu_setka_bot
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8081:8081"
+      - "8081:8081"
     env_file:
       - .env
     environment:
