@@ -18,16 +18,38 @@ type Antispam struct {
 	mu           sync.Mutex
 	joinedUsers  map[string]time.Time
 	messageTimes map[string][]time.Time
+	loadFeatures func(chatID int64) map[string]bool
 }
 
-func NewAntispam() *Antispam {
+func NewAntispam(loaders ...func(chatID int64) map[string]bool) *Antispam {
+	var loader func(chatID int64) map[string]bool
+	if len(loaders) > 0 {
+		loader = loaders[0]
+	}
 	return &Antispam{
 		joinedUsers:  make(map[string]time.Time),
 		messageTimes: make(map[string][]time.Time),
+		loadFeatures: loader,
+	}
+}
+
+func (a *Antispam) getFeatures(chatID int64) map[string]bool {
+	if a.loadFeatures != nil {
+		return a.loadFeatures(chatID)
+	}
+	return map[string]bool{
+		"enable_moderation":    true,
+		"enable_captcha":       true,
+		"enable_link_filter":   true,
+		"enable_flood_control": true,
 	}
 }
 
 func (a *Antispam) HandleNewChatMembers(ctx context.Context, b *tgbot.Bot, chatID int64, newMembers []models.User) {
+	features := a.getFeatures(chatID)
+	if !features["enable_moderation"] || !features["enable_captcha"] {
+		return
+	}
 	for _, member := range newMembers {
 		if member.IsBot {
 			continue
@@ -118,6 +140,11 @@ func (a *Antispam) HandleNewChatMembers(ctx context.Context, b *tgbot.Bot, chatI
 }
 
 func (a *Antispam) CheckFloodAndLinks(ctx context.Context, b *tgbot.Bot, msg *models.Message) bool {
+	features := a.getFeatures(msg.Chat.ID)
+	if !features["enable_moderation"] {
+		return false
+	}
+
 	chatID := msg.Chat.ID
 	userID := msg.From.ID
 	username := msg.From.Username
@@ -129,86 +156,90 @@ func (a *Antispam) CheckFloodAndLinks(ctx context.Context, b *tgbot.Bot, msg *mo
 	now := time.Now()
 
 	// 1. Link filtering
-	hasLink := false
-	entities := msg.Entities
-	if len(entities) == 0 {
-		entities = msg.CaptionEntities
-	}
-	for _, ent := range entities {
-		if ent.Type == models.MessageEntityTypeURL || ent.Type == models.MessageEntityTypeTextLink {
-			hasLink = true
-			break
+	if features["enable_link_filter"] {
+		hasLink := false
+		entities := msg.Entities
+		if len(entities) == 0 {
+			entities = msg.CaptionEntities
 		}
-	}
-
-	if hasLink {
-		a.mu.Lock()
-		joinTime, exists := a.joinedUsers[key]
-		a.mu.Unlock()
-
-		if exists && now.Sub(joinTime) < 24*time.Hour {
-			slog.Info("Deleting link message from new user", "userID", userID, "chatID", chatID)
-			if b != nil {
-				b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
-					ChatID:    chatID,
-					MessageID: msg.ID,
-				})
+		for _, ent := range entities {
+			if ent.Type == models.MessageEntityTypeURL || ent.Type == models.MessageEntityTypeTextLink {
+				hasLink = true
+				break
 			}
-			return true
+		}
+
+		if hasLink {
+			a.mu.Lock()
+			joinTime, exists := a.joinedUsers[key]
+			a.mu.Unlock()
+
+			if exists && now.Sub(joinTime) < 24*time.Hour {
+				slog.Info("Deleting link message from new user", "userID", userID, "chatID", chatID)
+				if b != nil {
+					b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+						ChatID:    chatID,
+						MessageID: msg.ID,
+					})
+				}
+				return true
+			}
 		}
 	}
 
 	// 2. Flood Control
-	a.mu.Lock()
-	times := a.messageTimes[key]
-	var validTimes []time.Time
-	for _, t := range times {
-		if now.Sub(t) <= 10*time.Second {
-			validTimes = append(validTimes, t)
-		}
-	}
-	validTimes = append(validTimes, now)
-	a.messageTimes[key] = validTimes
-	floodDetected := len(validTimes) > 5
-	a.mu.Unlock()
-
-	if floodDetected {
-		slog.Warn("Flood detected", "userID", userID, "chatID", chatID)
-		untilDate := now.Add(5 * time.Minute).Unix()
-		if b != nil {
-			_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
-				ChatID: chatID,
-				UserID: userID,
-				Permissions: &models.ChatPermissions{
-					CanSendMessages:       false,
-					CanSendAudios:         false,
-					CanSendDocuments:      false,
-					CanSendPhotos:         false,
-					CanSendVideos:         false,
-					CanSendVideoNotes:     false,
-					CanSendVoiceNotes:     false,
-					CanSendPolls:          false,
-					CanSendOtherMessages:  false,
-					CanAddWebPagePreviews: false,
-				},
-				UntilDate: int(untilDate),
-			})
-			if err != nil {
-				slog.Error("failed to restrict user after flood", "userID", userID, "error", err)
+	if features["enable_flood_control"] {
+		a.mu.Lock()
+		times := a.messageTimes[key]
+		var validTimes []time.Time
+		for _, t := range times {
+			if now.Sub(t) <= 10*time.Second {
+				validTimes = append(validTimes, t)
 			}
-
-			b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
-				ChatID:    chatID,
-				MessageID: msg.ID,
-			})
-
-			warnText := fmt.Sprintf("⚠️ @%s временно заблокирован на 5 минут за спам.", username)
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
-				ChatID: chatID,
-				Text:   warnText,
-			})
 		}
-		return true
+		validTimes = append(validTimes, now)
+		a.messageTimes[key] = validTimes
+		floodDetected := len(validTimes) > 5
+		a.mu.Unlock()
+
+		if floodDetected {
+			slog.Warn("Flood detected", "userID", userID, "chatID", chatID)
+			untilDate := now.Add(5 * time.Minute).Unix()
+			if b != nil {
+				_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+					ChatID: chatID,
+					UserID: userID,
+					Permissions: &models.ChatPermissions{
+						CanSendMessages:       false,
+						CanSendAudios:         false,
+						CanSendDocuments:      false,
+						CanSendPhotos:         false,
+						CanSendVideos:         false,
+						CanSendVideoNotes:     false,
+						CanSendVoiceNotes:     false,
+						CanSendPolls:          false,
+						CanSendOtherMessages:  false,
+						CanAddWebPagePreviews: false,
+					},
+					UntilDate: int(untilDate),
+				})
+				if err != nil {
+					slog.Error("failed to restrict user after flood", "userID", userID, "error", err)
+				}
+
+				b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+					ChatID:    chatID,
+					MessageID: msg.ID,
+				})
+
+				warnText := fmt.Sprintf("⚠️ @%s временно заблокирован на 5 минут за спам.", username)
+				b.SendMessage(ctx, &tgbot.SendMessageParams{
+					ChatID: chatID,
+					Text:   warnText,
+				})
+			}
+			return true
+		}
 	}
 
 	return false
@@ -239,6 +270,45 @@ func (a *Antispam) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot, update
 	correctAnswer, _ := strconv.Atoi(parts[2])
 	chosenAnswer, _ := strconv.Atoi(parts[3])
 
+	chatID, msgID := getChatAndMsgID(cb.Message)
+
+	features := a.getFeatures(chatID)
+	if !features["enable_moderation"] || !features["enable_captcha"] {
+		if b != nil {
+			_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+				ChatID: chatID,
+				UserID: targetUserID,
+				Permissions: &models.ChatPermissions{
+					CanSendMessages:       true,
+					CanSendAudios:         true,
+					CanSendDocuments:      true,
+					CanSendPhotos:         true,
+					CanSendVideos:         true,
+					CanSendVideoNotes:     true,
+					CanSendVoiceNotes:     true,
+					CanSendPolls:          true,
+					CanSendOtherMessages:  true,
+					CanAddWebPagePreviews: true,
+				},
+			})
+			if err != nil {
+				slog.Error("failed to unmute user (captcha disabled)", "userID", targetUserID, "error", err)
+			}
+
+			b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+				ChatID:    chatID,
+				MessageID: msgID,
+			})
+
+			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+				CallbackQueryID: cb.ID,
+				Text:            "Капча отключена.",
+				ShowAlert:       true,
+			})
+		}
+		return
+	}
+
 	if cb.From.ID != targetUserID {
 		if b != nil {
 			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
@@ -249,8 +319,6 @@ func (a *Antispam) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot, update
 		}
 		return
 	}
-
-	chatID, msgID := getChatAndMsgID(cb.Message)
 
 	if chosenAnswer == correctAnswer {
 		if b != nil {

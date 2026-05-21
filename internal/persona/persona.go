@@ -11,9 +11,10 @@ import (
 )
 
 type Persona struct {
-	Name         string `json:"name"`
-	SystemPrompt string `json:"system_prompt"`
-	Signature    string `json:"signature"`
+	Name         string   `json:"name"`
+	SystemPrompt string   `json:"system_prompt"`
+	Signature    string   `json:"signature"`
+	Aliases      []string `json:"aliases"`
 }
 
 type Store struct {
@@ -104,6 +105,9 @@ func GetGroupPersona(chatID int64, defaultPersona Persona) Persona {
 	}
 	if p.Signature == "" {
 		p.Signature = defaultPersona.Signature
+	}
+	if len(p.Aliases) == 0 {
+		p.Aliases = defaultPersona.Aliases
 	}
 	return p
 }

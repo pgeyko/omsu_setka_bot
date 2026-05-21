@@ -62,8 +62,8 @@ func TestSettingsHandler_LoadSaveFeatures(t *testing.T) {
 	h := NewSettingsHandler(database.DB, sessionStore, nil, "", "", "", "")
 
 	// Test default features
-	features := h.loadFeatures(chatID)
-	if !features["enable_schedule"] || !features["enable_summary"] || !features["enable_moderation"] {
+	features := h.LoadFeatures(chatID)
+	if !features["enable_schedule"] || !features["enable_summary"] || !features["enable_moderation"] || !features["enable_voice_transcription"] || !features["enable_photo_processing"] {
 		t.Error("expected default features to be true")
 	}
 
@@ -74,7 +74,7 @@ func TestSettingsHandler_LoadSaveFeatures(t *testing.T) {
 		t.Fatalf("failed to save features: %v", err)
 	}
 
-	loaded := h.loadFeatures(chatID)
+	loaded := h.LoadFeatures(chatID)
 	if loaded["enable_summary"] {
 		t.Error("expected enable_summary to be false after save")
 	}

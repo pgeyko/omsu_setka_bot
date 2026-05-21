@@ -240,7 +240,7 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 		h.showSetkaScreen(ctx, b, chatID, messageID)
 	case strings.HasPrefix(action, "toggle:"):
 		feature := strings.TrimPrefix(action, "toggle:")
-		features := h.loadFeatures(chatID)
+		features := h.LoadFeatures(chatID)
 		if val, exists := features["enable_"+feature]; exists {
 			features["enable_"+feature] = !val
 		} else {
@@ -318,7 +318,7 @@ func (h *SettingsHandler) showSetkaScreen(ctx context.Context, b *tgbot.Bot, cha
 }
 
 func (h *SettingsHandler) showToolsScreen(ctx context.Context, b *tgbot.Bot, chatID int64, messageID int) {
-	features := h.loadFeatures(chatID)
+	features := h.LoadFeatures(chatID)
 
 	scheduleTick := "❌"
 	if features["enable_schedule"] {
@@ -332,6 +332,26 @@ func (h *SettingsHandler) showToolsScreen(ctx context.Context, b *tgbot.Bot, cha
 	if features["enable_moderation"] {
 		moderationTick = "✅"
 	}
+	voiceTick := "❌"
+	if features["enable_voice_transcription"] {
+		voiceTick = "✅"
+	}
+	photoTick := "❌"
+	if features["enable_photo_processing"] {
+		photoTick = "✅"
+	}
+	captchaTick := "❌"
+	if features["enable_captcha"] {
+		captchaTick = "✅"
+	}
+	linkFilterTick := "❌"
+	if features["enable_link_filter"] {
+		linkFilterTick = "✅"
+	}
+	floodTick := "❌"
+	if features["enable_flood_control"] {
+		floodTick = "✅"
+	}
 
 	keyboard := [][]models.InlineKeyboardButton{
 		{
@@ -341,7 +361,22 @@ func (h *SettingsHandler) showToolsScreen(ctx context.Context, b *tgbot.Bot, cha
 			{Text: fmt.Sprintf("Саммари: %s", summaryTick), CallbackData: "settings:toggle:summary"},
 		},
 		{
-			{Text: fmt.Sprintf("Модерация: %s", moderationTick), CallbackData: "settings:toggle:moderation"},
+			{Text: fmt.Sprintf("Модерация (общая): %s", moderationTick), CallbackData: "settings:toggle:moderation"},
+		},
+		{
+			{Text: fmt.Sprintf("Матем. капча: %s", captchaTick), CallbackData: "settings:toggle:captcha"},
+		},
+		{
+			{Text: fmt.Sprintf("Фильтр ссылок: %s", linkFilterTick), CallbackData: "settings:toggle:link_filter"},
+		},
+		{
+			{Text: fmt.Sprintf("Флуд-контроль: %s", floodTick), CallbackData: "settings:toggle:flood_control"},
+		},
+		{
+			{Text: fmt.Sprintf("Расшифровка аудио: %s", voiceTick), CallbackData: "settings:toggle:voice_transcription"},
+		},
+		{
+			{Text: fmt.Sprintf("Обработка фото: %s", photoTick), CallbackData: "settings:toggle:photo_processing"},
 		},
 		{
 			{Text: "⬅️ Назад", CallbackData: "settings:menu:main"},
@@ -530,22 +565,34 @@ func (h *SettingsHandler) searchSetkaGroups(ctx context.Context, query string) (
 	return bff.Data, nil
 }
 
-func (h *SettingsHandler) loadFeatures(chatID int64) map[string]bool {
+func defaultFeatures() map[string]bool {
+	return map[string]bool{
+		"enable_schedule":            true,
+		"enable_summary":             true,
+		"enable_moderation":          true,
+		"enable_captcha":             true,
+		"enable_link_filter":         true,
+		"enable_flood_control":        true,
+		"enable_voice_transcription": true,
+		"enable_photo_processing":    true,
+	}
+}
+
+func (h *SettingsHandler) LoadFeatures(chatID int64) map[string]bool {
 	filePath := fmt.Sprintf("data/groups/%d/features.json", chatID)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return map[string]bool{
-			"enable_schedule":   true,
-			"enable_summary":    true,
-			"enable_moderation": true,
-		}
+		return defaultFeatures()
 	}
 	var features map[string]bool
 	if err := json.Unmarshal(content, &features); err != nil {
-		return map[string]bool{
-			"enable_schedule":   true,
-			"enable_summary":    true,
-			"enable_moderation": true,
+		return defaultFeatures()
+	}
+	// fill defaults for missing features
+	defaults := defaultFeatures()
+	for k, v := range defaults {
+		if _, exists := features[k]; !exists {
+			features[k] = v
 		}
 	}
 	return features

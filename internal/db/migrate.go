@@ -122,6 +122,7 @@ func (d *DB) Migrate() error {
 		`CREATE TABLE IF NOT EXISTS message_buffer (
 			chat_id    INTEGER NOT NULL REFERENCES groups(chat_id) ON DELETE CASCADE,
 			thread_id  INTEGER NOT NULL,
+			message_id INTEGER NOT NULL DEFAULT 0,
 			username   TEXT NOT NULL,
 			text       TEXT NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -136,6 +137,34 @@ func (d *DB) Migrate() error {
 	for _, q := range queries {
 		if _, err := d.Exec(q); err != nil {
 			return fmt.Errorf("migration failed: %w\nQuery: %s", err, q)
+		}
+	}
+
+	// Dynamic migration: Check if message_id exists in message_buffer
+	var hasMessageID bool
+	rows, err := d.Query(`PRAGMA table_info(message_buffer)`)
+	if err != nil {
+		return fmt.Errorf("failed to get table info for message_buffer: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return fmt.Errorf("failed to scan table info for message_buffer: %w", err)
+		}
+		if name == "message_id" {
+			hasMessageID = true
+			break
+		}
+	}
+	if !hasMessageID {
+		slog.Info("migrating message_buffer: adding message_id column")
+		if _, err := d.Exec(`ALTER TABLE message_buffer ADD COLUMN message_id INTEGER NOT NULL DEFAULT 0;`); err != nil {
+			return fmt.Errorf("failed to add message_id to message_buffer: %w", err)
 		}
 	}
 

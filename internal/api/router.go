@@ -23,23 +23,25 @@ type BotSender interface {
 }
 
 type Server struct {
-	App               *fiber.App
-	DB                *sql.DB
-	Persona           *persona.Store
-	Prompts           *llm.PromptRegistry
-	AuthMiddleware    *AuthMiddleware
-	SwaggerEnabled    bool
-	AppEnv            string
-	CORSOrigin        string
-	Chain             *llm.Chain
-	LLMClient         *llm.Client
-	TelegramBot       BotSender
-	TelegramGroupID   int64
-	SkipFallbackModel bool
-	SetkaBaseURL      string
-	SetkaAdminKey     string
-	WebhookSecret     string
-	ListenAddr        string
+	App                      *fiber.App
+	DB                       *sql.DB
+	Persona                  *persona.Store
+	Prompts                  *llm.PromptRegistry
+	AuthMiddleware           *AuthMiddleware
+	SwaggerEnabled           bool
+	AppEnv                   string
+	CORSOrigin               string
+	Chain                    *llm.Chain
+	LLMClient                *llm.Client
+	TelegramBot              BotSender
+	TelegramGroupID          int64
+	SkipFallbackModel        bool
+	SetkaBaseURL             string
+	SetkaAdminKey            string
+	WebhookSecret            string
+	ListenAddr               string
+	GlobalVoiceTranscription bool
+	GlobalPhotoProcessing    bool
 }
 
 func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, auth *AuthMiddleware,
@@ -72,23 +74,25 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 	}
 
 	s := &Server{
-		App:               app,
-		DB:                db,
-		Persona:           persona,
-		Prompts:           prompts,
-		AuthMiddleware:    auth,
-		SwaggerEnabled:    swaggerEnabled,
-		AppEnv:            appEnv,
-		CORSOrigin:        corsOrigin,
-		Chain:             chain,
-		LLMClient:         llmClient,
-		TelegramBot:       tgBot,
-		TelegramGroupID:   tgGroupID,
-		SkipFallbackModel: skipFallbackModel,
-		SetkaBaseURL:      setkaBaseURL,
-		SetkaAdminKey:     setkaAdminKey,
-		WebhookSecret:     webhookSecret,
-		ListenAddr:        listenAddr,
+		App:                      app,
+		DB:                       db,
+		Persona:                  persona,
+		Prompts:                  prompts,
+		AuthMiddleware:           auth,
+		SwaggerEnabled:           swaggerEnabled,
+		AppEnv:                   appEnv,
+		CORSOrigin:               corsOrigin,
+		Chain:                    chain,
+		LLMClient:                llmClient,
+		TelegramBot:              tgBot,
+		TelegramGroupID:          tgGroupID,
+		SkipFallbackModel:        skipFallbackModel,
+		SetkaBaseURL:             setkaBaseURL,
+		SetkaAdminKey:            setkaAdminKey,
+		WebhookSecret:            webhookSecret,
+		ListenAddr:               listenAddr,
+		GlobalVoiceTranscription: true,
+		GlobalPhotoProcessing:    true,
 	}
 
 	startTime := time.Now()

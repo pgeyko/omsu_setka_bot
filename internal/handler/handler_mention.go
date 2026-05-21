@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log/slog"
 
 	"omsu_bot/internal/agent"
@@ -48,17 +47,7 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	// 1. Topic ID Query
-	if h.cmd != nil && h.cmd.IsTopicIDQuery(text) {
-		if msg.MessageThreadID != 0 {
-			h.reply(ctx, b, msg.Chat.ID, msg.MessageThreadID, msg.ID,
-				fmt.Sprintf("🆔 ID этого топика: %d", msg.MessageThreadID))
-		} else {
-			h.reply(ctx, b, msg.Chat.ID, msg.MessageThreadID, msg.ID,
-				"📋 Это общий чат, у него нет ID топика.")
-		}
-		return
-	}
+
 
 	// 2. Run through Agent Orchestrator
 	response, err := h.orchestrator.Run(ctx, msg.Chat.ID, msg.MessageThreadID, text, msg.From.Username)

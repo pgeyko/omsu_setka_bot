@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -100,15 +101,38 @@ var AvailableTools = []llm.Tool{
 			"required": []string{"action", "username"},
 		},
 	},
+	{
+		Name:        "run_protocol",
+		Description: "Запустить предопределенный сценарий (протокол действий) для администрирования или модерации. Доступные протоколы прописаны в protocols.json.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"protocol_name": map[string]interface{}{
+					"type":        "string",
+					"description": "Имя запускаемого протокола (например, 'зачистка', 'зачисти_30')",
+				},
+				"thread_id": map[string]interface{}{
+					"type":        "integer",
+					"description": "ID топика (thread_id) в Telegram, к которому применяется протокол. Для General (основного) топика это 0 или 1.",
+				},
+				"username": map[string]interface{}{
+					"type":        "string",
+					"description": "Имя пользователя Telegram (например, '@username' или 'username'), если протокол требует модерации конкретного пользователя.",
+				},
+			},
+			"required": []string{"protocol_name"},
+		},
+	},
 }
 
 type ToolExecutor struct {
-	db             *sql.DB
-	bot            *tgbot.Bot
-	buffer         *buffer.SummaryBuffer
-	usernameCache  *telegram.UsernameCache
-	setkaBaseURL   string
-	setkaPublicURL string
+	db                  *sql.DB
+	bot                 *tgbot.Bot
+	buffer              *buffer.SummaryBuffer
+	usernameCache       *telegram.UsernameCache
+	setkaBaseURL        string
+	setkaPublicURL      string
+	ProtocolsConfigPath string
 }
 
 func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string) *ToolExecutor {
@@ -133,6 +157,8 @@ func (e *ToolExecutor) Execute(ctx context.Context, chatID int64, name string, a
 		return e.manageTopic(ctx, chatID, arguments)
 	case "moderate_user":
 		return e.moderateUser(ctx, chatID, arguments)
+	case "run_protocol":
+		return e.runProtocol(ctx, chatID, arguments)
 	default:
 		return "", fmt.Errorf("unknown tool name: %s", name)
 	}
@@ -443,4 +469,227 @@ func makeSlug(name string) string {
 	slug = strings.ReplaceAll(slug, "`", "")
 	slug = strings.ReplaceAll(slug, "\"", "")
 	return slug
+}
+
+func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON string) (string, error) {
+	var args struct {
+		ProtocolName string `json:"protocol_name"`
+		ThreadID     int    `json:"thread_id"`
+		Username     string `json:"username"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("failed to parse arguments: %w", err)
+	}
+
+	path := e.ProtocolsConfigPath
+	if path == "" {
+		path = "protocols.json"
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read protocols file: %w", err)
+	}
+
+	var protoConfig struct {
+		Protocols []struct {
+			Name    string `json:"name"`
+			Actions []struct {
+				Type            string `json:"type"`
+				Count           int    `json:"count,omitempty"`
+				Text            string `json:"text,omitempty"`
+				DurationMinutes int    `json:"duration_minutes,omitempty"`
+			} `json:"actions"`
+		} `json:"protocols"`
+	}
+	if err := json.Unmarshal(content, &protoConfig); err != nil {
+		return "", fmt.Errorf("failed to parse protocols config: %w", err)
+	}
+
+	var foundProto *struct {
+		Name    string `json:"name"`
+		Actions []struct {
+			Type            string `json:"type"`
+			Count           int    `json:"count,omitempty"`
+			Text            string `json:"text,omitempty"`
+			DurationMinutes int    `json:"duration_minutes,omitempty"`
+		} `json:"actions"`
+	}
+	for i := range protoConfig.Protocols {
+		if protoConfig.Protocols[i].Name == args.ProtocolName {
+			foundProto = &protoConfig.Protocols[i]
+			break
+		}
+	}
+	if foundProto == nil {
+		return fmt.Sprintf("Протокол '%s' не найден в конфигурации.", args.ProtocolName), nil
+	}
+
+	var logMsg []string
+	for _, action := range foundProto.Actions {
+		switch action.Type {
+		case "delete_messages":
+			rows, err := e.db.QueryContext(ctx, "SELECT message_id FROM message_buffer WHERE chat_id = ? AND thread_id = ? ORDER BY created_at DESC LIMIT ?", chatID, args.ThreadID, action.Count)
+			if err != nil {
+				logMsg = append(logMsg, fmt.Sprintf("Ошибка получения сообщений для удаления: %v", err))
+				continue
+			}
+			var messageIDs []int
+			for rows.Next() {
+				var msgID int
+				if err := rows.Scan(&msgID); err == nil && msgID > 0 {
+					messageIDs = append(messageIDs, msgID)
+				}
+			}
+			rows.Close()
+
+			var deletedCount int
+			for _, msgID := range messageIDs {
+				var err error
+				if e.bot != nil {
+					_, err = e.bot.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+						ChatID:    chatID,
+						MessageID: msgID,
+					})
+				}
+				if err == nil {
+					deletedCount++
+				} else {
+					slog.Error("failed to delete message", "chat_id", chatID, "message_id", msgID, "error", err)
+				}
+			}
+
+			if len(messageIDs) > 0 {
+				query := "DELETE FROM message_buffer WHERE chat_id = ? AND thread_id = ? AND message_id IN ("
+				sqlArgs := []interface{}{chatID, args.ThreadID}
+				for i, id := range messageIDs {
+					if i > 0 {
+						query += ","
+					}
+					query += "?"
+					sqlArgs = append(sqlArgs, id)
+				}
+				query += ")"
+				_, err = e.db.ExecContext(ctx, query, sqlArgs...)
+				if err != nil {
+					slog.Error("failed to delete messages from database", "error", err)
+				}
+				e.buffer.RemoveMessages(chatID, args.ThreadID, messageIDs)
+			}
+			logMsg = append(logMsg, fmt.Sprintf("Удалено сообщений из Telegram и базы данных: %d", deletedCount))
+
+		case "close_topic":
+			var err error
+			if e.bot != nil {
+				_, err = e.bot.CloseForumTopic(ctx, &tgbot.CloseForumTopicParams{
+					ChatID:          chatID,
+					MessageThreadID: args.ThreadID,
+				})
+			}
+			if err != nil {
+				logMsg = append(logMsg, fmt.Sprintf("Ошибка закрытия топика: %v", err))
+			} else {
+				e.db.ExecContext(ctx, "UPDATE topics SET is_active = 0 WHERE group_id = ? AND tg_thread_id = ?", chatID, args.ThreadID)
+				logMsg = append(logMsg, "Топик успешно закрыт.")
+			}
+
+		case "open_topic":
+			var err error
+			if e.bot != nil {
+				_, err = e.bot.ReopenForumTopic(ctx, &tgbot.ReopenForumTopicParams{
+					ChatID:          chatID,
+					MessageThreadID: args.ThreadID,
+				})
+			}
+			if err != nil {
+				logMsg = append(logMsg, fmt.Sprintf("Ошибка открытия топика: %v", err))
+			} else {
+				e.db.ExecContext(ctx, "UPDATE topics SET is_active = 1 WHERE group_id = ? AND tg_thread_id = ?", chatID, args.ThreadID)
+				logMsg = append(logMsg, "Топик успешно открыт.")
+			}
+
+		case "send_message":
+			var err error
+			if e.bot != nil {
+				_, err = e.bot.SendMessage(ctx, &tgbot.SendMessageParams{
+					ChatID:          chatID,
+					MessageThreadID: args.ThreadID,
+					Text:            action.Text,
+					ParseMode:       models.ParseModeHTML,
+				})
+			}
+			if err != nil {
+				logMsg = append(logMsg, fmt.Sprintf("Ошибка отправки сообщения: %v", err))
+			} else {
+				logMsg = append(logMsg, "Сообщение отправлено.")
+			}
+
+		case "mute_user":
+			usernameClean := strings.TrimPrefix(args.Username, "@")
+			if usernameClean == "" {
+				logMsg = append(logMsg, "Ошибка: не указано имя пользователя для мута.")
+				continue
+			}
+			userID, ok := e.usernameCache.Get(usernameClean)
+			if !ok {
+				logMsg = append(logMsg, fmt.Sprintf("Ошибка: пользователь @%s не найден в кэше.", usernameClean))
+				continue
+			}
+			duration := action.DurationMinutes
+			if duration <= 0 {
+				duration = 10
+			}
+			untilDate := time.Now().Add(time.Duration(duration) * time.Minute).Unix()
+			var err error
+			if e.bot != nil {
+				_, err = e.bot.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+					ChatID: chatID,
+					UserID: userID,
+					Permissions: &models.ChatPermissions{
+						CanSendMessages:       false,
+						CanSendAudios:         false,
+						CanSendDocuments:      false,
+						CanSendPhotos:         false,
+						CanSendVideos:         false,
+						CanSendVideoNotes:     false,
+						CanSendVoiceNotes:     false,
+						CanSendPolls:          false,
+						CanSendOtherMessages:  false,
+						CanAddWebPagePreviews: false,
+					},
+					UntilDate: int(untilDate),
+				})
+			}
+			if err != nil {
+				logMsg = append(logMsg, fmt.Sprintf("Ошибка ограничения пользователя @%s: %v", usernameClean, err))
+			} else {
+				logMsg = append(logMsg, fmt.Sprintf("Пользователь @%s замучен на %d минут.", usernameClean, duration))
+			}
+
+		case "ban_user":
+			usernameClean := strings.TrimPrefix(args.Username, "@")
+			if usernameClean == "" {
+				logMsg = append(logMsg, "Ошибка: не указано имя пользователя для бана.")
+				continue
+			}
+			userID, ok := e.usernameCache.Get(usernameClean)
+			if !ok {
+				logMsg = append(logMsg, fmt.Sprintf("Ошибка: пользователь @%s не найден в кэше.", usernameClean))
+				continue
+			}
+			var err error
+			if e.bot != nil {
+				_, err = e.bot.BanChatMember(ctx, &tgbot.BanChatMemberParams{
+					ChatID: chatID,
+					UserID: userID,
+				})
+			}
+			if err != nil {
+				logMsg = append(logMsg, fmt.Sprintf("Ошибка бана пользователя @%s: %v", usernameClean, err))
+			} else {
+				logMsg = append(logMsg, fmt.Sprintf("Пользователь @%s заблокирован.", usernameClean))
+			}
+		}
+	}
+
+	return fmt.Sprintf("Протокол '%s' выполнен. Результаты:\n%s", args.ProtocolName, strings.Join(logMsg, "\n")), nil
 }

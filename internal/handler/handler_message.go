@@ -62,7 +62,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	}
 
 	if h.buffer != nil && text != "" {
-		h.buffer.Push(msg.Chat.ID, msg.MessageThreadID, msg.From.Username, text)
+		h.buffer.Push(msg.Chat.ID, msg.MessageThreadID, msg.ID, msg.From.Username, text)
 	}
 
 	if h.isProcessed(ctx, msg.ID, msg.Chat.ID) {

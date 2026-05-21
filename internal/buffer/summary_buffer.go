@@ -10,6 +10,7 @@ import (
 )
 
 type bufferedMessage struct {
+	MessageID int
 	Username  string
 	Text      string
 	Timestamp time.Time
@@ -37,9 +38,9 @@ func (b *SummaryBuffer) restoreFromDB() {
 		return
 	}
 	rows, err := b.db.Query(`
-		SELECT chat_id, thread_id, username, text, created_at
+		SELECT chat_id, thread_id, message_id, username, text, created_at
 		FROM (
-			SELECT chat_id, thread_id, username, text, created_at,
+			SELECT chat_id, thread_id, message_id, username, text, created_at,
 				ROW_NUMBER() OVER(PARTITION BY chat_id, thread_id ORDER BY created_at DESC) as rn
 			FROM message_buffer
 		)
@@ -57,9 +58,10 @@ func (b *SummaryBuffer) restoreFromDB() {
 	for rows.Next() {
 		var chatID int64
 		var threadID int
+		var messageID int
 		var username, text string
 		var createdAt time.Time
-		if err := rows.Scan(&chatID, &threadID, &username, &text, &createdAt); err == nil {
+		if err := rows.Scan(&chatID, &threadID, &messageID, &username, &text, &createdAt); err == nil {
 			key := fmt.Sprintf("%d:%d", chatID, threadID)
 			rb, ok := b.topics[key]
 			if !ok {
@@ -67,6 +69,7 @@ func (b *SummaryBuffer) restoreFromDB() {
 				b.topics[key] = rb
 			}
 			rb.push(bufferedMessage{
+				MessageID: messageID,
 				Username:  username,
 				Text:      text,
 				Timestamp: createdAt,
@@ -75,7 +78,7 @@ func (b *SummaryBuffer) restoreFromDB() {
 	}
 }
 
-func (b *SummaryBuffer) Push(chatID int64, threadID int, username, text string) {
+func (b *SummaryBuffer) Push(chatID int64, threadID int, messageID int, username, text string) {
 	if text == "" {
 		return
 	}
@@ -89,6 +92,7 @@ func (b *SummaryBuffer) Push(chatID int64, threadID int, username, text string) 
 		b.topics[key] = rb
 	}
 	msg := bufferedMessage{
+		MessageID: messageID,
 		Username:  username,
 		Text:      text,
 		Timestamp: time.Now(),
@@ -98,9 +102,9 @@ func (b *SummaryBuffer) Push(chatID int64, threadID int, username, text string) 
 	if b.db != nil {
 		go func() {
 			_, err := b.db.Exec(`
-				INSERT INTO message_buffer (chat_id, thread_id, username, text, created_at)
-				VALUES (?, ?, ?, ?, ?)`,
-				chatID, threadID, msg.Username, msg.Text, msg.Timestamp,
+				INSERT INTO message_buffer (chat_id, thread_id, message_id, username, text, created_at)
+				VALUES (?, ?, ?, ?, ?, ?)`,
+				chatID, threadID, msg.MessageID, msg.Username, msg.Text, msg.Timestamp,
 			)
 			if err != nil {
 				slog.Error("failed to save message to buffer db", "error", err)
@@ -133,6 +137,51 @@ func (b *SummaryBuffer) GetMessages(chatID int64, threadID int) string {
 		))
 	}
 	return sb.String()
+}
+
+func (b *SummaryBuffer) RemoveMessages(chatID int64, threadID int, messageIDs []int) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	key := fmt.Sprintf("%d:%d", chatID, threadID)
+	rb, ok := b.topics[key]
+	if !ok {
+		return
+	}
+
+	rb.mu.Lock()
+	defer rb.mu.Unlock()
+
+	// Get all current messages
+	var current []bufferedMessage
+	if !rb.full {
+		current = rb.buf[:rb.pos]
+	} else {
+		current = make([]bufferedMessage, len(rb.buf))
+		copy(current, rb.buf[rb.pos:])
+		copy(current[len(rb.buf)-rb.pos:], rb.buf[:rb.pos])
+	}
+
+	// Filter out the deleted message IDs
+	toDelete := make(map[int]bool)
+	for _, id := range messageIDs {
+		toDelete[id] = true
+	}
+
+	var filtered []bufferedMessage
+	for _, msg := range current {
+		if !toDelete[msg.MessageID] {
+			filtered = append(filtered, msg)
+		}
+	}
+
+	// Rebuild the ring buffer with filtered messages
+	newRb := newRingBuffer(b.capacity)
+	for _, msg := range filtered {
+		newRb.push(msg)
+	}
+
+	b.topics[key] = newRb
 }
 
 type ringBuffer struct {

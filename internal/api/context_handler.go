@@ -176,6 +176,19 @@ func (s *Server) handleUploadFeatures(c *fiber.Ctx) error {
 	return respondSuccess(c, fiber.Map{"status": "ok", "file": "features.json"})
 }
 
+func defaultFeatures() map[string]bool {
+	return map[string]bool{
+		"enable_schedule":            true,
+		"enable_summary":             true,
+		"enable_moderation":          true,
+		"enable_captcha":             true,
+		"enable_link_filter":         true,
+		"enable_flood_control":        true,
+		"enable_voice_transcription": true,
+		"enable_photo_processing":    true,
+	}
+}
+
 func (s *Server) handleGetGroupFeatures(c *fiber.Ctx) error {
 	chatIDStr := c.Params("chat_id")
 	chatID, err := strconv.ParseInt(chatIDStr, 10, 64)
@@ -187,7 +200,7 @@ func (s *Server) handleGetGroupFeatures(c *fiber.Ctx) error {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return respondSuccess(c, fiber.Map{"features": fiber.Map{}})
+			return respondSuccess(c, fiber.Map{"features": defaultFeatures()})
 		}
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to read file")
 	}
@@ -195,6 +208,14 @@ func (s *Server) handleGetGroupFeatures(c *fiber.Ctx) error {
 	var features map[string]bool
 	if err := json.Unmarshal(content, &features); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to parse features")
+	}
+
+	// fill defaults for missing features
+	defaults := defaultFeatures()
+	for k, v := range defaults {
+		if _, exists := features[k]; !exists {
+			features[k] = v
+		}
 	}
 
 	return respondSuccess(c, fiber.Map{"features": features})
