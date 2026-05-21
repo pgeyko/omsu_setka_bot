@@ -168,6 +168,16 @@
 - [ ] Smoke-тест: обновить persona через API (ручной)
 - [ ] Git tag `v1.0.0` (по готовности)
 
+## Этап 8 — Мультиарендность, Управление Контекстом и Агентный подход ✅ Completed: 2026-05-21
+
+- [x] Миграция SQLite на поддержку многих групп (groups, superadmins)
+- [x] Реализация загрузки контекстов (persona.md, system_prompt.txt, knowledge_base.txt, features.json) через API
+- [x] Разработка ИИ-агента (Agent Loop / Orchestrator) с поддержкой динамических инструментов (Tools)
+- [x] Интеграция UsernameCache в обработку сообщений
+- [x] Реализация Antispam-компонента (Flood Control, Link Filter, Captcha с inline кнопками)
+- [x] Расширение client.go и создание MediaProcessor для обработки Vision OCR и Voice STT в Gemini
+- [x] Сборка и интеграция в main.go, успешный запуск тестов
+
 ---
 
 ## Легенда
