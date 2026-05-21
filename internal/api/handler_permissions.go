@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strconv"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -14,12 +16,20 @@ type updatePermissionRequest struct {
 }
 
 func (s *Server) handleGetPermissions(c *fiber.Ctx) error {
+	groupIDStr := c.Query("group_id")
+	var groupID int64
+	if groupIDStr != "" {
+		groupID, _ = strconv.ParseInt(groupIDStr, 10, 64)
+	} else {
+		groupID = s.TelegramGroupID
+	}
+
 	s.DB.ExecContext(c.Context(),
-		`INSERT OR IGNORE INTO command_permissions (command, allowed_role) VALUES (?, ?)`,
-		"forward", "everyone")
+		`INSERT OR IGNORE INTO command_permissions (group_id, command, allowed_role) VALUES (?, ?, ?)`,
+		groupID, "forward", "everyone")
 
 	rows, err := s.DB.QueryContext(c.Context(),
-		`SELECT command, allowed_role FROM command_permissions ORDER BY command`)
+		`SELECT command, allowed_role FROM command_permissions WHERE group_id = ? ORDER BY command`, groupID)
 	if err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to query permissions")
 	}
@@ -43,6 +53,14 @@ func (s *Server) handleUpdatePermission(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "command is required")
 	}
 
+	groupIDStr := c.Query("group_id")
+	var groupID int64
+	if groupIDStr != "" {
+		groupID, _ = strconv.ParseInt(groupIDStr, 10, 64)
+	} else {
+		groupID = s.TelegramGroupID
+	}
+
 	var req updatePermissionRequest
 	if err := c.BodyParser(&req); err != nil {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid request body")
@@ -53,10 +71,10 @@ func (s *Server) handleUpdatePermission(c *fiber.Ctx) error {
 	}
 
 	_, err := s.DB.ExecContext(c.Context(),
-		`INSERT INTO command_permissions (command, allowed_role)
-		 VALUES (?, ?)
-		 ON CONFLICT(command) DO UPDATE SET allowed_role = excluded.allowed_role`,
-		command, req.AllowedRole)
+		`INSERT INTO command_permissions (group_id, command, allowed_role)
+		 VALUES (?, ?, ?)
+		 ON CONFLICT(group_id, command) DO UPDATE SET allowed_role = excluded.allowed_role`,
+		groupID, command, req.AllowedRole)
 	if err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to update permission")
 	}

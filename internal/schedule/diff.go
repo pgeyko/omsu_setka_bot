@@ -36,13 +36,13 @@ const (
 )
 
 type Anomaly struct {
-	Type      AnomalyType `json:"type"`
-	Field     string      `json:"field"`
-	Date      string      `json:"date"`
-	Pair      int         `json:"pair"`
-	Old       string      `json:"old"`
-	New       string      `json:"new"`
-	Subject   string      `json:"subject"`
+	Type    AnomalyType `json:"type"`
+	Field   string      `json:"field"`
+	Date    string      `json:"date"`
+	Pair    int         `json:"pair"`
+	Old     string      `json:"old"`
+	New     string      `json:"new"`
+	Subject string      `json:"subject"`
 }
 
 type Snapshot struct {

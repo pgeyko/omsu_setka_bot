@@ -1,0 +1,25 @@
+{
+  "protocols": [
+    {
+      "name": "зачистка",
+      "actions": [
+        {
+          "type": "delete_messages",
+          "count": 100
+        },
+        {
+          "type": "close_topic"
+        }
+      ]
+    },
+    {
+      "name": "зачисти_30",
+      "actions": [
+        {
+          "type": "delete_messages",
+          "count": 30
+        }
+      ]
+    }
+  ]
+}

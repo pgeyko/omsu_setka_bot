@@ -5,58 +5,41 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 	"sync"
-	"time"
 )
 
 type Persona struct {
-	Name         string `json:"name"`
-	SystemPrompt string `json:"system_prompt"`
-	Signature    string `json:"signature"`
+	Name         string   `json:"name"`
+	SystemPrompt string   `json:"system_prompt"`
+	Signature    string   `json:"signature"`
+	Aliases      []string `json:"aliases"`
 }
 
 type Store struct {
 	mu      sync.RWMutex
 	current Persona
-	db      *sql.DB
 }
 
 func NewStore(db *sql.DB) *Store {
-	return &Store{db: db}
+	return &Store{}
 }
 
 func (s *Store) Load(ctx context.Context, seedPath string) error {
-	var p Persona
-	err := s.db.QueryRowContext(ctx,
-		`SELECT name, system_prompt, signature FROM bot_persona WHERE id = 1`,
-	).Scan(&p.Name, &p.SystemPrompt, &p.Signature)
-
-	if err == sql.ErrNoRows {
-		slog.Info("bot_persona table empty, loading from seed file", "path", seedPath)
-		seed, err := ParseSeedFile(seedPath)
-		if err != nil {
-			return fmt.Errorf("failed to parse seed file: %w", err)
-		}
-
-		if _, err := s.db.ExecContext(ctx,
-			`INSERT INTO bot_persona (id, name, system_prompt, signature, updated_at)
-			 VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP)`,
-			seed.Name, seed.SystemPrompt, seed.Signature,
-		); err != nil {
-			return fmt.Errorf("failed to seed bot_persona: %w", err)
-		}
-
-		p = seed
-		slog.Info("seeded bot_persona from file", "name", p.Name)
-	} else if err != nil {
-		return fmt.Errorf("failed to load bot_persona: %w", err)
+	if seedPath == "" {
+		seedPath = "persona.md"
+	}
+	seed, err := ParseSeedFile(seedPath)
+	if err != nil {
+		return fmt.Errorf("failed to parse seed file: %w", err)
 	}
 
 	s.mu.Lock()
-	s.current = p
+	s.current = seed
 	s.mu.Unlock()
 
-	slog.Info("bot_persona loaded", "name", p.Name)
+	slog.Info("bot_persona loaded from file", "name", s.current.Name, "path", seedPath)
 	return nil
 }
 
@@ -79,38 +62,77 @@ func (s *Store) Name() string {
 }
 
 func (s *Store) Update(ctx context.Context, p Persona) error {
-	now := time.Now()
-	result, err := s.db.ExecContext(ctx,
-		`UPDATE bot_persona SET name = ?, system_prompt = ?, signature = ?, updated_at = ? WHERE id = 1`,
-		p.Name, p.SystemPrompt, p.Signature, now,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update bot_persona: %w", err)
-	}
-
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		return fmt.Errorf("bot_persona record not found")
-	}
-
 	s.mu.Lock()
 	s.current = p
 	s.mu.Unlock()
 
-	slog.Info("bot_persona updated", "name", p.Name)
+	slog.Info("bot_persona updated in memory", "name", p.Name)
 	return nil
 }
 
 func (s *Store) Reset(ctx context.Context, seedPath string) error {
+	if seedPath == "" {
+		seedPath = "persona.md"
+	}
 	seed, err := ParseSeedFile(seedPath)
 	if err != nil {
 		return fmt.Errorf("failed to parse seed file: %w", err)
 	}
 
-	if err := s.Update(ctx, seed); err != nil {
-		return fmt.Errorf("failed to reset bot_persona: %w", err)
+	s.mu.Lock()
+	s.current = seed
+	s.mu.Unlock()
+
+	slog.Info("bot_persona reset to seed values from file")
+	return nil
+}
+
+// GetGroupPersona returns a group-specific persona, falling back to defaultPersona if not found or fields are empty.
+func GetGroupPersona(chatID int64, defaultPersona Persona) Persona {
+	if chatID == 0 {
+		return defaultPersona
+	}
+	filePath := fmt.Sprintf("data/groups/%d/persona.md", chatID)
+	p, err := ParseSeedFile(filePath)
+	if err != nil {
+		return defaultPersona
+	}
+	if p.Name == "" {
+		p.Name = defaultPersona.Name
+	}
+	if p.SystemPrompt == "" {
+		p.SystemPrompt = defaultPersona.SystemPrompt
+	}
+	if p.Signature == "" {
+		p.Signature = defaultPersona.Signature
+	}
+	if len(p.Aliases) == 0 {
+		p.Aliases = defaultPersona.Aliases
+	}
+	return p
+}
+
+// GetGroupSystemPrompt returns the resolved system prompt and persona for a group.
+func GetGroupSystemPrompt(chatID int64, defaultPersona Persona) (string, Persona) {
+	p := GetGroupPersona(chatID, defaultPersona)
+	if chatID == 0 {
+		return p.SystemPrompt, p
 	}
 
-	slog.Info("bot_persona reset to seed values")
-	return nil
+	spPath := fmt.Sprintf("data/groups/%d/system_prompt.txt", chatID)
+	if spBytes, err := os.ReadFile(spPath); err == nil {
+		p.SystemPrompt = string(spBytes)
+	}
+
+	systemPrompt := p.SystemPrompt
+
+	kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
+	if kbBytes, err := os.ReadFile(kbPath); err == nil {
+		kbStr := string(kbBytes)
+		if strings.TrimSpace(kbStr) != "" {
+			systemPrompt += "\n\n=== ГРУППОВАЯ БАЗА ЗНАНИЙ ===\n" + kbStr
+		}
+	}
+
+	return systemPrompt, p
 }

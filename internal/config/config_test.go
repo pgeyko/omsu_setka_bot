@@ -7,8 +7,8 @@ import (
 func TestConfigDefaults(t *testing.T) {
 	cfg := &Config{
 		LLM: llmConfig{
-			DailyTokenLimit:     100000,
-			RequestTimeoutSec:   10,
+			DailyTokenLimit:   100000,
+			RequestTimeoutSec: 10,
 		},
 		API: apiConfig{
 			Listen: ":8081",

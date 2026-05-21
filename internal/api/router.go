@@ -23,25 +23,32 @@ type BotSender interface {
 }
 
 type Server struct {
-	App              *fiber.App
-	DB               *sql.DB
-	Persona          *persona.Store
-	Prompts          *llm.PromptRegistry
-	AuthMiddleware   *AuthMiddleware
-	SwaggerEnabled   bool
-	AppEnv           string
-	CORSOrigin       string
-	Chain            *llm.Chain
-	LLMClient        *llm.Client
-	TelegramBot      BotSender
-	TelegramGroupID  int64
-	SkipFallbackModel bool
+	App                      *fiber.App
+	DB                       *sql.DB
+	Persona                  *persona.Store
+	Prompts                  *llm.PromptRegistry
+	AuthMiddleware           *AuthMiddleware
+	SwaggerEnabled           bool
+	AppEnv                   string
+	CORSOrigin               string
+	Chain                    *llm.Chain
+	LLMClient                *llm.Client
+	TelegramBot              BotSender
+	TelegramGroupID          int64
+	SkipFallbackModel        bool
+	SetkaBaseURL             string
+	SetkaAdminKey            string
+	WebhookSecret            string
+	ListenAddr               string
+	GlobalVoiceTranscription bool
+	GlobalPhotoProcessing    bool
 }
 
 func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, auth *AuthMiddleware,
 	swaggerEnabled bool, appEnv string, corsOrigin string, chain *llm.Chain, llmClient *llm.Client,
 	tgBot BotSender, tgGroupID int64, skipFallbackModel bool,
-	rateLimitGeneral, rateLimitSearch, rateLimitWindowSec int) *Server {
+	rateLimitGeneral, rateLimitSearch, rateLimitWindowSec int,
+	setkaBaseURL, setkaAdminKey, webhookSecret, listenAddr string) *Server {
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -67,19 +74,25 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 	}
 
 	s := &Server{
-		App:               app,
-		DB:                db,
-		Persona:           persona,
-		Prompts:           prompts,
-		AuthMiddleware:    auth,
-		SwaggerEnabled:    swaggerEnabled,
-		AppEnv:            appEnv,
-		CORSOrigin:        corsOrigin,
-		Chain:             chain,
-		LLMClient:         llmClient,
-		TelegramBot:       tgBot,
-		TelegramGroupID:   tgGroupID,
-		SkipFallbackModel: skipFallbackModel,
+		App:                      app,
+		DB:                       db,
+		Persona:                  persona,
+		Prompts:                  prompts,
+		AuthMiddleware:           auth,
+		SwaggerEnabled:           swaggerEnabled,
+		AppEnv:                   appEnv,
+		CORSOrigin:               corsOrigin,
+		Chain:                    chain,
+		LLMClient:                llmClient,
+		TelegramBot:              tgBot,
+		TelegramGroupID:          tgGroupID,
+		SkipFallbackModel:        skipFallbackModel,
+		SetkaBaseURL:             setkaBaseURL,
+		SetkaAdminKey:            setkaAdminKey,
+		WebhookSecret:            webhookSecret,
+		ListenAddr:               listenAddr,
+		GlobalVoiceTranscription: true,
+		GlobalPhotoProcessing:    true,
 	}
 
 	startTime := time.Now()
@@ -144,6 +157,28 @@ func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowS
 	api.Get("/persona", s.handleGetPersona)
 	api.Put("/persona", s.handleUpdatePersona)
 	api.Post("/persona/reset", s.handleResetPersona)
+
+	// Group CRUD and Context Routes
+	api.Get("/groups", s.handleListGroups)
+	api.Post("/groups", s.handleCreateGroup)
+	api.Get("/groups/:chat_id", s.handleGetGroup)
+	api.Put("/groups/:chat_id", s.handleUpdateGroup)
+	api.Delete("/groups/:chat_id", s.handleDeleteGroup)
+
+	// Superadmin Routes
+	api.Get("/admin/superadmins", s.handleListSuperadmins)
+	api.Post("/admin/superadmins", s.handleAddSuperadmin)
+	api.Delete("/admin/superadmins/:user_id", s.handleRemoveSuperadmin)
+	api.Post("/admin/groups/register-webhooks", s.handleRegisterWebhooks)
+
+	api.Get("/groups/:chat_id/context/persona", s.handleGetGroupPersona)
+	api.Put("/groups/:chat_id/context/persona", s.handleUploadPersona)
+	api.Get("/groups/:chat_id/context/system-prompt", s.handleGetGroupSystemPrompt)
+	api.Put("/groups/:chat_id/context/system-prompt", s.handleUploadSystemPrompt)
+	api.Get("/groups/:chat_id/context/knowledge", s.handleGetGroupKnowledge)
+	api.Put("/groups/:chat_id/context/knowledge", s.handleUploadKnowledge)
+	api.Get("/groups/:chat_id/context/features", s.handleGetGroupFeatures)
+	api.Put("/groups/:chat_id/context/features", s.handleUploadFeatures)
 
 	api.Get("/topics", s.handleGetTopics)
 	api.Post("/topics", s.handleCreateTopic)

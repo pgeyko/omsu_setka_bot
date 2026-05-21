@@ -1,12 +1,13 @@
 import { useState, useMemo } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { Bot, MessageSquare, Shield, FileText, BarChart3, Calendar, Activity, LogOut, Menu, Sun, Moon, X } from 'lucide-react'
+import { Bot, MessageSquare, Shield, FileText, BarChart3, Calendar, Activity, LogOut, Menu, Sun, Moon, X, Users } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import ErrorBoundary from './ErrorBoundary'
 import Toast from './Toast'
 
 const nav = [
   { to: '/', icon: Bot, label: 'Личность' },
+  { to: '/groups', icon: Users, label: 'Группы' },
   { to: '/topics', icon: MessageSquare, label: 'Топики' },
   { to: '/permissions', icon: Shield, label: 'Действия' },
   { to: '/prompts', icon: FileText, label: 'Промпты' },
@@ -65,6 +66,7 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
 
 const titleMap: Record<string, string> = {
   '/': 'Личность',
+  '/groups': 'Группы',
   '/topics': 'Топики',
   '/permissions': 'Действия',
   '/prompts': 'Промпты',

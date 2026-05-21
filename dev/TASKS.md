@@ -54,7 +54,7 @@
 
 ---
 
-## Этап 2 — Пересылка сообщений
+## Этап 2 — Пересылка сообщений ✅ Completed: 2026-05-22
 
 > Skills: `golang-pro`, `api-endpoint-builder`, `lint-and-validate`
 
@@ -62,8 +62,8 @@
 - [x] Предфильтр: длина ≥ 15 слов ИЛИ есть вложение
 - [x] Дедупликация через `processed_messages` (проверка до LLM-вызова)
 - [x] `internal/classifier/classifier.go` — LLM классификация текста
-- [ ] Vision: resize фото до 512px → Gemini vision (если провайдер multimodal) — TODO
-- [ ] Fallback без vision если провайдер не multimodal — TODO
+- [x] Vision: resize фото до 512px → Gemini vision (если провайдер multimodal) — `resizeIfNeeded()` + `HasMultimodalProvider()`
+- [x] Fallback без vision если провайдер не multimodal — возвращаем `("", nil)`, caller продолжает как text-only
 - [x] Кэш классификации по `file_id` (повторное фото не отправлять в LLM)
 - [x] Circuit breaker: 3 ошибки подряд → disabled 5 мин (в `llm/provider.go`)
 - [x] `internal/forwarder/forwarder.go` — `copyMessage` + шапка с `persona.name`
@@ -166,7 +166,42 @@
 - [x] `README.md` — инструкция по деплою для новой группы
 - [ ] Smoke-тест: проверить webhook end-to-end с omsu_mirror (ручной)
 - [ ] Smoke-тест: обновить persona через API (ручной)
-- [ ] Git tag `v1.0.0` (по готовности)
+- [x] Git tag `v1.0.0` (по готовности)
+
+## Этап 8 — Мультиарендность, Управление Контекстом и Агентный подход ✅ Completed: 2026-05-21
+
+- [x] Миграция SQLite на поддержку многих групп (groups, superadmins)
+- [x] Реализация загрузки контекстов (persona.md, system_prompt.txt, knowledge_base.txt, features.json) через API
+- [x] Разработка ИИ-агента (Agent Loop / Orchestrator) с поддержкой динамических инструментов (Tools)
+- [x] Интеграция UsernameCache в обработку сообщений
+- [x] Реализация Antispam-компонента (Flood Control, Link Filter, Captcha с inline кнопками)
+- [x] Расширение client.go и создание MediaProcessor для обработки Vision OCR и Voice STT в Gemini
+- [x] Сборка и интеграция в main.go, успешный запуск тестов
+
+---
+
+## Этап 9 — Интерактивная админка в Telegram, API суперадмина и группы без топиков ✅ Completed: 2026-05-21
+
+- [x] Создание state-менеджера SessionStore для обработки пошагового ввода администратора
+- [x] Реализация в-боте хендлера команды `/settings` и CallbackQuery переходов меню настроек
+- [x] Разработка логики пошагового ввода настроек: сохранение KB, личности, промпта
+- [x] Интеграция API поиска Setka: запрос, вывод списка кнопок, сохранение `omsu_group_id`
+- [x] Добавление REST API эндпоинтов для суперадминов и синхронизации вебхуков
+- [x] Оптимизация работы в группах без топиков: детекция и обход классификации
+- [x] Проверка и финальное тестирование (юнит-тесты и ручная валидация)
+
+---
+
+## Этап 10 — Локальная модерация по группам, REST API и Swagger ✅
+✅ Completed: 2026-05-22
+
+- [x] Создать и настроить defaultFeatures() хелпер в Go-бэкенде
+- [x] Добавить кнопки управления локальной модерацией в меню настроек Telegram
+- [x] Refactor antispam.go для применения per-group toggles
+- [x] Обновить featuresForm в React Admin UI
+- [x] Отрендерить красивое разделение на "Основные модули" и "Локальная модерация" в админ панели
+- [x] Добавить swagger stubs для всех эндпоинтов в swagger_docs.go
+- [x] Сгенерировать Swagger спецификации и проверить тесты
 
 ---
 
@@ -178,3 +213,4 @@
 [x]  выполнено
 [!]  заблокировано
 ```
+

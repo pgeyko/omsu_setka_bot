@@ -21,7 +21,7 @@ type mockTopicsProvider struct {
 	topics []TopicInfo
 }
 
-func (m *mockTopicsProvider) GetTopics(ctx context.Context) ([]TopicInfo, error) {
+func (m *mockTopicsProvider) GetTopics(ctx context.Context, chatID int64) ([]TopicInfo, error) {
 	return m.topics, nil
 }
 

@@ -7,7 +7,7 @@ import (
 
 func TestProvider_HasCapability(t *testing.T) {
 	p := &Provider{
-		Name: "test",
+		Name:         "test",
 		Capabilities: []Capability{CapabilityMultimodal},
 	}
 

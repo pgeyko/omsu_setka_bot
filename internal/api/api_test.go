@@ -26,21 +26,33 @@ func setupTestServer(t *testing.T) *Server {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
+	_, err = database.Exec(`INSERT INTO groups (chat_id, title, api_token) VALUES (0, 'Test Group', 'test-api-token')`)
+	if err != nil {
+		t.Fatalf("failed to seed test group: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	personaPath := tmpDir + "/persona.md"
+	err = os.WriteFile(personaPath, []byte("# name\nTestBot\n# system_prompt\nYou are a test bot\n# signature\n"), 0644)
+	if err != nil {
+		t.Fatalf("failed to write mock persona.md: %v", err)
+	}
+
 	personaStore := persona.NewStore(database.DB)
-	database.DB.Exec(`INSERT INTO bot_persona (id, name, system_prompt, signature, updated_at)
-		VALUES (1, 'TestBot', 'You are a test bot', '', CURRENT_TIMESTAMP)`)
-	personaStore.Load(context.Background(), "")
+	if err := personaStore.Load(context.Background(), personaPath); err != nil {
+		t.Fatalf("failed to load mock persona: %v", err)
+	}
 
 	auth := NewAuthMiddleware("test-admin-secret", "test-jwt-secret")
 
-	tmpDir := t.TempDir()
-	os.WriteFile(tmpDir+"/classify.txt", []byte("test prompt"), 0644)
-	prompts, err := llm.NewPromptRegistry(tmpDir)
+	promptsDir := t.TempDir()
+	os.WriteFile(promptsDir+"/classify.txt", []byte("test prompt"), 0644)
+	prompts, err := llm.NewPromptRegistry(promptsDir)
 	if err != nil {
 		t.Fatalf("failed to create prompts: %v", err)
 	}
 
-	s := NewServer(database.DB, personaStore, prompts, auth, false, "test", "*", nil, nil, nil, 0, false, 9999, 9999, 60)
+	s := NewServer(database.DB, personaStore, prompts, auth, false, "test", "*", nil, nil, nil, 0, false, 9999, 9999, 60, "http://localhost:8080", "test-setka-key", "test-webhook-secret", ":8081")
 	return s
 }
 
@@ -237,5 +249,65 @@ func TestScheduleEndpoints(t *testing.T) {
 	resp = performRequest(s, "GET", "/api/schedule/anomalies", "", token)
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("anomalies expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestSuperadminEndpoints(t *testing.T) {
+	s := setupTestServer(t)
+	token := getAuthToken(s)
+
+	// List initially empty
+	resp := performRequest(s, "GET", "/api/admin/superadmins", "", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	var body map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body)
+	data, ok := body["data"].([]interface{})
+	if !ok || len(data) != 0 {
+		t.Errorf("expected empty list of superadmins, got %+v", body["data"])
+	}
+
+	// Add superadmin
+	resp = performRequest(s, "POST", "/api/admin/superadmins", `{"user_id": 99999, "note": "API test superadmin"}`, token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// List again
+	resp = performRequest(s, "GET", "/api/admin/superadmins", "", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+	var body2 map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body2)
+	data2, ok := body2["data"].([]interface{})
+	if !ok || len(data2) != 1 {
+		t.Errorf("expected 1 superadmin, got %+v", body2["data"])
+	}
+	item := data2[0].(map[string]interface{})
+	if int64(item["user_id"].(float64)) != 99999 {
+		t.Errorf("expected user_id 99999, got %v", item["user_id"])
+	}
+
+	// Delete superadmin
+	resp = performRequest(s, "DELETE", "/api/admin/superadmins/99999", "", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
+	}
+
+	// List again to verify deletion
+	resp = performRequest(s, "GET", "/api/admin/superadmins", "", token)
+	var body3 map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&body3)
+	data3 := body3["data"].([]interface{})
+	if len(data3) != 0 {
+		t.Errorf("expected empty list of superadmins, got %d", len(data3))
+	}
+
+	// Test register webhooks with no active groups
+	resp = performRequest(s, "POST", "/api/admin/groups/register-webhooks", "", token)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200, got %d", resp.StatusCode)
 	}
 }

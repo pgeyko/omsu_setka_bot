@@ -16,7 +16,7 @@ type ClassifyResult struct {
 }
 
 type TopicsProvider interface {
-	GetTopics(ctx context.Context) ([]TopicInfo, error)
+	GetTopics(ctx context.Context, chatID int64) ([]TopicInfo, error)
 }
 
 type TopicInfo struct {
@@ -30,20 +30,20 @@ type Classifier struct {
 	prompts   *llm.PromptRegistry
 	topics    TopicsProvider
 
-	mu           sync.RWMutex
-	visionCache  map[string]ClassifyResult
+	mu          sync.RWMutex
+	visionCache map[string]ClassifyResult
 }
 
 func New(llmClient *llm.Client, prompts *llm.PromptRegistry, topics TopicsProvider) *Classifier {
 	return &Classifier{
-		llmClient:  llmClient,
-		prompts:    prompts,
-		topics:     topics,
+		llmClient:   llmClient,
+		prompts:     prompts,
+		topics:      topics,
 		visionCache: make(map[string]ClassifyResult),
 	}
 }
 
-func (c *Classifier) ClassifyMessage(ctx context.Context, text string, fileID string) (*ClassifyResult, error) {
+func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text string, fileID string) (*ClassifyResult, error) {
 	if fileID != "" {
 		c.mu.RLock()
 		if result, ok := c.visionCache[fileID]; ok {
@@ -59,7 +59,7 @@ func (c *Classifier) ClassifyMessage(ctx context.Context, text string, fileID st
 
 	prompt := c.prompts.Get("classify")
 
-	topicList, err := c.topics.GetTopics(ctx)
+	topicList, err := c.topics.GetTopics(ctx, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get topics: %w", err)
 	}

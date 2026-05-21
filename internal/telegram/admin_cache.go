@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -17,33 +18,39 @@ type adminCacheEntry struct {
 
 type AdminCache struct {
 	bot     *tgbot.Bot
-	groupID int64
-	cache   map[int64]adminCacheEntry
+	cache   map[string]adminCacheEntry // Key format: "chatID:userID"
 	mu      sync.RWMutex
 }
 
 func NewAdminCache(bot *tgbot.Bot, groupID int64) *AdminCache {
 	return &AdminCache{
-		bot:     bot,
-		groupID: groupID,
-		cache:   make(map[int64]adminCacheEntry),
+		bot:   bot,
+		cache: make(map[string]adminCacheEntry),
 	}
 }
 
-func (ac *AdminCache) IsAdmin(ctx context.Context, userID int64) bool {
+func (ac *AdminCache) IsAdmin(ctx context.Context, chatID int64, userID int64) bool {
+	if chatID == 0 {
+		return false
+	}
+	key := fmt.Sprintf("%d:%d", chatID, userID)
 	ac.mu.RLock()
-	entry, ok := ac.cache[userID]
+	entry, ok := ac.cache[key]
 	ac.mu.RUnlock()
 
 	if ok && time.Since(entry.checkedAt) < 10*time.Minute {
 		return entry.isAdmin
 	}
 
+	if ac.bot == nil {
+		return false
+	}
+
 	members, err := ac.bot.GetChatAdministrators(ctx, &tgbot.GetChatAdministratorsParams{
-		ChatID: ac.groupID,
+		ChatID: chatID,
 	})
 	if err != nil {
-		slog.Error("failed to get admins", "error", err)
+		slog.Error("failed to get admins", "error", err, "chat_id", chatID)
 		return false
 	}
 
@@ -60,15 +67,16 @@ func (ac *AdminCache) IsAdmin(ctx context.Context, userID int64) bool {
 
 	ac.mu.Lock()
 	// Clean up old entries
-	for uid, e := range ac.cache {
+	for k, e := range ac.cache {
 		if time.Since(e.checkedAt) > 10*time.Minute {
-			delete(ac.cache, uid)
+			delete(ac.cache, k)
 		}
 	}
 
 	// Cache true for all current admins
 	for uid := range adminIDs {
-		ac.cache[uid] = adminCacheEntry{
+		k := fmt.Sprintf("%d:%d", chatID, uid)
+		ac.cache[k] = adminCacheEntry{
 			isAdmin:   true,
 			checkedAt: time.Now(),
 		}
@@ -76,7 +84,7 @@ func (ac *AdminCache) IsAdmin(ctx context.Context, userID int64) bool {
 
 	// Cache false for this user if they are not admin
 	if !isAdmin {
-		ac.cache[userID] = adminCacheEntry{
+		ac.cache[key] = adminCacheEntry{
 			isAdmin:   false,
 			checkedAt: time.Now(),
 		}

@@ -23,21 +23,25 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf16"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/gofiber/fiber/v2"
 
+	"omsu_bot/internal/agent"
 	"omsu_bot/internal/api"
+	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/classifier"
 	"omsu_bot/internal/config"
 	"omsu_bot/internal/db"
 	"omsu_bot/internal/forwarder"
 	handlers "omsu_bot/internal/handler"
 	"omsu_bot/internal/llm"
-	"omsu_bot/internal/telegram"
+	"omsu_bot/internal/media"
 	"omsu_bot/internal/persona"
 	"omsu_bot/internal/schedule"
+	"omsu_bot/internal/telegram"
 )
 
 type telegramPoster struct {
@@ -95,11 +99,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	cmdReg, err := handlers.LoadCommands("commands.json")
-	if err != nil {
-		slog.Warn("failed to load commands.json, using defaults", "error", err)
-		cmdReg = &handlers.CommandRegistry{}
-	}
+	cmdReg := handlers.NewCommandRegistry()
 
 	var providers []*llm.Provider
 	for _, pcfg := range cfg.LLM.Providers {
@@ -169,7 +169,27 @@ func main() {
 	}
 
 	authMw := api.NewAuthMiddleware(cfg.API.AdminSecret, cfg.API.JWTSecret)
-	apiServer := api.NewServer(database.DB, personaStore, prompts, authMw, cfg.SwaggerEnabled, cfg.AppEnv, cfg.API.CORSOrigin, llmChain, llmClient, botSender, cfg.Telegram.GroupID, cfg.LLM.SkipFallbackModel, cfg.RateLimit.APIGeneral, cfg.RateLimit.APISearch, cfg.RateLimit.APIWindow)
+	apiServer := api.NewServer(
+		database.DB,
+		personaStore,
+		prompts,
+		authMw,
+		cfg.SwaggerEnabled,
+		cfg.AppEnv,
+		cfg.API.CORSOrigin,
+		llmChain,
+		llmClient,
+		botSender,
+		cfg.Telegram.GroupID,
+		cfg.LLM.SkipFallbackModel,
+		cfg.RateLimit.APIGeneral,
+		cfg.RateLimit.APISearch,
+		cfg.RateLimit.APIWindow,
+		cfg.Setka.BaseURL,
+		cfg.Setka.AdminKey,
+		cfg.Webhook.ScheduleSecret,
+		cfg.API.Listen,
+	)
 
 	apiServer.App.Static("/admin", "./admin/dist", fiber.Static{Index: "index.html"})
 	apiServer.App.Get("/admin/*", func(c *fiber.Ctx) error {
@@ -191,15 +211,29 @@ func main() {
 	}()
 
 	if tgBot != nil {
-		classif := classifier.New(llmClient, prompts, nil)
+		classif := classifier.New(llmClient, prompts, &dbTopicsProvider{db: database.DB})
 		fwd := forwarder.New(tgBot, personaStore)
-		summaryBuf := handlers.NewSummaryBuffer(database.DB, 200)
-		h := handlers.NewHandler(classif, fwd, database.DB, cfg.Telegram.GroupID, summaryBuf)
+		summaryBuf := buffer.NewSummaryBuffer(database.DB, 200)
+		usernameCache := telegram.NewUsernameCache()
+		h := handlers.NewHandler(classif, fwd, database.DB, summaryBuf, usernameCache)
+
+		sessionStore := telegram.NewSessionStore()
 		adminCache := telegram.NewAdminCache(tgBot, cfg.Telegram.GroupID)
-		topicCRUD := handlers.NewTopicCRUD(llmClient, prompts, database.DB, tgBot, cfg.Telegram.GroupID, botUsername, summaryBuf, adminCache)
-		summaryHandler := handlers.NewSummaryHandler(llmClient, prompts, database.DB, tgBot, cfg.Telegram.GroupID, summaryBuf, botUsername, adminCache)
-		scheduleQHandler := handlers.NewScheduleQueryHandler(llmClient, prompts, cfg.Setka.BaseURL, cfg.Setka.PublicURL, cfg.Telegram.OmsuGroupID, cmdReg)
-		mentionHandler := handlers.NewMentionHandler(llmClient, prompts, database.DB, cfg.Telegram.GroupID, topicCRUD, summaryHandler, scheduleQHandler, botUsername, personaStore.Get().Name, cmdReg)
+		settingsHandler := handlers.NewSettingsHandler(
+			database.DB,
+			sessionStore,
+			adminCache,
+			cfg.Setka.BaseURL,
+			cfg.Setka.AdminKey,
+			cfg.Webhook.ScheduleSecret,
+			cfg.API.Listen,
+		)
+
+		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL)
+		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor)
+		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername, cmdReg)
+		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
+		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient)
 
 		helpText := fmt.Sprintf(`🤖 <b>Пятница</b> — ИИ-ассистент группы
 
@@ -210,6 +244,7 @@ func main() {
 /resend — переслать в топик
 /register — зарегистрировать топик (админ)
 /summary — саммари
+/settings — настройки группы (админ)
 /status — состояние
 
 Подробнее: @%s`, botUsername)
@@ -217,7 +252,7 @@ func main() {
 		startHardcoded := "👋 Привет! Я <b>Пятница</b> — ИИ-ассистент. Работаю только в групповом чате. Напиши /help чтобы узнать что я умею."
 
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypeExact, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-			if update.Message.Chat.ID == cfg.Telegram.GroupID {
+			if database.IsGroupActive(ctx, update.Message.Chat.ID) {
 				if globalLLM != nil {
 					resp, err := globalLLM.Call(ctx, "diagnostic", "", "Поприветствуй нового пользователя в группе. Представься как Пятница. Кратко расскажи что умеешь: пересылать сообщения между топиками, показывать расписание, делать саммари. Важно: используй ТОЛЬКО HTML-теги (<b>текст</b>), НЕ используй markdown (**). Максимум 100-150 слов. Эмодзи 1-2.", false)
 					if err == nil {
@@ -230,6 +265,7 @@ func main() {
 				b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, Text: startHardcoded, ParseMode: models.ParseModeHTML})
 			}
 		})
+
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/help", tgbot.MatchTypeExact, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID:          update.Message.Chat.ID,
@@ -238,27 +274,104 @@ func main() {
 				ParseMode:       models.ParseModeHTML,
 			})
 		})
+
+		// Captcha callbacks
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && update.Message.Chat.ID == cfg.Telegram.GroupID && update.Message.Text != "/start" && update.Message.Text != "/help"
+			return update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "captcha:")
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-			text := update.Message.Text
-			if text == "" {
-				text = update.Message.Caption
+			antispam.HandleCallbackQuery(ctx, b, update)
+		})
+
+		// Settings callbacks
+		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+			return update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "settings:")
+		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			settingsHandler.HandleCallbackQuery(ctx, b, update)
+		})
+
+		// New Chat Members captcha prompt
+		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+			return update.Message != nil && len(update.Message.NewChatMembers) > 0 && database.IsGroupActive(context.Background(), update.Message.Chat.ID)
+		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			antispam.HandleNewChatMembers(ctx, b, update.Message.Chat.ID, update.Message.NewChatMembers)
+		})
+
+		// Active groups messaging
+		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+			return update.Message != nil && database.IsGroupActive(context.Background(), update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help"
+		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			if antispam.CheckFloodAndLinks(ctx, b, update.Message) {
+				return
 			}
-			if isBotCommand(update.Message) {
-				handleSlashCommand(ctx, b, update, database.DB, cfg.Telegram.GroupID, mentionHandler, helpText, cmdReg)
-			} else if isBotMention(update.Message) {
-				mentionHandler.Handle(ctx, b, update)
-			} else if cmdReg != nil && text != "" && cmdReg.IsPersonaMention(text, personaStore.Get().Name) {
+
+			msg := update.Message
+			state := sessionStore.Get(msg.Chat.ID, msg.From.ID)
+			if state != telegram.StateNone {
+				settingsHandler.HandleAdminInput(ctx, b, update, state)
+				return
+			}
+
+			features := settingsHandler.LoadFeatures(msg.Chat.ID)
+
+			if msg.Voice != nil && apiServer.GlobalVoiceTranscription && features["enable_voice_transcription"] {
+				txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
+				if err != nil {
+					slog.Error("failed to process voice", "error", err)
+				} else if txt != "" {
+					msg.Text = txt
+				}
+			}
+
+			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing && features["enable_photo_processing"] {
+				ocrText, err := mediaProcessor.ProcessPhoto(ctx, msg.Photo[len(msg.Photo)-1].FileID)
+				if err != nil {
+					slog.Error("failed to process photo", "error", err)
+				} else if ocrText != "" {
+					if msg.Caption != "" {
+						msg.Caption = msg.Caption + "\n" + ocrText
+					} else {
+						msg.Text = ocrText
+					}
+				}
+			}
+
+			text := msg.Text
+			if text == "" {
+				text = msg.Caption
+			}
+
+			p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
+			isMentionOrAlias := false
+			if isBotMention(msg) {
+				isMentionOrAlias = true
+			} else if text != "" {
+				lowerText := strings.ToLower(text)
+				if p.Name != "" && strings.Contains(lowerText, strings.ToLower(p.Name)) {
+					isMentionOrAlias = true
+				} else {
+					for _, alias := range p.Aliases {
+						if strings.Contains(lowerText, strings.ToLower(alias)) {
+							isMentionOrAlias = true
+							break
+						}
+					}
+				}
+			}
+
+			if isBotCommand(msg) {
+				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler)
+			} else if isMentionOrAlias {
 				mentionHandler.Handle(ctx, b, update)
 			} else {
 				h.HandleMessage(ctx, b, update)
 			}
 		})
+
+		// Private / inactive groups handler
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && update.Message.Chat.ID != cfg.Telegram.GroupID && update.Message.Text != "/start" && update.Message.Text != "/help"
+			return update.Message != nil && !database.IsGroupActive(context.Background(), update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help"
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-			// Private chat — ignore all except /start and /help (handled above)
+			// Private chat / inactive group — ignore all except /start and /help (handled above)
 		})
 	}
 
@@ -292,7 +405,7 @@ var (
 	globalLLM     *llm.Client
 )
 
-func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry) {
+func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry, settingsHandler *handlers.SettingsHandler) {
 	msg := update.Message
 	text := msg.Text
 
@@ -305,6 +418,11 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 	}
 
 	switch command {
+	case "settings", "настройки":
+		if settingsHandler != nil {
+			settingsHandler.HandleSettingsCommand(ctx, b, update)
+		}
+
 	case "help":
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID:          msg.Chat.ID,
@@ -324,8 +442,8 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		}
 		var tgThreadID int
 		err := db.QueryRowContext(ctx,
-			`SELECT tg_thread_id FROM topics WHERE (slug = ? OR name = ?) AND is_active = 1 LIMIT 1`,
-			args, args,
+			`SELECT tg_thread_id FROM topics WHERE group_id = ? AND (slug = ? OR name = ?) AND is_active = 1 LIMIT 1`,
+			msg.Chat.ID, args, args,
 		).Scan(&tgThreadID)
 		if err != nil {
 			reply := fmt.Sprintf("Топик «%s» не найден. Напиши /topics", args)
@@ -361,16 +479,16 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 	case "start":
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
-			Text: "👋 Привет! Я <b>Пятница</b> — ваш ИИ-ассистент.\n\n" + helpText,
+			Text:      "👋 Привет! Я <b>Пятница</b> — ваш ИИ-ассистент.\n\n" + helpText,
 			ParseMode: models.ParseModeHTML,
 		})
 
 	case "status":
 		uptime := time.Since(botStartTime).Round(time.Second)
 		var msgCount, fwdCount, llmToday int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages`).Scan(&msgCount)
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE action = 'forwarded'`).Scan(&fwdCount)
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_requests WHERE date(created_at) = date('now')`).Scan(&llmToday)
+		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ?`, msg.Chat.ID).Scan(&msgCount)
+		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ? AND action = 'forwarded'`, msg.Chat.ID).Scan(&fwdCount)
+		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_requests WHERE group_id = ? AND date(created_at) = date('now')`, msg.Chat.ID).Scan(&llmToday)
 
 		statsStr := fmt.Sprintf("Аптайм: %s\nОбработано сообщений: %d\nПереслано: %d\nLLM запросов сегодня: %d\nПровайдеров: %d\nБот: @%s",
 			uptime, msgCount, fwdCount, llmToday, providerCount, botUsername)
@@ -409,7 +527,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			return
 		}
 		var existing int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM topics WHERE tg_thread_id = ?`, msg.MessageThreadID).Scan(&existing)
+		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM topics WHERE group_id = ? AND tg_thread_id = ?`, msg.Chat.ID, msg.MessageThreadID).Scan(&existing)
 		if existing > 0 {
 			reply := "⚠️ Этот топик уже зарегистрирован."
 			if cmd != nil {
@@ -420,9 +538,9 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		}
 		slug := makeSlug(args)
 		_, err := db.ExecContext(ctx,
-			`INSERT INTO topics (tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
-			 VALUES (?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
-			msg.MessageThreadID, args, slug)
+			`INSERT INTO topics (group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
+			 VALUES (?, ?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
+			msg.Chat.ID, msg.MessageThreadID, args, slug)
 		if err != nil {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
 				Text: "❌ Ошибка при регистрации топика."})
@@ -435,7 +553,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply})
 
 	case "topics", "топики":
-		rows, err := db.QueryContext(ctx, `SELECT name, COALESCE(slug, ''), is_active FROM topics ORDER BY name`)
+		rows, err := db.QueryContext(ctx, `SELECT name, COALESCE(slug, ''), is_active FROM topics WHERE group_id = ? ORDER BY name`, msg.Chat.ID)
 		if err != nil {
 			return
 		}
@@ -513,10 +631,10 @@ func setupLogger(cfg *config.Config) {
 
 func registerWithSetka(ctx context.Context, cfg *config.Config) {
 	body := map[string]interface{}{
-		"url":    fmt.Sprintf("http://localhost%s/webhook/schedule", cfg.API.Listen),
-		"secret": cfg.Webhook.ScheduleSecret,
+		"url":       fmt.Sprintf("http://localhost%s/webhook/schedule", cfg.API.Listen),
+		"secret":    cfg.Webhook.ScheduleSecret,
 		"group_ids": []int{cfg.Telegram.OmsuGroupID},
-		"enabled": true,
+		"enabled":   true,
 	}
 
 	data, _ := json.Marshal(body)
@@ -563,13 +681,54 @@ func makeSlug(name string) string {
 }
 
 func isBotMention(msg *models.Message) bool {
-	if msg.Entities == nil {
+	checkEntities := func(entities []models.MessageEntity, text string) bool {
+		if len(entities) == 0 || text == "" {
+			return false
+		}
+		u16 := utf16.Encode([]rune(text))
+		for _, e := range entities {
+			if e.Type == models.MessageEntityTypeMention {
+				if e.Offset >= 0 && e.Offset+e.Length <= len(u16) {
+					mention := string(utf16.Decode(u16[e.Offset : e.Offset+e.Length]))
+					if strings.EqualFold(mention, "@"+botUsername) {
+						return true
+					}
+				}
+			}
+		}
 		return false
 	}
-	for _, e := range msg.Entities {
-		if e.Type == models.MessageEntityTypeMention {
-			return true
-		}
+
+	if checkEntities(msg.Entities, msg.Text) {
+		return true
+	}
+	if checkEntities(msg.CaptionEntities, msg.Caption) {
+		return true
 	}
 	return false
+}
+
+type dbTopicsProvider struct {
+	db *sql.DB
+}
+
+func (p *dbTopicsProvider) GetTopics(ctx context.Context, chatID int64) ([]classifier.TopicInfo, error) {
+	rows, err := p.db.QueryContext(ctx, "SELECT slug, name, description FROM topics WHERE group_id = ? AND is_active = 1", chatID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var topics []classifier.TopicInfo
+	for rows.Next() {
+		var t classifier.TopicInfo
+		if err := rows.Scan(&t.Slug, &t.Name, &t.Description); err != nil {
+			return nil, err
+		}
+		topics = append(topics, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return topics, nil
 }

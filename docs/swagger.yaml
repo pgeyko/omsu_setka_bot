@@ -1,4 +1,114 @@
 basePath: /api
+definitions:
+  api.contextUploadRequest:
+    properties:
+      content:
+        type: string
+    type: object
+  api.groupRequest:
+    properties:
+      announce_thread_id:
+        type: integer
+      api_token:
+        type: string
+      chat_id:
+        type: integer
+      is_active:
+        type: boolean
+      is_vip:
+        type: boolean
+      omsu_group_id:
+        type: integer
+      title:
+        type: string
+    type: object
+  api.personaUpdateRequest:
+    properties:
+      name:
+        type: string
+      signature:
+        type: string
+      system_prompt:
+        type: string
+    type: object
+  api.superadminAddRequest:
+    properties:
+      note:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  api.topicCreateRequest:
+    properties:
+      aliases:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      group_id:
+        type: integer
+      hashtags:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      slug:
+        type: string
+      tg_thread_id:
+        type: integer
+    type: object
+  api.topicUpdateRequest:
+    properties:
+      aliases:
+        items:
+          type: string
+        type: array
+      description:
+        type: string
+      hashtags:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      slug:
+        type: string
+    type: object
+  api.updatePermissionRequest:
+    properties:
+      allowed_role:
+        type: string
+    type: object
+  db.Group:
+    properties:
+      announce_thread_id:
+        type: integer
+      api_token:
+        type: string
+      chat_id:
+        type: integer
+      created_at:
+        type: string
+      is_active:
+        type: boolean
+      is_vip:
+        type: boolean
+      omsu_group_id:
+        type: integer
+      title:
+        type: string
+    type: object
+  db.Superadmin:
+    properties:
+      created_at:
+        type: string
+      note:
+        type: string
+      user_id:
+        type: integer
+    type: object
 host: localhost:8081
 info:
   contact: {}
@@ -6,6 +116,83 @@ info:
   title: GroupBot API
   version: "1.0"
 paths:
+  /api/admin/groups/register-webhooks:
+    post:
+      description: Re-register webhook configurations for all active groups in Setka
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register webhooks with Setka
+      tags:
+      - Admin
+  /api/admin/superadmins:
+    get:
+      description: Get all registered superadmins
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/db.Superadmin'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: List superadmins
+      tags:
+      - Admin
+    post:
+      consumes:
+      - application/json
+      description: Add a new user as a superadmin
+      parameters:
+      - description: Superadmin data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.superadminAddRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Add superadmin
+      tags:
+      - Admin
+  /api/admin/superadmins/{user_id}:
+    delete:
+      description: Remove superadmin status from a user
+      parameters:
+      - description: Telegram user ID
+        in: path
+        name: user_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove superadmin
+      tags:
+      - Admin
   /api/auth/token:
     post:
       consumes:
@@ -23,18 +210,711 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
-        "401":
-          description: Unauthorized
-          schema:
-            additionalProperties:
-              type: string
+            additionalProperties: true
             type: object
       summary: Get JWT token
       tags:
       - Auth
+  /api/groups:
+    get:
+      description: Get all groups
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/db.Group'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: List groups
+      tags:
+      - Groups
+    post:
+      consumes:
+      - application/json
+      description: Create a new group
+      parameters:
+      - description: Group data
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.groupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/db.Group'
+      security:
+      - BearerAuth: []
+      summary: Create group
+      tags:
+      - Groups
+  /api/groups/{chat_id}:
+    delete:
+      description: Delete group configuration
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete group
+      tags:
+      - Groups
+    get:
+      description: Get a single group configuration
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/db.Group'
+      security:
+      - BearerAuth: []
+      summary: Get group by chat ID
+      tags:
+      - Groups
+    put:
+      consumes:
+      - application/json
+      description: Update group configuration fields
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      - description: Group fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.groupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/db.Group'
+      security:
+      - BearerAuth: []
+      summary: Update group
+      tags:
+      - Groups
+  /api/groups/{chat_id}/context/features:
+    get:
+      description: Read group-specific feature configurations
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get group feature flags
+      tags:
+      - Groups
+    put:
+      consumes:
+      - application/json
+      description: Write/update group-specific feature configurations
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      - description: Features map
+        in: body
+        name: body
+        required: true
+        schema:
+          additionalProperties:
+            type: boolean
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload group feature flags
+      tags:
+      - Groups
+  /api/groups/{chat_id}/context/knowledge:
+    get:
+      description: Read group-specific knowledge_base.txt content
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get group knowledge base content
+      tags:
+      - Groups
+    put:
+      consumes:
+      - application/json
+      description: Write/upload group-specific knowledge_base.txt content
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      - description: File content
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.contextUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload group knowledge base content
+      tags:
+      - Groups
+  /api/groups/{chat_id}/context/persona:
+    get:
+      description: Read group-specific persona.md content
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get group persona file content
+      tags:
+      - Groups
+    put:
+      consumes:
+      - application/json
+      description: Write/upload group-specific persona.md content
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      - description: File content
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.contextUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload group persona file content
+      tags:
+      - Groups
+  /api/groups/{chat_id}/context/system-prompt:
+    get:
+      description: Read group-specific system_prompt.txt content
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get group system prompt content
+      tags:
+      - Groups
+    put:
+      consumes:
+      - application/json
+      description: Write/upload group-specific system_prompt.txt content
+      parameters:
+      - description: Group chat ID
+        in: path
+        name: chat_id
+        required: true
+        type: integer
+      - description: File content
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/api.contextUploadRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload group system prompt content
+      tags:
+      - Groups
+  /api/permissions:
+    get:
+      description: Get command permissions matrix
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get permissions
+      tags:
+      - Permissions
+  /api/permissions/{command}:
+    put:
+      consumes:
+      - application/json
+      description: Update allowed_role for a command
+      parameters:
+      - description: Command name
+        in: path
+        name: command
+        required: true
+        type: string
+      - description: New allowed_role
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/api.updatePermissionRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update permission
+      tags:
+      - Permissions
+  /api/persona:
+    get:
+      description: Get current bot persona settings
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get persona
+      tags:
+      - Persona
+    put:
+      consumes:
+      - application/json
+      description: Update bot persona (name, system_prompt, signature)
+      parameters:
+      - description: Persona fields to update
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/api.personaUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update persona
+      tags:
+      - Persona
+  /api/persona/reset:
+    post:
+      description: Reset persona to seed values from persona.md
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Reset persona
+      tags:
+      - Persona
+  /api/schedule/anomalies:
+    get:
+      description: Detected schedule anomalies with pagination
+      parameters:
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Schedule anomalies
+      tags:
+      - Schedule
+  /api/schedule/snapshots:
+    get:
+      description: Schedule change snapshot history with pagination
+      parameters:
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Schedule snapshots
+      tags:
+      - Schedule
+  /api/stats/forwards:
+    get:
+      description: Message forward statistics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Forward stats
+      tags:
+      - Stats
+  /api/stats/messages:
+    get:
+      description: Processed message statistics
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Message stats
+      tags:
+      - Stats
+  /api/stats/providers:
+    get:
+      description: LLM provider performance stats
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Provider stats
+      tags:
+      - Stats
+  /api/stats/requests:
+    get:
+      description: LLM request count today by type
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Request stats
+      tags:
+      - Stats
+  /api/stats/tokens:
+    get:
+      description: LLM token usage today by provider
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Token usage stats
+      tags:
+      - Stats
+  /api/topics:
+    get:
+      description: Get all forum topics with pagination
+      parameters:
+      - description: Items per page (default 20, max 100)
+        in: query
+        name: limit
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List topics
+      tags:
+      - Topics
+    post:
+      consumes:
+      - application/json
+      description: Create a new forum topic
+      parameters:
+      - description: Topic data
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/api.topicCreateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create topic
+      tags:
+      - Topics
+  /api/topics/{id}:
+    get:
+      description: Get a single forum topic
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get topic by ID
+      tags:
+      - Topics
+    put:
+      consumes:
+      - application/json
+      description: Update forum topic metadata
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Fields to update
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/api.topicUpdateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update topic
+      tags:
+      - Topics
+  /api/topics/{id}/close:
+    post:
+      description: Close a forum topic
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Close topic
+      tags:
+      - Topics
+  /api/topics/{id}/delete:
+    delete:
+      description: Delete a forum topic
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete topic
+      tags:
+      - Topics
+  /api/topics/{id}/open:
+    post:
+      description: Reopen a closed forum topic
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Open topic
+      tags:
+      - Topics
 securityDefinitions:
   BearerAuth:
     description: Type "Bearer <JWT>" to authenticate

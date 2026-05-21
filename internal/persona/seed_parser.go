@@ -43,6 +43,17 @@ func ParseSeed(content string) Persona {
 			p.SystemPrompt = value
 		case "signature":
 			p.Signature = value
+		case "aliases":
+			normalized := strings.ReplaceAll(value, "\n", ",")
+			parts := strings.Split(normalized, ",")
+			var aliases []string
+			for _, part := range parts {
+				part = strings.TrimSpace(part)
+				if part != "" {
+					aliases = append(aliases, part)
+				}
+			}
+			p.Aliases = aliases
 		}
 	}
 	return p

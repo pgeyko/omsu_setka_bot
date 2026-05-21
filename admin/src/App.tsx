@@ -9,6 +9,7 @@ import PromptsPage from './pages/PromptsPage'
 import StatsPage from './pages/StatsPage'
 import DiagnosticsPage from './pages/DiagnosticsPage'
 import SchedulePage from './pages/SchedulePage'
+import GroupsPage from './pages/GroupsPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -22,6 +23,7 @@ export default function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
         <Route index element={<PersonaPage />} />
+        <Route path="groups" element={<GroupsPage />} />
         <Route path="topics" element={<TopicsPage />} />
         <Route path="permissions" element={<PermissionsPage />} />
         <Route path="prompts" element={<PromptsPage />} />
