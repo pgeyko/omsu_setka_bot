@@ -144,6 +144,22 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 			continue
 		}
 
+		// Skip providers that don't support required capabilities (e.g. multimodal).
+		hasAllCaps := true
+		for _, cap := range requiredCaps {
+			if !provider.HasCapability(cap) {
+				hasAllCaps = false
+				break
+			}
+		}
+		if !hasAllCaps {
+			slog.Debug("skipping provider — missing required capability",
+				"provider", provider.Name,
+				"required", requiredCaps,
+			)
+			continue
+		}
+
 		modelsToTry := []string{provider.Model}
 		if !c.skipFallbackModel {
 			modelsToTry = append(modelsToTry, provider.FallbackModels...)
@@ -570,6 +586,18 @@ func buildOpenAIContents(history []AgentMessage) []interface{} {
 
 func (c *Client) SetSkipFallbackModel(skip bool) {
 	c.skipFallbackModel = skip
+}
+
+// HasMultimodalProvider returns true when at least one active provider in the
+// chain supports the multimodal (vision/audio) capability. Used by
+// MediaProcessor to decide whether to attempt OCR/STT or silently skip.
+func (c *Client) HasMultimodalProvider() bool {
+	for _, p := range c.chain.Providers() {
+		if p.IsActive() && p.HasCapability(CapabilityMultimodal) {
+			return true
+		}
+	}
+	return false
 }
 
 func ExtractJSON(s string) string {
