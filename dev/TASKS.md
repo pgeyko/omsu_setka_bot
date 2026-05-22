@@ -205,6 +205,42 @@
 
 ---
 
+## Этап 11 — Аудит безопасности и стабилизация ✅
+✅ Completed: 2026-05-22
+
+- [x] Permission check для agent tools (moderate_user/run_protocol/manage_topic)
+- [x] CopyMessage получил MessageThreadID — копия в правильный топик
+- [x] Tracker восстанавливает дневной лимит токенов из БД при старте
+- [x] Бэкап БД перед destructive migration
+- [x] GlobalVoiceTranscription/PhotoProcessing → atomic.Bool (data race fix)
+- [x] joinedUsers cleanup в antispam
+- [x] SessionStore TTL (30 мин) + StartCleanup
+- [x] Provider.state защищён sync.Mutex
+- [x] registerWithSetka использует cfg.Setka.PublicURL вместо localhost
+- [x] DB cleanup goroutine + VACUUM раз в неделю
+- [x] HTTP timeouts (15-30s) во всех 6 исходящих вызовах
+- [x] makeSlug/resolveDate вынесены в internal/util (bugfix weekday=today)
+- [x] visionCache LRU (200 записей, TTL 1ч)
+- [x] protocols.json кэшируется через sync.Once
+
+---
+
+## Этап 12 — Хэштеги, настройки, рефакторинг ✅
+✅ Completed: 2026-05-22
+
+- [x] message_tags таблица + /tag команда
+- [x] Дедупликация по тексту (substr 100 символов)
+- [x] Три режима обработки фото (off/auto/@mention)
+- [x] ReplyParameters в ответах агента
+- [x] Dedicated /settings /настройки handlers (BotCommand entity fix)
+- [x] Captcha callback: defer AnswerCallbackQuery, wrong-user alert
+- [x] Три provider chain: text (gemma), vision (gemma→3.1-flash), audio (3.1-flash)
+- [x] Per-provider rate limiter (RPM/TPM/RPD)
+- [x] Cleanup dead code (+711 строк)
+- [x] Remove hardcoded keywords + forced instructions from mention handler
+
+---
+
 ## Легенда
 
 ```
