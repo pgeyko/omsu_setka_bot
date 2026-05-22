@@ -1,6 +1,8 @@
 package api
 
 import (
+	"log/slog"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -48,6 +50,14 @@ func (s *Server) handleUpdatePersona(c *fiber.Ctx) error {
 
 	if err := s.Persona.Update(c.Context(), current); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to update persona")
+	}
+
+	// Write to global persona.md file
+	err := s.Persona.SaveToFile("persona.md")
+	if err != nil {
+		slog.Error("failed to save persona to file", "error", err)
+	} else {
+		s.Persona.Load(c.Context(), "persona.md")
 	}
 
 	return respondSuccess(c, personaResponse{

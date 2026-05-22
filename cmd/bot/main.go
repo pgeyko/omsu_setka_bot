@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -340,6 +341,37 @@ func main() {
 			})
 		}
 
+		// Auto-register topics created via Telegram
+		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
+			return update.Message != nil && (update.Message.ForumTopicCreated != nil || update.Message.ForumTopicEdited != nil)
+		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			msg := update.Message
+			if msg.ForumTopicCreated != nil {
+				slug := util.MakeSlug(msg.ForumTopicCreated.Name)
+				_, err := database.DB.ExecContext(ctx,
+					`INSERT OR IGNORE INTO topics (group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
+					 VALUES (?, ?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
+					msg.Chat.ID, msg.MessageThreadID, msg.ForumTopicCreated.Name, slug)
+				if err != nil {
+					slog.Error("failed to auto-register new topic", "error", err, "chat_id", msg.Chat.ID, "name", msg.ForumTopicCreated.Name)
+				} else {
+					slog.Info("auto-registered new topic", "chat_id", msg.Chat.ID, "name", msg.ForumTopicCreated.Name)
+				}
+			}
+
+			if msg.ForumTopicEdited != nil && msg.ForumTopicEdited.Name != "" {
+				slug := util.MakeSlug(msg.ForumTopicEdited.Name)
+				_, err := database.DB.ExecContext(ctx,
+					`UPDATE topics SET name = ?, slug = ? WHERE group_id = ? AND tg_thread_id = ?`,
+					msg.ForumTopicEdited.Name, slug, msg.Chat.ID, msg.MessageThreadID)
+				if err != nil {
+					slog.Error("failed to auto-update topic name", "error", err, "chat_id", msg.Chat.ID)
+				} else {
+					slog.Info("auto-updated topic name", "chat_id", msg.Chat.ID, "new_name", msg.ForumTopicEdited.Name)
+				}
+			}
+		})
+
 		// Active groups messaging
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
 			return update.Message != nil && database.IsGroupActive(context.Background(), update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки"
@@ -496,6 +528,82 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 	}
 
 	switch command {
+	case "init":
+		if msg.Chat.Type != "group" && msg.Chat.Type != "supergroup" {
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: msg.Chat.ID,
+				Text:   "❌ Команда /init работает только в группах или супергруппах.",
+			})
+			return
+		}
+
+		member, err := b.GetChatMember(ctx, &tgbot.GetChatMemberParams{
+			ChatID: msg.Chat.ID,
+			UserID: msg.From.ID,
+		})
+		if err != nil {
+			slog.Error("failed to get chat member", "error", err)
+			return
+		}
+		if member.Type != models.ChatMemberTypeAdministrator && member.Type != models.ChatMemberTypeOwner {
+			// Silently ignore or deny
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: msg.Chat.ID,
+				Text:   "❌ Только администраторы могут использовать эту команду.",
+			})
+			return
+		}
+
+		omsuID, err := strconv.Atoi(args)
+		if err != nil {
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: msg.Chat.ID,
+				Text:   "❌ Некорректный Omsu Group ID. Пожалуйста, укажите число.",
+			})
+			return
+		}
+
+		dDB := &omsudb.DB{DB: db}
+		var g omsudb.Group
+		existingGroup, err := dDB.GetGroup(ctx, msg.Chat.ID)
+		if err != nil {
+			// Insert new
+			g = omsudb.Group{
+				ChatID:      msg.Chat.ID,
+				Title:       msg.Chat.Title,
+				APIToken:    fmt.Sprintf("init-%d-%d", msg.Chat.ID, time.Now().Unix()),
+				OmsuGroupID: omsuID,
+				IsActive:    true,
+				IsVIP:       false,
+			}
+			err = dDB.CreateGroup(ctx, &g)
+		} else {
+			// Update existing
+			g = *existingGroup
+			g.OmsuGroupID = omsuID
+			g.IsActive = true
+			if g.Title == "" || strings.HasSuffix(g.Title, "[DELETED]") {
+				g.Title = msg.Chat.Title
+			}
+			err = dDB.UpdateGroup(ctx, &g)
+		}
+
+		if err != nil {
+			slog.Error("failed to upsert group on /init", "error", err)
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: msg.Chat.ID,
+				Text:   "❌ Ошибка при инициализации группы в базе данных.",
+			})
+			return
+		}
+
+
+		b.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "✅ Бот успешно инициализирован в этой группе!\n\nПожалуйста, отправьте по одному сообщению в каждый существующий топик, или переименуйте их, чтобы бот зафиксировал их в базе данных.",
+		})
+		return
+
 	case "settings", "настройки":
 		if settingsHandler != nil {
 			settingsHandler.HandleSettingsCommand(ctx, b, update)

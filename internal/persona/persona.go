@@ -70,6 +70,24 @@ func (s *Store) Update(ctx context.Context, p Persona) error {
 	return nil
 }
 
+func (s *Store) SaveToFile(path string) error {
+	s.mu.RLock()
+	p := s.current
+	s.mu.RUnlock()
+
+	var sb strings.Builder
+	sb.WriteString("---\n")
+	sb.WriteString(fmt.Sprintf("name: %s\n", p.Name))
+	sb.WriteString(fmt.Sprintf("signature: %s\n", p.Signature))
+	if len(p.Aliases) > 0 {
+		sb.WriteString(fmt.Sprintf("aliases: [%s]\n", strings.Join(p.Aliases, ", ")))
+	}
+	sb.WriteString("---\n\n")
+	sb.WriteString(p.SystemPrompt)
+
+	return os.WriteFile(path, []byte(sb.String()), 0644)
+}
+
 func (s *Store) Reset(ctx context.Context, seedPath string) error {
 	if seedPath == "" {
 		seedPath = "persona.md"
