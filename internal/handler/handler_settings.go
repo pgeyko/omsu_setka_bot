@@ -49,10 +49,9 @@ func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCa
 }
 
 type setkaSearchResult struct {
-	ID     int    `json:"id"`
-	Name   string `json:"name"`
-	Type   string `json:"type"`
-	RealID int    `json:"real_group_id"`
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 type setkaBFFResponse struct {
@@ -556,14 +555,10 @@ func (h *SettingsHandler) HandleAdminInput(ctx context.Context, b *tgbot.Bot, up
 
 		var keyboard [][]models.InlineKeyboardButton
 		for _, r := range results {
-			realIDVal := r.RealID
-			if realIDVal == 0 {
-				realIDVal = r.ID
-			}
 			keyboard = append(keyboard, []models.InlineKeyboardButton{
 				{
 					Text:         r.Name,
-					CallbackData: fmt.Sprintf("settings:setka_sel:%d", realIDVal),
+					CallbackData: fmt.Sprintf("settings:setka_sel:%d", r.ID),
 				},
 			})
 		}
