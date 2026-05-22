@@ -314,6 +314,14 @@ func main() {
 			})
 		})
 
+		// Init command — dedicated handler (works regardless of IsGroupActive)
+		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/init", tgbot.MatchTypePrefix, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			if database != nil && settingsHandler != nil {
+				// Reuse handleSlashCommand for the actual logic
+				handleSlashCommand(ctx, b, update, database.DB, update.Message.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler)
+			}
+		})
+
 		// Captcha callbacks — use RegisterHandler with HandlerTypeCallbackQueryData
 		tgBot.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "captcha:", tgbot.MatchTypePrefix,
 			func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
@@ -480,7 +488,11 @@ func main() {
 
 		// Private / inactive groups handler
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && !database.IsGroupActive(context.Background(), update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help"
+			text := ""
+			if update.Message != nil {
+				text = update.Message.Text
+			}
+			return update.Message != nil && !database.IsGroupActive(context.Background(), update.Message.Chat.ID) && text != "/start" && text != "/help" && !strings.HasPrefix(text, "/init")
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			// Private chat / inactive group — ignore all except /start and /help (handled above)
 		})
