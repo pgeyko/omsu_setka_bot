@@ -41,6 +41,7 @@ import (
 	handlers "omsu_bot/internal/handler"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/media"
+	"omsu_bot/internal/messages"
 	"omsu_bot/internal/persona"
 	"omsu_bot/internal/schedule"
 	"omsu_bot/internal/telegram"
@@ -113,6 +114,8 @@ func main() {
 	}
 
 	cmdReg := handlers.NewCommandRegistry()
+
+	botMessages := messages.Load("messages.yaml")
 
 	var textProviders, visionProviders, audioProviders []*llm.Provider
 	for _, pcfg := range cfg.LLM.Providers {
@@ -273,7 +276,8 @@ func main() {
 		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient)
 
 		botDisplayName := personaStore.Get().Name
-		helpText := fmt.Sprintf(`🤖 <b>%s</b> — ассистент группы
+		helpHeader := botMessages.Format(botMessages.HelpHeader, map[string]string{"name": botDisplayName})
+		helpText := helpHeader + `
 
 /start — приветствие
 /help — эта справка
@@ -287,14 +291,15 @@ func main() {
 /settings — настройки группы (админ)
 /status — состояние
 
-Подробнее: @%s`, botDisplayName, botUsername)
+` + botMessages.Format(botMessages.HelpDetail, map[string]string{"username": botUsername})
 
 		startHardcoded := fmt.Sprintf("👋 Привет! Я <b>%s</b> — ассистент. Работаю только в групповом чате. Напиши /help чтобы узнать что я умею.", botDisplayName)
 
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypeExact, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if database.IsGroupActive(ctx, update.Message.Chat.ID) {
 				if globalLLM != nil {
-					resp, err := globalLLM.Call(ctx, "diagnostic", "", fmt.Sprintf("Поприветствуй нового пользователя в группе. Представься как %s. Кратко расскажи что умеешь: пересылать сообщения между топиками, показывать расписание, делать саммари. Важно: используй ТОЛЬКО HTML-теги (<b>текст</b>), НЕ используй markdown (**). Максимум 100-150 слов. Эмодзи 1-2.", botDisplayName), false)
+					greetingPrompt := strings.ReplaceAll(prompts.Get("greeting"), "{name}", botDisplayName)
+					resp, err := globalLLM.Call(ctx, "diagnostic", "", greetingPrompt, false)
 					if err == nil {
 						b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, MessageThreadID: update.Message.MessageThreadID, Text: resp.Content, ParseMode: models.ParseModeHTML})
 						return
@@ -319,7 +324,7 @@ func main() {
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/init", tgbot.MatchTypePrefix, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if database != nil && settingsHandler != nil {
 				// Reuse handleSlashCommand for the actual logic
-				handleSlashCommand(ctx, b, update, database.DB, update.Message.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler)
+				handleSlashCommand(ctx, b, update, database.DB, update.Message.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
 			}
 		})
 
@@ -479,7 +484,7 @@ func main() {
 			}
 
 			if isBotCommand(msg) {
-				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler)
+				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
 			} else if isMentionOrAlias {
 				mentionHandler.Handle(ctx, b, update)
 			} else {
@@ -529,7 +534,7 @@ var (
 	globalLLM     *llm.Client
 )
 
-func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry, settingsHandler *handlers.SettingsHandler) {
+func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry, settingsHandler *handlers.SettingsHandler, botMsgs *messages.Messages, promptRegistry *llm.PromptRegistry) {
 	msg := update.Message
 	text := msg.Text
 
@@ -546,7 +551,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		if msg.Chat.Type != "group" && msg.Chat.Type != "supergroup" {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: msg.Chat.ID,
-				Text:   "❌ Команда /init работает только в группах или супергруппах.",
+				Text:   botMsgs.InitGroupOnly,
 			})
 			return
 		}
@@ -563,7 +568,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			// Silently ignore or deny
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: msg.Chat.ID,
-				Text:   "❌ Только администраторы могут использовать эту команду.",
+				Text:   botMsgs.InitAdminOnly,
 			})
 			return
 		}
@@ -572,7 +577,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		if err != nil {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: msg.Chat.ID,
-				Text:   "❌ Некорректный Omsu Group ID. Пожалуйста, укажите число.",
+				Text:   botMsgs.InitInvalidID,
 			})
 			return
 		}
@@ -606,7 +611,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			slog.Error("failed to upsert group on /init", "error", err)
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: msg.Chat.ID,
-				Text:   "❌ Ошибка при инициализации группы в базе данных.",
+				Text:   botMsgs.InitDBError,
 			})
 			return
 		}
@@ -614,7 +619,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: msg.Chat.ID,
-			Text:   "✅ Бот успешно инициализирован в этой группе!\n\nПожалуйста, отправьте по одному сообщению в каждый существующий топик, или переименуйте их, чтобы бот зафиксировал их в базе данных.",
+			Text:   botMsgs.InitSuccess,
 		})
 		return
 
@@ -633,21 +638,17 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 
 	case "resend", "перешли":
 		if args == "" {
-			reply := "Укажи топик: /resend [название или slug]"
-			if cmd != nil {
-				reply = cmd.Response("resend_usage", nil)
-			}
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply})
+			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.ResendTopicNotFound})
 			return
 		}
+
 		var tgThreadID int
 		err := db.QueryRowContext(ctx,
 			`SELECT tg_thread_id FROM topics WHERE group_id = ? AND (slug = ? OR name = ?) AND is_active = 1 LIMIT 1`,
 			msg.Chat.ID, args, args,
 		).Scan(&tgThreadID)
 		if err != nil {
-			reply := fmt.Sprintf("Топик «%s» не найден. Напиши /topics", args)
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply})
+			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.Format(botMsgs.ResendTopicNotFound, map[string]string{"topic": args})})
 			return
 		}
 
@@ -655,11 +656,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		if msg.ReplyToMessage != nil {
 			forwardMsgID = msg.ReplyToMessage.ID
 		} else {
-			reply := "Ответь на сообщение, которое хочешь переслать."
-			if cmd != nil {
-				reply = cmd.Response("resend_no_reply", nil)
-			}
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply})
+			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.ResendNoReply})
 			return
 		}
 
@@ -668,7 +665,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			ChatID: msg.Chat.ID, FromChatID: fromChatID, MessageID: forwardMsgID, MessageThreadID: tgThreadID,
 		})
 		if err != nil {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: "Ошибка при пересылке."})
+			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.ResendError})
 			return
 		}
 
@@ -694,7 +691,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			uptime, msgCount, fwdCount, llmToday, providerCount, botUsername)
 
 		if globalLLM != nil {
-			statusPrompt := "Расскажи о себе и своём состоянии, используя эти данные:\n" + statsStr + "\nОтветь кратко, в своём стиле. Используй HTML-теги для форматирования. Эмодзи — 1-2 максимум."
+			statusPrompt := strings.ReplaceAll(promptRegistry.Get("status_report"), "{stats}", statsStr)
 			resp, err := globalLLM.Call(ctx, "diagnostic", "", statusPrompt, false)
 			if err == nil {
 				b.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -711,29 +708,17 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 
 	case "register", "зарегистрируй":
 		if args == "" {
-			reply := "Укажи название: /register [название топика]"
-			if cmd != nil {
-				reply = cmd.Response("register_usage", nil)
-			}
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply})
+			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.RegisterUsage})
 			return
 		}
 		if msg.MessageThreadID == 0 {
-			reply := "❌ Это общий чат. Напиши /register в нужном топике."
-			if cmd != nil {
-				reply = cmd.Response("register_general", nil)
-			}
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, Text: reply})
+			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, Text: botMsgs.RegisterGeneral})
 			return
 		}
 		var existing int
 		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM topics WHERE group_id = ? AND tg_thread_id = ?`, msg.Chat.ID, msg.MessageThreadID).Scan(&existing)
 		if existing > 0 {
-			reply := "⚠️ Этот топик уже зарегистрирован."
-			if cmd != nil {
-				reply = cmd.Response("register_exists", nil)
-			}
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply})
+			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.RegisterExists})
 			return
 		}
 		slug := util.MakeSlug(args)
@@ -742,14 +727,10 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			 VALUES (?, ?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
 			msg.Chat.ID, msg.MessageThreadID, args, slug)
 		if err != nil {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
-				Text: "❌ Ошибка при регистрации топика."})
+			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.RegisterError})
 			return
 		}
-		reply := fmt.Sprintf("✅ Топик «%s» зарегистрирован (ID: %d)", args, msg.MessageThreadID)
-		if cmd != nil {
-			reply = cmd.Response("register_ok", map[string]string{"name": args, "id": fmt.Sprintf("%d", msg.MessageThreadID)})
-		}
+		reply := botMsgs.Format(botMsgs.RegisterOK, map[string]string{"name": args, "id": fmt.Sprintf("%d", msg.MessageThreadID)})
 		b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply})
 
 	case "topics", "топики":
@@ -770,11 +751,11 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			}
 		}
 		if list == "" {
-			list = "Нет зарегистрированных топиков."
+			list = botMsgs.TopicsEmpty
 		}
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
-			Text: "📋 <b>Топики:</b>\n" + list, ParseMode: models.ParseModeHTML,
+			Text: botMsgs.TopicsHeader + "\n" + list, ParseMode: models.ParseModeHTML,
 		})
 
 	case "tag", "тег":
@@ -782,7 +763,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		if tagName == "" {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
-				Text: "Укажи тег: /tag #дедлайн",
+				Text: botMsgs.TagUsage,
 			})
 			return
 		}
@@ -792,14 +773,14 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			slog.Error("failed to search tags", "error", err)
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
-				Text: "❌ Ошибка при поиске тега.",
+				Text: botMsgs.TagError,
 			})
 			return
 		}
 		if len(messages) == 0 {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
-				Text: fmt.Sprintf("Нет сообщений с тегом #%s.", tagName),
+				Text: botMsgs.Format(botMsgs.TagEmpty, map[string]string{"tag": tagName}),
 			})
 			return
 		}
@@ -831,18 +812,17 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		if msg.MessageThreadID != 0 {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
-				Text: fmt.Sprintf("🆔 ID этого топика: %d", msg.MessageThreadID),
+				Text: botMsgs.Format(botMsgs.IDTopic, map[string]string{"id": fmt.Sprintf("%d", msg.MessageThreadID)}),
 			})
 		} else {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
-				ChatID: msg.Chat.ID, Text: "📋 Это общий чат, у него нет ID топика.",
+				ChatID: msg.Chat.ID, Text: botMsgs.IDGeneral,
 			})
 		}
 
 	default:
-		reply := "Неизвестная команда. Напиши /help чтобы увидеть список."
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
-			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply,
+			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.UnknownCommand,
 		})
 	}
 }
