@@ -132,6 +132,19 @@ func (d *DB) Migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_llm_requests_date ON llm_requests(created_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_anomalies_notified ON schedule_anomalies(notified);`,
 		`CREATE INDEX IF NOT EXISTS idx_buffer_chat_thread ON message_buffer(chat_id, thread_id, created_at DESC);`,
+
+		// Persistent runtime configuration (FIX-04)
+		`CREATE TABLE IF NOT EXISTS bot_config (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL DEFAULT ''
+		);`,
+
+		// JWT revocation blacklist (FIX-11)
+		`CREATE TABLE IF NOT EXISTS revoked_tokens (
+			jti        TEXT PRIMARY KEY,
+			expires_at INTEGER NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_revoked_tokens_exp ON revoked_tokens(expires_at);`,
 	}
 
 	for _, q := range queries {

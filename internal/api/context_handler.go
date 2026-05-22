@@ -8,7 +8,11 @@ import (
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
+	"omsu_bot/internal/db"
 )
+
+// maxContextSize is the maximum allowed size of a per-group context file (512 KB).
+const maxContextSize = 512 * 1024
 
 type contextUploadRequest struct {
 	Content string `json:"content"`
@@ -21,18 +25,30 @@ func (s *Server) handleUploadPersona(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid chat_id")
 	}
 
+	d := &db.DB{DB: s.DB}
+	exists, err := d.GroupExists(c.Context(), chatID)
+	if err != nil {
+		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "db error")
+	}
+	if !exists {
+		return respondError(c, fiber.StatusNotFound, ErrNotFound, "group not found")
+	}
+
 	var req contextUploadRequest
 	if err := c.BodyParser(&req); err != nil {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid request body")
 	}
+	if len(req.Content) > maxContextSize {
+		return respondError(c, fiber.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "persona file must be ≤512 KB")
+	}
 
 	dir := fmt.Sprintf("data/groups/%d", chatID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to create directory")
 	}
 
 	filePath := filepath.Join(dir, "persona.md")
-	if err := os.WriteFile(filePath, []byte(req.Content), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write persona file")
 	}
 
@@ -46,18 +62,30 @@ func (s *Server) handleUploadSystemPrompt(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid chat_id")
 	}
 
+	d := &db.DB{DB: s.DB}
+	exists, err := d.GroupExists(c.Context(), chatID)
+	if err != nil {
+		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "db error")
+	}
+	if !exists {
+		return respondError(c, fiber.StatusNotFound, ErrNotFound, "group not found")
+	}
+
 	var req contextUploadRequest
 	if err := c.BodyParser(&req); err != nil {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid request body")
 	}
+	if len(req.Content) > maxContextSize {
+		return respondError(c, fiber.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "system prompt must be ≤512 KB")
+	}
 
 	dir := fmt.Sprintf("data/groups/%d", chatID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to create directory")
 	}
 
 	filePath := filepath.Join(dir, "system_prompt.txt")
-	if err := os.WriteFile(filePath, []byte(req.Content), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write system_prompt file")
 	}
 
@@ -71,18 +99,30 @@ func (s *Server) handleUploadKnowledge(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid chat_id")
 	}
 
+	d := &db.DB{DB: s.DB}
+	exists, err := d.GroupExists(c.Context(), chatID)
+	if err != nil {
+		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "db error")
+	}
+	if !exists {
+		return respondError(c, fiber.StatusNotFound, ErrNotFound, "group not found")
+	}
+
 	var req contextUploadRequest
 	if err := c.BodyParser(&req); err != nil {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid request body")
 	}
+	if len(req.Content) > maxContextSize {
+		return respondError(c, fiber.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "knowledge base must be ≤512 KB")
+	}
 
 	dir := fmt.Sprintf("data/groups/%d", chatID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to create directory")
 	}
 
 	filePath := filepath.Join(dir, "knowledge_base.txt")
-	if err := os.WriteFile(filePath, []byte(req.Content), 0644); err != nil {
+	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write knowledge_base file")
 	}
 

@@ -14,6 +14,7 @@ const nav = [
   { to: '/stats', icon: BarChart3, label: 'Статистика' },
   { to: '/diagnostics', icon: Activity, label: 'Диагностика' },
   { to: '/schedule', icon: Calendar, label: 'Расписание' },
+  { to: '/superadmins', icon: Shield, label: 'Суперадмины' },
 ]
 
 function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
@@ -27,7 +28,19 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
     document.documentElement.setAttribute('data-theme', next ? '' : 'light')
   }
 
-  const logout = () => {
+  const logout = async () => {
+    // Revoke the JWT server-side before clearing the client session.
+    const token = useAuthStore.getState().token
+    if (token) {
+      try {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      } catch {
+        // Ignore network errors — local session cleared regardless.
+      }
+    }
     clearToken()
     navigate('/login')
   }
@@ -73,6 +86,7 @@ const titleMap: Record<string, string> = {
   '/stats': 'Статистика',
   '/diagnostics': 'Диагностика',
   '/schedule': 'Расписание',
+  '/superadmins': 'Суперадмины',
 }
 
 export default function Layout() {

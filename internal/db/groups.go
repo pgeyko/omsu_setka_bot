@@ -17,6 +17,30 @@ type Group struct {
 	CreatedAt        time.Time `json:"created_at"`
 }
 
+// GroupPublic is a safe view of Group that omits the api_token secret.
+type GroupPublic struct {
+	ChatID           int64     `json:"chat_id"`
+	Title            string    `json:"title"`
+	OmsuGroupID      int       `json:"omsu_group_id"`
+	AnnounceThreadID int       `json:"announce_thread_id"`
+	IsActive         bool      `json:"is_active"`
+	IsVIP            bool      `json:"is_vip"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+// ToPublic converts a Group to its public (token-stripped) representation.
+func (g *Group) ToPublic() GroupPublic {
+	return GroupPublic{
+		ChatID:           g.ChatID,
+		Title:            g.Title,
+		OmsuGroupID:      g.OmsuGroupID,
+		AnnounceThreadID: g.AnnounceThreadID,
+		IsActive:         g.IsActive,
+		IsVIP:            g.IsVIP,
+		CreatedAt:        g.CreatedAt,
+	}
+}
+
 type Superadmin struct {
 	UserID    int64     `json:"user_id"`
 	Note      string    `json:"note"`
@@ -95,13 +119,32 @@ func (d *DB) UpdateGroup(ctx context.Context, g *Group) error {
 	return nil
 }
 
-// DeleteGroup removes a group
+// DeleteGroup removes a group (hard delete — use SoftDeleteGroup for safe removal).
 func (d *DB) DeleteGroup(ctx context.Context, chatID int64) error {
 	_, err := d.ExecContext(ctx, "DELETE FROM groups WHERE chat_id = ?", chatID)
 	if err != nil {
 		return fmt.Errorf("failed to delete group: %w", err)
 	}
 	return nil
+}
+
+// SoftDeleteGroup marks a group as deleted without removing it from the database.
+// Related data (topics, processed_messages) is preserved for auditing.
+func (d *DB) SoftDeleteGroup(ctx context.Context, chatID int64) error {
+	_, err := d.ExecContext(ctx,
+		"UPDATE groups SET is_active = 0, title = title || ' [DELETED]' WHERE chat_id = ?",
+		chatID)
+	if err != nil {
+		return fmt.Errorf("failed to soft-delete group: %w", err)
+	}
+	return nil
+}
+
+// GroupExists returns true when a group with the given chat_id exists.
+func (d *DB) GroupExists(ctx context.Context, chatID int64) (bool, error) {
+	var count int
+	err := d.QueryRowContext(ctx, "SELECT COUNT(*) FROM groups WHERE chat_id = ?", chatID).Scan(&count)
+	return count > 0, err
 }
 
 // ListGroups returns all groups

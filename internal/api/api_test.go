@@ -43,7 +43,7 @@ func setupTestServer(t *testing.T) *Server {
 		t.Fatalf("failed to load mock persona: %v", err)
 	}
 
-	auth := NewAuthMiddleware("test-admin-secret", "test-jwt-secret")
+	auth := NewAuthMiddleware("test-admin-secret", "test-jwt-secret", nil)
 
 	promptsDir := t.TempDir()
 	os.WriteFile(promptsDir+"/classify.txt", []byte("test prompt"), 0644)

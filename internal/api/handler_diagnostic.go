@@ -30,6 +30,7 @@ type testModelResponse struct {
 }
 
 type sendMessageRequest struct {
+	ChatID int64  `json:"chat_id,omitempty"`
 	Text   string `json:"text"`
 	Thread int    `json:"thread_id,omitempty"`
 }
@@ -114,10 +115,19 @@ func (s *Server) handleSendMessage(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusUnprocessableEntity, ErrValidation, "text is required")
 	}
 
-	if err := s.TelegramBot.Send(c.Context(), s.TelegramGroupID, req.Text); err != nil {
+	// Use the request chat_id when provided; fall back to the global default.
+	targetChatID := req.ChatID
+	if targetChatID == 0 {
+		targetChatID = s.TelegramGroupID
+	}
+	if targetChatID == 0 {
+		return respondError(c, fiber.StatusUnprocessableEntity, ErrValidation, "chat_id is required (no default configured)")
+	}
+
+	if err := s.TelegramBot.Send(c.Context(), targetChatID, req.Text); err != nil {
 		slog.Error("failed to send message via bot", "error", err)
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, fmt.Sprintf("failed to send: %v", err))
 	}
 
-	return respondSuccess(c, fiber.Map{"sent": true})
+	return respondSuccess(c, fiber.Map{"sent": true, "chat_id": targetChatID})
 }

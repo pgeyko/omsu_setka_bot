@@ -1,11 +1,36 @@
 package api
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"context"
+	"strconv"
+
+	"github.com/gofiber/fiber/v2"
+	"omsu_bot/internal/db"
+)
 
 type configResponse struct {
 	SkipFallbackModel        bool `json:"skip_fallback_model"`
 	GlobalVoiceTranscription bool `json:"global_voice_transcription"`
 	GlobalPhotoProcessing    bool `json:"global_photo_processing"`
+}
+
+// LoadConfigFromDB reads runtime config from bot_config table and syncs Server fields.
+// Missing keys fall back to the current in-memory value (set from env at startup).
+// Call this once after NewServer and Migrate to restore persisted settings.
+func (s *Server) LoadConfigFromDB(ctx context.Context) {
+	d := &db.DB{DB: s.DB}
+	if val, err := d.GetConfig(ctx, "skip_fallback_model", strconv.FormatBool(s.SkipFallbackModel)); err == nil {
+		s.SkipFallbackModel, _ = strconv.ParseBool(val)
+	}
+	if val, err := d.GetConfig(ctx, "global_voice_transcription", strconv.FormatBool(s.GlobalVoiceTranscription)); err == nil {
+		s.GlobalVoiceTranscription, _ = strconv.ParseBool(val)
+	}
+	if val, err := d.GetConfig(ctx, "global_photo_processing", strconv.FormatBool(s.GlobalPhotoProcessing)); err == nil {
+		s.GlobalPhotoProcessing, _ = strconv.ParseBool(val)
+	}
+	if s.LLMClient != nil {
+		s.LLMClient.SetSkipFallbackModel(s.SkipFallbackModel)
+	}
 }
 
 func (s *Server) handleGetConfig(c *fiber.Ctx) error {
@@ -29,6 +54,12 @@ func (s *Server) handleUpdateConfig(c *fiber.Ctx) error {
 	if s.LLMClient != nil {
 		s.LLMClient.SetSkipFallbackModel(req.SkipFallbackModel)
 	}
+
+	// Persist to DB so config survives restarts.
+	d := &db.DB{DB: s.DB}
+	_ = d.SetConfig(c.Context(), "skip_fallback_model", strconv.FormatBool(req.SkipFallbackModel))
+	_ = d.SetConfig(c.Context(), "global_voice_transcription", strconv.FormatBool(req.GlobalVoiceTranscription))
+	_ = d.SetConfig(c.Context(), "global_photo_processing", strconv.FormatBool(req.GlobalPhotoProcessing))
 
 	return respondSuccess(c, configResponse{
 		SkipFallbackModel:        s.SkipFallbackModel,

@@ -168,7 +168,7 @@ func main() {
 		botSender = poster
 	}
 
-	authMw := api.NewAuthMiddleware(cfg.API.AdminSecret, cfg.API.JWTSecret)
+	authMw := api.NewAuthMiddleware(cfg.API.AdminSecret, cfg.API.JWTSecret, database.DB)
 	apiServer := api.NewServer(
 		database.DB,
 		personaStore,
@@ -190,6 +190,9 @@ func main() {
 		cfg.Webhook.ScheduleSecret,
 		cfg.API.Listen,
 	)
+	// Restore persisted runtime config (skip_fallback_model, global_voice, global_photo)
+	// overriding the defaults set from environment variables.
+	apiServer.LoadConfigFromDB(context.Background())
 
 	apiServer.App.Static("/admin", "./admin/dist", fiber.Static{Index: "index.html"})
 	apiServer.App.Get("/admin/*", func(c *fiber.Ctx) error {

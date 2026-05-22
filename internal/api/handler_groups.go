@@ -25,7 +25,12 @@ func (s *Server) handleListGroups(c *fiber.Ctx) error {
 	if err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to list groups")
 	}
-	return respondSuccess(c, groups)
+	// Strip api_token from public response.
+	public := make([]db.GroupPublic, len(groups))
+	for i := range groups {
+		public[i] = groups[i].ToPublic()
+	}
+	return respondSuccess(c, public)
 }
 
 func (s *Server) handleCreateGroup(c *fiber.Ctx) error {
@@ -53,7 +58,7 @@ func (s *Server) handleCreateGroup(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, err.Error())
 	}
 
-	return respondSuccess(c, g)
+	return respondSuccess(c, g.ToPublic())
 }
 
 func (s *Server) handleGetGroup(c *fiber.Ctx) error {
@@ -72,7 +77,7 @@ func (s *Server) handleGetGroup(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, err.Error())
 	}
 
-	return respondSuccess(c, g)
+	return respondSuccess(c, g.ToPublic())
 }
 
 func (s *Server) handleUpdateGroup(c *fiber.Ctx) error {
@@ -111,7 +116,7 @@ func (s *Server) handleUpdateGroup(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, err.Error())
 	}
 
-	return respondSuccess(c, g)
+	return respondSuccess(c, g.ToPublic())
 }
 
 func (s *Server) handleDeleteGroup(c *fiber.Ctx) error {
@@ -122,9 +127,9 @@ func (s *Server) handleDeleteGroup(c *fiber.Ctx) error {
 	}
 
 	d := &db.DB{DB: s.DB}
-	if err := d.DeleteGroup(c.Context(), chatID); err != nil {
+	if err := d.SoftDeleteGroup(c.Context(), chatID); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, err.Error())
 	}
 
-	return respondSuccess(c, fiber.Map{"status": "deleted"})
+	return respondSuccess(c, fiber.Map{"status": "deactivated"})
 }

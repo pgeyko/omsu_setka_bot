@@ -52,9 +52,9 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
-		BodyLimit:             1024,
-		ReadTimeout:           5 * time.Second,
-		WriteTimeout:          5 * time.Second,
+		BodyLimit:             64 * 1024, // 64 KB default; context routes override to 512 KB
+		ReadTimeout:           10 * time.Second,
+		WriteTimeout:          10 * time.Second,
 		ReadBufferSize:        4096,
 		ProxyHeader:           fiber.HeaderXForwardedFor,
 		TrustedProxies:        []string{"172.16.0.0/12", "192.168.0.0/16", "10.0.0.0/8"},
@@ -67,6 +67,10 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 		AllowOrigins: corsOrigin,
 		AllowHeaders: "Authorization, Content-Type",
 	}))
+	// Guard against accidentally allowing all origins in production.
+	if corsOrigin == "*" && appEnv == "production" {
+		panic("CORS_ORIGIN must not be '*' in production")
+	}
 	app.Use(etag.New())
 
 	if appEnv != "production" {
@@ -136,10 +140,12 @@ func requestLogger() fiber.Handler {
 
 func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowSec int) {
 	if s.SwaggerEnabled && s.AppEnv != "production" {
-		s.App.Get("/swagger/*", swagger.HandlerDefault)
+		// Swagger is protected by JWT auth to prevent API schema leakage.
+		s.App.Get("/swagger/*", s.AuthMiddleware.RequireAuth, swagger.HandlerDefault)
 	}
 
 	s.App.Post("/api/auth/token", s.AuthMiddleware.Login)
+	s.App.Post("/api/auth/logout", s.AuthMiddleware.Logout)
 
 	window := time.Duration(rateLimitWindowSec) * time.Second
 	api := s.App.Group("/api", s.AuthMiddleware.RequireAuth)
@@ -171,12 +177,21 @@ func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowS
 	api.Delete("/admin/superadmins/:user_id", s.handleRemoveSuperadmin)
 	api.Post("/admin/groups/register-webhooks", s.handleRegisterWebhooks)
 
+	// Context routes: persona.md / knowledge_base.txt / system_prompt.txt can be large.
+	// Allow up to 512 KB for these endpoints.
+	contextBodyLimit := func(c *fiber.Ctx) error {
+		if len(c.Body()) > 512*1024 {
+			return respondError(c, fiber.StatusRequestEntityTooLarge, "BODY_TOO_LARGE", "context file must be ≤512 KB")
+		}
+		return c.Next()
+	}
+
 	api.Get("/groups/:chat_id/context/persona", s.handleGetGroupPersona)
-	api.Put("/groups/:chat_id/context/persona", s.handleUploadPersona)
+	api.Put("/groups/:chat_id/context/persona", contextBodyLimit, s.handleUploadPersona)
 	api.Get("/groups/:chat_id/context/system-prompt", s.handleGetGroupSystemPrompt)
-	api.Put("/groups/:chat_id/context/system-prompt", s.handleUploadSystemPrompt)
+	api.Put("/groups/:chat_id/context/system-prompt", contextBodyLimit, s.handleUploadSystemPrompt)
 	api.Get("/groups/:chat_id/context/knowledge", s.handleGetGroupKnowledge)
-	api.Put("/groups/:chat_id/context/knowledge", s.handleUploadKnowledge)
+	api.Put("/groups/:chat_id/context/knowledge", contextBodyLimit, s.handleUploadKnowledge)
 	api.Get("/groups/:chat_id/context/features", s.handleGetGroupFeatures)
 	api.Put("/groups/:chat_id/context/features", s.handleUploadFeatures)
 
