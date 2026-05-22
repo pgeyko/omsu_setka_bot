@@ -75,6 +75,7 @@ type PersonaProvider interface {
 type Client struct {
 	textChain         *Chain
 	visionChain       *Chain
+	audioChain        *Chain
 	tracker           *Tracker
 	persona           PersonaProvider
 	prompts           *PromptRegistry
@@ -82,10 +83,11 @@ type Client struct {
 	skipFallbackModel bool
 }
 
-func NewClient(textChain, visionChain *Chain, tracker *Tracker, persona PersonaProvider, prompts *PromptRegistry, timeoutSec int, skipFallbackModel bool) *Client {
+func NewClient(textChain, visionChain, audioChain *Chain, tracker *Tracker, persona PersonaProvider, prompts *PromptRegistry, timeoutSec int, skipFallbackModel bool) *Client {
 	return &Client{
 		textChain:   textChain,
 		visionChain: visionChain,
+		audioChain:  audioChain,
 		tracker:     tracker,
 		persona:     persona,
 		prompts:     prompts,
@@ -130,7 +132,11 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 		return nil, fmt.Errorf("daily token limit reached")
 	}
 
-	chain := c.pickChain(requiresVision)
+	// Audio STT routes through audioChain if available, else visionChain
+	chain := c.audioChain
+	if reqType != "stt" || chain == nil {
+		chain = c.pickChain(requiresVision)
+	}
 	if chain == nil {
 		return nil, fmt.Errorf("no chain available for request type (vision=%v)", requiresVision)
 	}
@@ -201,6 +207,9 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 			if err == nil {
 				resp.Provider = provider.Name
 				resp.Model = model
+
+				// Record the call for rate limiting
+				provider.recordCall(resp.InputTokens + resp.OutputTokens)
 
 				slog.Debug("llm response history",
 					"type", reqType,
@@ -608,14 +617,16 @@ func (c *Client) SetSkipFallbackModel(skip bool) {
 }
 
 // HasMultimodalProvider returns true when at least one active provider in
-// the vision chain supports the multimodal capability.
+// vision or audio chain supports the multimodal capability.
 func (c *Client) HasMultimodalProvider() bool {
-	if c.visionChain == nil {
-		return false
-	}
-	for _, p := range c.visionChain.Providers() {
-		if p.IsActive() && p.HasCapability(CapabilityMultimodal) {
-			return true
+	for _, chain := range []*Chain{c.visionChain, c.audioChain} {
+		if chain == nil {
+			continue
+		}
+		for _, p := range chain.Providers() {
+			if p.IsActive() && p.HasCapability(CapabilityMultimodal) {
+				return true
+			}
 		}
 	}
 	return false

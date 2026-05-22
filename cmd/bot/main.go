@@ -113,7 +113,7 @@ func main() {
 
 	cmdReg := handlers.NewCommandRegistry()
 
-	var textProviders, visionProviders []*llm.Provider
+	var textProviders, visionProviders, audioProviders []*llm.Provider
 	for _, pcfg := range cfg.LLM.Providers {
 		baseURL := pcfg.BaseURL
 		if baseURL == "" {
@@ -124,38 +124,46 @@ func main() {
 				baseURL = "https://api.deepseek.com"
 			}
 		}
-		fallbackModels := pcfg.FallbackModels
-		if len(fallbackModels) == 0 {
-			fallbackModels = []string{"gemini-2.5-flash-lite"}
-		}
 		p := &llm.Provider{
-			Name:           pcfg.Name,
-			Type:           pcfg.Type,
-			BaseURL:        baseURL,
-			APIKey:         pcfg.APIKey,
-			Model:          pcfg.Model,
-			FallbackModels: fallbackModels,
+			Name:     pcfg.Name,
+			Type:     pcfg.Type,
+			BaseURL:  baseURL,
+			APIKey:   pcfg.APIKey,
+			Model:    pcfg.Model,
+			FallbackModels: pcfg.FallbackModels,
+			RPMLimit: pcfg.RPMLimit,
+			TPMLimit: pcfg.TPMLimit,
+			RPDLimit: pcfg.RPDLimit,
+		}
+		if len(p.FallbackModels) == 0 {
+			p.FallbackModels = []string{"gemini-2.5-flash-lite"}
 		}
 
-		if pcfg.Multimodal {
+		switch {
+		case strings.HasPrefix(pcfg.Name, "gemini-audio"):
+			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
+			audioProviders = append(audioProviders, p)
+		case pcfg.Multimodal:
 			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
 			visionProviders = append(visionProviders, p)
-		} else {
+		default:
 			textProviders = append(textProviders, p)
 		}
 	}
 
 	visionChain := llm.NewChain(visionProviders)
+	audioChain := llm.NewChain(audioProviders)
 	textChain := llm.NewChain(textProviders)
 
 	// Combined chain for API diagnostics (shows all providers)
 	var allProviders []*llm.Provider
 	allProviders = append(allProviders, textProviders...)
 	allProviders = append(allProviders, visionProviders...)
+	allProviders = append(allProviders, audioProviders...)
 	llmChain := llm.NewChain(allProviders)
 
 	tracker := llm.NewTracker(database.DB, int64(cfg.LLM.DailyTokenLimit), 0.8)
-	llmClient := llm.NewClient(textChain, visionChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
+	llmClient := llm.NewClient(textChain, visionChain, audioChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
 	globalLLM = llmClient
 
 	tgBot, err := tgbot.New(cfg.Telegram.Token)

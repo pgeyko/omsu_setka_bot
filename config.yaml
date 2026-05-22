@@ -8,7 +8,7 @@ telegram:
 llm:
   daily_token_limit: 100000
   classify_confidence_threshold: 0.75
-  request_timeout_sec: 10
+  request_timeout_sec: 30
   circuit_breaker_failures: 3
   circuit_breaker_cooldown_min: 5
   skip_fallback_model: false
@@ -20,6 +20,8 @@ llm:
       api_key: "${GEMINI_API_KEY}"
       model: gemma-4-31b-it
       multimodal: false
+      rpm_limit: 15
+      tpm_limit: 1500
       priority: 10
 
     - name: gemma-text-fallback
@@ -27,6 +29,8 @@ llm:
       api_key: "${GEMINI_API_KEY}"
       model: gemma-4-26b-it
       multimodal: false
+      rpm_limit: 15
+      tpm_limit: 1500
       priority: 20
 
     - name: gemini-text-reserve
@@ -34,6 +38,9 @@ llm:
       api_key: "${GEMINI_RESERVE_API_KEY}"
       model: gemini-3.1-flash-lite
       multimodal: false
+      rpm_limit: 15
+      rpd_limit: 500
+      tpm_limit: 500000
       priority: 30
 
     - name: deepseek-final
@@ -43,12 +50,14 @@ llm:
       multimodal: false
       priority: 90
 
-    # ── Vision + Audio STT chain ── (OCR, фото, расшифровка голоса)
+    # ── Vision chain ── (OCR, фото)
     - name: gemma-vision
       type: gemini
       api_key: "${GEMINI_API_KEY}"
       model: gemma-4-31b-it
       multimodal: true
+      rpm_limit: 15
+      tpm_limit: 1500
       priority: 50
 
     - name: gemini-vision-reserve
@@ -56,7 +65,31 @@ llm:
       api_key: "${GEMINI_RESERVE_API_KEY}"
       model: gemini-3.1-flash-lite
       multimodal: true
+      rpm_limit: 15
+      rpd_limit: 500
+      tpm_limit: 500000
       priority: 60
+
+    # ── Audio STT chain ── (голосовые, только gemini, без gemma)
+    - name: gemini-audio-stt
+      type: gemini
+      api_key: "${GEMINI_API_KEY}"
+      model: gemini-3.1-flash-lite
+      multimodal: true
+      rpm_limit: 15
+      rpd_limit: 500
+      tpm_limit: 500000
+      priority: 70
+
+    - name: gemini-audio-stt-reserve
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemini-3.1-flash-lite
+      multimodal: true
+      rpm_limit: 15
+      rpd_limit: 500
+      tpm_limit: 500000
+      priority: 80
 
 api:
   listen: ":8081"

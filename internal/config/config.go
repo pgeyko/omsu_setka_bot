@@ -82,6 +82,9 @@ type LLMProviderConfig struct {
 	Multimodal     bool     `yaml:"multimodal"`
 	Priority       int      `yaml:"priority"`
 	BaseURL        string   `yaml:"base_url" env-default:""`
+	RPMLimit       int      `yaml:"rpm_limit"`       // requests per minute (0 = unlimited)
+	TPMLimit       int      `yaml:"tpm_limit"`       // tokens per minute (0 = unlimited)
+	RPDLimit       int      `yaml:"rpd_limit"`       // requests per day (0 = unlimited)
 }
 
 func Load(configPath string) *Config {

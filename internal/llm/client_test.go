@@ -106,7 +106,7 @@ func TestClient_TokenParsing(t *testing.T) {
 	}
 
 	textChain := NewChain([]*Provider{geminiProvider})
-	client := NewClient(textChain, nil, tracker, persona, nil, 5, true)
+	client := NewClient(textChain, nil, nil, tracker, persona, nil, 5, true)
 
 	responseBody = []byte(geminiBody)
 	responseStatus = 200
@@ -149,7 +149,7 @@ func TestClient_TokenParsing(t *testing.T) {
 	}
 
 	chainOpenAI := NewChain([]*Provider{openAIProvider})
-	clientOpenAI := NewClient(chainOpenAI, nil, tracker, persona, nil, 5, true)
+	clientOpenAI := NewClient(chainOpenAI, nil, nil, tracker, persona, nil, 5, true)
 
 	responseBody = []byte(openAIBody)
 

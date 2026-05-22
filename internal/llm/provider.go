@@ -18,6 +18,11 @@ type providerState struct {
 	disabled   bool
 }
 
+type rateEntry struct {
+	at     time.Time
+	tokens int
+}
+
 type Provider struct {
 	mu             sync.Mutex
 	Name           string
@@ -28,6 +33,13 @@ type Provider struct {
 	FallbackModels []string // tried after primary on same key (for rate limits)
 	Capabilities   []Capability
 	state          *providerState
+
+	// Rate limits
+	RPMLimit int // requests per minute (0 = unlimited)
+	TPMLimit int // tokens per minute (0 = unlimited)
+	RPDLimit int // requests per day (0 = unlimited)
+
+	rateHistory []rateEntry
 }
 
 func (p *Provider) HasCapability(c Capability) bool {
@@ -47,14 +59,55 @@ func (p *Provider) IsActive() bool {
 		return true
 	}
 	if !p.state.disabled {
-		return true
+		return !p.isRateLimitedLocked()
 	}
 	if time.Since(p.state.disabledAt) >= 5*time.Minute {
 		p.state.disabled = false
 		p.state.failures = 0
+		return !p.isRateLimitedLocked()
+	}
+	return false
+}
+
+func (p *Provider) isRateLimitedLocked() bool {
+	now := time.Now()
+	cutoff := now.Add(-1 * time.Minute)
+	dayCutoff := now.Truncate(24 * time.Hour)
+
+	// Prune old entries and count
+	var minuteCount int
+	var minuteTokens int
+	var dayCount int
+	valid := p.rateHistory[:0]
+	for _, e := range p.rateHistory {
+		if e.at.Before(dayCutoff) {
+			continue // older than today
+		}
+		valid = append(valid, e)
+		if e.at.After(cutoff) {
+			minuteCount++
+			minuteTokens += e.tokens
+		}
+		dayCount++
+	}
+	p.rateHistory = valid
+
+	if p.RPMLimit > 0 && minuteCount >= p.RPMLimit {
+		return true
+	}
+	if p.TPMLimit > 0 && minuteTokens >= p.TPMLimit {
+		return true
+	}
+	if p.RPDLimit > 0 && dayCount >= p.RPDLimit {
 		return true
 	}
 	return false
+}
+
+func (p *Provider) recordCall(tokens int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.rateHistory = append(p.rateHistory, rateEntry{at: time.Now(), tokens: tokens})
 }
 
 func (p *Provider) RecordFailure() {
@@ -74,7 +127,6 @@ func (p *Provider) RecordFailure() {
 func (p *Provider) RecordSuccess() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-
 	if p.state != nil {
 		p.state.failures = 0
 	}
