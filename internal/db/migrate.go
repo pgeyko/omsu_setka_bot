@@ -45,14 +45,13 @@ func (d *DB) Migrate() error {
 
 	queries := []string{
 		`CREATE TABLE IF NOT EXISTS groups (
-			chat_id            INTEGER PRIMARY KEY,
-			title              TEXT NOT NULL,
-			api_token          TEXT NOT NULL UNIQUE,
-			omsu_group_id      INTEGER NOT NULL DEFAULT 0,
-			announce_thread_id INTEGER NOT NULL DEFAULT 0,
-			is_active          INTEGER NOT NULL DEFAULT 1,
-			is_vip             INTEGER NOT NULL DEFAULT 0,
-			created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			chat_id       INTEGER PRIMARY KEY,
+			title         TEXT NOT NULL,
+			api_token     TEXT NOT NULL UNIQUE,
+			omsu_group_id INTEGER NOT NULL DEFAULT 0,
+			is_active     INTEGER NOT NULL DEFAULT 1,
+			is_vip        INTEGER NOT NULL DEFAULT 0,
+			created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 		);`,
 
 		`CREATE TABLE IF NOT EXISTS superadmins (
@@ -142,6 +141,17 @@ func (d *DB) Migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_llm_requests_date ON llm_requests(created_at);`,
 		`CREATE INDEX IF NOT EXISTS idx_anomalies_notified ON schedule_anomalies(notified);`,
 		`CREATE INDEX IF NOT EXISTS idx_buffer_chat_thread ON message_buffer(chat_id, thread_id, created_at DESC);`,
+
+		// Per-message hashtags for search and analytics
+		`CREATE TABLE IF NOT EXISTS message_tags (
+			id         INTEGER PRIMARY KEY,
+			chat_id    INTEGER NOT NULL REFERENCES groups(chat_id) ON DELETE CASCADE,
+			message_id INTEGER NOT NULL,
+			tag        TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_message_tags_chat_tag ON message_tags(chat_id, tag);`,
+		`CREATE INDEX IF NOT EXISTS idx_message_tags_created ON message_tags(created_at);`,
 
 		// Persistent runtime configuration (FIX-04)
 		`CREATE TABLE IF NOT EXISTS bot_config (

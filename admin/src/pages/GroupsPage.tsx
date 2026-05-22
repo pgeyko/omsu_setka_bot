@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Save, Users, ChevronRight, Settings, Brain, FileText, Bot } from 'lucide-react'
+import { Plus, Trash2, Save, Users, ChevronRight, Settings, Brain, FileText, Bot, ArrowLeft } from 'lucide-react'
 import { api } from '../api/client'
 import Modal from '../components/Modal'
 import { toast } from '../components/Toast'
@@ -11,7 +11,6 @@ interface Group {
   title: string;
   api_token: string;
   omsu_group_id: number;
-  announce_thread_id: number;
   is_active: boolean;
   is_vip: boolean;
   created_at?: string;
@@ -23,13 +22,11 @@ export default function GroupsPage() {
   const [activeTab, setActiveTab] = useState<'settings' | 'persona' | 'prompt' | 'knowledge'>('settings')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
 
-  // Forms state
   const [newGroupForm, setNewGroupForm] = useState<Omit<Group, 'created_at'>>({
     chat_id: 0,
     title: '',
     api_token: '',
     omsu_group_id: 0,
-    announce_thread_id: 0,
     is_active: true,
     is_vip: false,
   })
@@ -39,7 +36,6 @@ export default function GroupsPage() {
     title: '',
     api_token: '',
     omsu_group_id: 0,
-    announce_thread_id: 0,
     is_active: false,
     is_vip: false,
   })
@@ -59,7 +55,6 @@ export default function GroupsPage() {
   const [promptContent, setPromptContent] = useState('')
   const [knowledgeContent, setKnowledgeContent] = useState('')
 
-  // Queries
   const { data: groups, isLoading: groupsLoading } = useQuery<Group[]>({
     queryKey: ['groups'],
     queryFn: () => api.get<Group[]>('/api/groups'),
@@ -91,7 +86,6 @@ export default function GroupsPage() {
     enabled: selectedGroupId !== null,
   })
 
-  // Effects to populate form data
   useEffect(() => {
     if (activeGroup) {
       setMetaForm({
@@ -99,7 +93,6 @@ export default function GroupsPage() {
         title: activeGroup.title,
         api_token: activeGroup.api_token || '',
         omsu_group_id: activeGroup.omsu_group_id || 0,
-        announce_thread_id: activeGroup.announce_thread_id || 0,
         is_active: activeGroup.is_active,
         is_vip: activeGroup.is_vip,
       })
@@ -130,7 +123,6 @@ export default function GroupsPage() {
     }
   }, [knowledgeQ.data])
 
-  // Mutations
   const createMut = useMutation({
     mutationFn: (newGroup: Omit<Group, 'created_at'>) => api.post<Group>('/api/groups', newGroup),
     onSuccess: (data) => {
@@ -142,7 +134,6 @@ export default function GroupsPage() {
         title: '',
         api_token: '',
         omsu_group_id: 0,
-        announce_thread_id: 0,
         is_active: true,
         is_vip: false,
       })
@@ -228,7 +219,7 @@ export default function GroupsPage() {
   return (
     <div style={{ display: 'flex', gap: '1.5rem', minHeight: 'calc(100vh - 120px)' }}>
       {/* Left Pane: Group List */}
-      <div style={{ width: '280px', display: 'flex', flexDirection: 'column', gap: '0.75rem', flexShrink: 0 }}>
+      <div className={`groups-list-pane ${selectedGroupId ? 'hidden-mobile' : ''}`} style={{ width: '280px', display: 'flex', flexDirection: 'column', gap: '0.75rem', flexShrink: 0 }}>
         <button className="btn btn-primary" onClick={() => setIsCreateModalOpen(true)} style={{ justifyContent: 'center' }}>
           <Plus size={16} /> Добавить группу
         </button>
@@ -252,28 +243,20 @@ export default function GroupsPage() {
                     padding: '0.75rem',
                     borderRadius: 'var(--radius-sm)',
                     border: 'none',
-                    background: selectedGroupId === group.chat_id ? 'var(--accent-glass)' : 'transparent',
-                    color: selectedGroupId === group.chat_id ? 'var(--accent)' : 'var(--text)',
+                    background: 'transparent',
+                    color: 'var(--text)',
                     textAlign: 'left',
                     transition: 'var(--transition)',
                     cursor: 'pointer',
                   }}
-                  onMouseEnter={(e) => {
-                    if (selectedGroupId !== group.chat_id) {
-                      e.currentTarget.style.background = 'var(--glass-bg)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (selectedGroupId !== group.chat_id) {
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--glass-bg)' }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                 >
                   <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: '0.5rem' }}>
                     <div style={{ fontWeight: 500, fontSize: '0.875rem' }}>{group.title}</div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: {group.chat_id}</div>
                   </div>
-                  <ChevronRight size={16} style={{ flexShrink: 0, opacity: selectedGroupId === group.chat_id ? 1 : 0.3 }} />
+                  <ChevronRight size={16} style={{ flexShrink: 0, opacity: 0.3 }} />
                 </button>
               ))}
             </div>
@@ -287,14 +270,19 @@ export default function GroupsPage() {
       </div>
 
       {/* Right Pane: Detailed Group Context Management */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div className={`groups-detail-pane ${!selectedGroupId ? 'hidden-mobile' : ''}`} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         {selectedGroupId ? (
           <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            {/* Header */}
+            {/* Header with back button on mobile */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.75rem' }}>
-              <div>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{activeGroup?.title}</h3>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Chat ID: {selectedGroupId}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <button className="groups-back-btn" onClick={() => setSelectedGroupId(null)} style={{ display: 'none', padding: '0.35rem', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text)' }}>
+                  <ArrowLeft size={20} />
+                </button>
+                <div>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>{activeGroup?.title}</h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Chat ID: {selectedGroupId}</span>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 {activeGroup?.is_vip && <span className="badge badge-active">VIP</span>}
@@ -305,11 +293,11 @@ export default function GroupsPage() {
             </div>
 
             {/* Tabs */}
-            <div style={{ display: 'flex', gap: '0.25rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.25rem' }}>
+            <div style={{ display: 'flex', gap: '0.25rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.25rem', overflowX: 'auto' }}>
               {[
-                { id: 'settings', label: 'Настройки и Функции', icon: Settings },
+                { id: 'settings', label: 'Настройки', icon: Settings },
                 { id: 'persona', label: 'Личность', icon: Bot },
-                { id: 'prompt', label: 'Системный промпт', icon: FileText },
+                { id: 'prompt', label: 'Промпт', icon: FileText },
                 { id: 'knowledge', label: 'База знаний', icon: Brain },
               ].map(tab => {
                 const Icon = tab.icon;
@@ -331,6 +319,7 @@ export default function GroupsPage() {
                       fontWeight: isActive ? 500 : 400,
                       cursor: 'pointer',
                       transition: 'var(--transition)',
+                      whiteSpace: 'nowrap',
                     }}
                   >
                     <Icon size={14} />
@@ -350,20 +339,11 @@ export default function GroupsPage() {
                       <input className="input" value={metaForm.title} onChange={(e) => setMetaForm({ ...metaForm, title: e.target.value })} />
                     </div>
                     <div>
-                      <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>API токен (Setka/Omsu)</label>
-                      <input className="input" type="password" value={metaForm.api_token} onChange={(e) => setMetaForm({ ...metaForm, api_token: e.target.value })} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Omsu Group ID</label>
+                      <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Omsu Group ID (Setka)</label>
                       <input className="input" type="number" value={metaForm.omsu_group_id || ''} onChange={(e) => setMetaForm({ ...metaForm, omsu_group_id: Number(e.target.value) })} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Announce Thread ID</label>
-                      <input className="input" type="number" value={metaForm.announce_thread_id || ''} onChange={(e) => setMetaForm({ ...metaForm, announce_thread_id: Number(e.target.value) })} />
                     </div>
                   </div>
 
-                  {/* Status and VIP toggles */}
                   <div style={{ display: 'flex', gap: '2rem', borderTop: '1px solid var(--glass-border)', borderBottom: '1px solid var(--glass-border)', padding: '1rem 0' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                       <input type="checkbox" checked={metaForm.is_active} onChange={(e) => setMetaForm({ ...metaForm, is_active: e.target.checked })} />
@@ -375,7 +355,6 @@ export default function GroupsPage() {
                     </label>
                   </div>
 
-                  {/* Group Feature Toggles */}
                   <div>
                     <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.75rem' }}>Основные модули</h4>
                     {featuresQ.isLoading ? (
@@ -424,8 +403,7 @@ export default function GroupsPage() {
                     )}
                   </div>
 
-                  {/* Action buttons */}
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
                     <button
                       className="btn btn-primary"
                       onClick={() => {
@@ -559,30 +537,12 @@ export default function GroupsPage() {
             />
           </div>
           <div>
-            <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>API токен (Omsu/Setka)</label>
-            <input
-              className="input"
-              type="password"
-              value={newGroupForm.api_token}
-              onChange={(e) => setNewGroupForm({ ...newGroupForm, api_token: e.target.value })}
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Omsu Group ID</label>
+            <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Omsu Group ID (Setka)</label>
             <input
               className="input"
               type="number"
               value={newGroupForm.omsu_group_id || ''}
               onChange={(e) => setNewGroupForm({ ...newGroupForm, omsu_group_id: Number(e.target.value) })}
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>Announce Thread ID</label>
-            <input
-              className="input"
-              type="number"
-              value={newGroupForm.announce_thread_id || ''}
-              onChange={(e) => setNewGroupForm({ ...newGroupForm, announce_thread_id: Number(e.target.value) })}
             />
           </div>
           <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>

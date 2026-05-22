@@ -261,18 +261,22 @@ func (a *Antispam) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot, update
 	}
 	cb := update.CallbackQuery
 	data := cb.Data
-	if !strings.HasPrefix(data, "captcha:") {
+
+	if b == nil {
 		return
+	}
+
+	if !strings.HasPrefix(data, "captcha:") {
+		return // not our callback, let other handlers process it
 	}
 
 	parts := strings.Split(data, ":")
 	if len(parts) != 4 {
-		if b != nil {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
-				CallbackQueryID: cb.ID,
-				Text:            "Ошибка обработки капчи.",
-			})
-		}
+		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "Ошибка: неверный формат капчи.",
+		})
+		slog.Warn("captcha: invalid callback data", "data", data)
 		return
 	}
 
@@ -282,95 +286,87 @@ func (a *Antispam) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot, update
 
 	chatID, msgID := getChatAndMsgID(cb.Message)
 
-	features := a.getFeatures(chatID)
-	if !features["enable_moderation"] || !features["enable_captcha"] {
-		if b != nil {
-			_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
-				ChatID: chatID,
-				UserID: targetUserID,
-				Permissions: &models.ChatPermissions{
-					CanSendMessages:       true,
-					CanSendAudios:         true,
-					CanSendDocuments:      true,
-					CanSendPhotos:         true,
-					CanSendVideos:         true,
-					CanSendVideoNotes:     true,
-					CanSendVoiceNotes:     true,
-					CanSendPolls:          true,
-					CanSendOtherMessages:  true,
-					CanAddWebPagePreviews: true,
-				},
-			})
-			if err != nil {
-				slog.Error("failed to unmute user (captcha disabled)", "userID", targetUserID, "error", err)
-			}
-
-			b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
-				ChatID:    chatID,
-				MessageID: msgID,
-			})
-
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
-				CallbackQueryID: cb.ID,
-				Text:            "Капча отключена.",
-				ShowAlert:       true,
-			})
-		}
+	if b == nil {
 		return
 	}
 
+	// Wrong user pressed the button — notify with alert
 	if cb.From.ID != targetUserID {
-		if b != nil {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
-				CallbackQueryID: cb.ID,
-				Text:            "❌ Этот пример предназначен для другого пользователя!",
-				ShowAlert:       true,
-			})
-		}
+		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "❌ Эта капча не для вас!",
+			ShowAlert:       true,
+		})
+		slog.Info("captcha: wrong user pressed", "target", targetUserID, "pressed", cb.From.ID)
+		return
+	}
+
+	features := a.getFeatures(chatID)
+	if !features["enable_moderation"] || !features["enable_captcha"] {
+		b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+			ChatID: chatID,
+			UserID: targetUserID,
+			Permissions: &models.ChatPermissions{
+				CanSendMessages:       true,
+				CanSendAudios:         true,
+				CanSendDocuments:      true,
+				CanSendPhotos:         true,
+				CanSendVideos:         true,
+				CanSendVideoNotes:     true,
+				CanSendVoiceNotes:     true,
+				CanSendPolls:          true,
+				CanSendOtherMessages:  true,
+				CanAddWebPagePreviews: true,
+			},
+		})
+		b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: msgID,
+		})
+		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "Капча отключена.",
+			ShowAlert:       true,
+		})
 		return
 	}
 
 	if chosenAnswer == correctAnswer {
-		if b != nil {
-			_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
-				ChatID: chatID,
-				UserID: targetUserID,
-				Permissions: &models.ChatPermissions{
-					CanSendMessages:       true,
-					CanSendAudios:         true,
-					CanSendDocuments:      true,
-					CanSendPhotos:         true,
-					CanSendVideos:         true,
-					CanSendVideoNotes:     true,
-					CanSendVoiceNotes:     true,
-					CanSendPolls:          true,
-					CanSendOtherMessages:  true,
-					CanAddWebPagePreviews: true,
-				},
-			})
-			if err != nil {
-				slog.Error("failed to unmute user after captcha", "userID", targetUserID, "error", err)
-			}
-
-			b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
-				ChatID:    chatID,
-				MessageID: msgID,
-			})
-
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
-				CallbackQueryID: cb.ID,
-				Text:            "✅ Капча решена! Вы можете общаться.",
-				ShowAlert:       true,
-			})
+		_, err := b.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
+			ChatID: chatID,
+			UserID: targetUserID,
+			Permissions: &models.ChatPermissions{
+				CanSendMessages:       true,
+				CanSendAudios:         true,
+				CanSendDocuments:      true,
+				CanSendPhotos:         true,
+				CanSendVideos:         true,
+				CanSendVideoNotes:     true,
+				CanSendVoiceNotes:     true,
+				CanSendPolls:          true,
+				CanSendOtherMessages:  true,
+				CanAddWebPagePreviews: true,
+			},
+		})
+		if err != nil {
+			slog.Error("failed to unmute user after captcha", "userID", targetUserID, "error", err)
 		}
+
+		b.DeleteMessage(ctx, &tgbot.DeleteMessageParams{
+			ChatID:    chatID,
+			MessageID: msgID,
+		})
+		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "✅ Капча решена! Вы можете общаться.",
+			ShowAlert:       true,
+		})
 	} else {
-		if b != nil {
-			b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
-				CallbackQueryID: cb.ID,
-				Text:            "❌ Неверный ответ! Попробуйте еще раз.",
-				ShowAlert:       true,
-			})
-		}
+		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "❌ Неверный ответ! Попробуйте еще раз.",
+			ShowAlert:       true,
+		})
 	}
 }
 

@@ -20,13 +20,12 @@ func TestGroupsCRUD(t *testing.T) {
 
 	// Test Create
 	g := &Group{
-		ChatID:           -1001234567,
-		Title:            "Test Group",
-		APIToken:         "test-token",
-		OmsuGroupID:      42,
-		AnnounceThreadID: 100,
-		IsActive:         true,
-		IsVIP:            false,
+		ChatID:      -1001234567,
+		Title:       "Test Group",
+		APIToken:    "test-token",
+		OmsuGroupID: 42,
+		IsActive:    true,
+		IsVIP:       false,
 	}
 
 	if err := d.CreateGroup(ctx, g); err != nil {
@@ -38,7 +37,7 @@ func TestGroupsCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get group: %v", err)
 	}
-	if retrieved.Title != "Test Group" || retrieved.APIToken != "test-token" || retrieved.OmsuGroupID != 42 || retrieved.AnnounceThreadID != 100 {
+	if retrieved.Title != "Test Group" || retrieved.APIToken != "test-token" || retrieved.OmsuGroupID != 42 {
 		t.Errorf("mismatched group fields: %+v", retrieved)
 	}
 

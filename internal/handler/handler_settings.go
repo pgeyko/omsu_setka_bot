@@ -76,15 +76,19 @@ func (h *SettingsHandler) HandleSettingsCommand(ctx context.Context, b *tgbot.Bo
 	chatID := msg.Chat.ID
 	userID := msg.From.ID
 
+	slog.Info("settings command", "user", userID, "chat", chatID, "type", msg.Chat.Type)
+
 	if string(msg.Chat.Type) == "private" {
 		h.sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID: chatID,
 			Text:   "❌ Настройки доступны только внутри группы.",
 		})
+		slog.Info("settings: private chat blocked", "user", userID)
 		return
 	}
 
 	if !h.isAuthorized(ctx, chatID, userID) {
+		slog.Info("settings: unauthorized", "user", userID, "chat", chatID)
 		h.sendMessage(ctx, b, &tgbot.SendMessageParams{
 			ChatID:          chatID,
 			MessageThreadID: msg.MessageThreadID,
@@ -93,6 +97,7 @@ func (h *SettingsHandler) HandleSettingsCommand(ctx context.Context, b *tgbot.Bo
 		return
 	}
 
+	slog.Info("settings: sending main menu", "chat", chatID)
 	h.sendMainMenu(ctx, b, chatID, msg.MessageThreadID, "⚙️ <b>Настройки группы</b>\n\nВыберите раздел для редактирования:")
 }
 
@@ -127,7 +132,7 @@ func (h *SettingsHandler) editMessage(ctx context.Context, b *tgbot.Bot, chatID 
 	if b == nil {
 		return
 	}
-	_, _ = b.EditMessageText(ctx, &tgbot.EditMessageTextParams{
+	if _, err := b.EditMessageText(ctx, &tgbot.EditMessageTextParams{
 		ChatID:      chatID,
 		MessageID:   messageID,
 		Text:        text,
@@ -135,7 +140,9 @@ func (h *SettingsHandler) editMessage(ctx context.Context, b *tgbot.Bot, chatID 
 		ReplyMarkup: &models.InlineKeyboardMarkup{
 			InlineKeyboard: keyboard,
 		},
-	})
+	}); err != nil {
+		slog.Warn("settings: editMessage failed", "chat", chatID, "msg_id", messageID, "error", err)
+	}
 }
 
 func (h *SettingsHandler) sendMessage(ctx context.Context, b *tgbot.Bot, params *tgbot.SendMessageParams) {
@@ -146,32 +153,42 @@ func (h *SettingsHandler) sendMessage(ctx context.Context, b *tgbot.Bot, params 
 }
 
 func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-	if b == nil {
-		return
-	}
-	if update.CallbackQuery == nil {
+	if b == nil || update.CallbackQuery == nil {
+		slog.Warn("settings callback: b or cb is nil")
 		return
 	}
 	cb := update.CallbackQuery
-	chatID := cb.Message.Message.Chat.ID
-	userID := cb.From.ID
-	messageID := cb.Message.Message.ID
 
-	// Answer callback query first
+	slog.Info("settings callback received", "data", cb.Data, "from", cb.From.ID)
+
+	// Always answer callback to dismiss Telegram loading state
 	defer b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
 		CallbackQueryID: cb.ID,
 	})
 
-	if !h.isAuthorized(ctx, chatID, userID) {
+	data := cb.Data
+	if !strings.HasPrefix(data, "settings:") {
+		slog.Debug("settings callback: not our prefix", "data", data)
 		return
 	}
 
-	data := cb.Data
-	if !strings.HasPrefix(data, "settings:") {
+	// Extract chat/message from callback, handling inaccessible messages
+	mim := cb.Message
+	if mim.Message == nil {
+		slog.Warn("settings callback: message is inaccessible", "data", data, "has_inaccessible", mim.InaccessibleMessage != nil)
+		return
+	}
+	chatID := mim.Message.Chat.ID
+	messageID := mim.Message.ID
+	userID := cb.From.ID
+
+	if !h.isAuthorized(ctx, chatID, userID) {
+		slog.Info("settings callback: unauthorized", "user", userID, "chat", chatID)
 		return
 	}
 
 	action := strings.TrimPrefix(data, "settings:")
+	slog.Info("settings callback: executing action", "action", action, "chat", chatID)
 
 	switch {
 	case action == "menu:main":

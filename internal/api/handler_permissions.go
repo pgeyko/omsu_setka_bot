@@ -24,9 +24,23 @@ func (s *Server) handleGetPermissions(c *fiber.Ctx) error {
 		groupID = s.TelegramGroupID
 	}
 
-	s.DB.ExecContext(c.Context(),
-		`INSERT OR IGNORE INTO command_permissions (group_id, command, allowed_role) VALUES (?, ?, ?)`,
-		groupID, "forward", "everyone")
+	// Seed defaults: ensure every known command has a row regardless of FK
+	defaultCommands := []struct {
+		Command     string
+		AllowedRole string
+	}{
+		{"forward", "everyone"},
+		{"moderate_user", "admin"},
+		{"run_protocol", "admin"},
+		{"manage_topic", "admin"},
+		{"get_schedule", "everyone"},
+		{"generate_summary", "everyone"},
+	}
+	for _, dc := range defaultCommands {
+		s.DB.ExecContext(c.Context(),
+			`INSERT OR IGNORE INTO command_permissions (group_id, command, allowed_role) VALUES (?, ?, ?)`,
+			groupID, dc.Command, dc.AllowedRole)
+	}
 
 	rows, err := s.DB.QueryContext(c.Context(),
 		`SELECT command, allowed_role FROM command_permissions WHERE group_id = ? ORDER BY command`, groupID)

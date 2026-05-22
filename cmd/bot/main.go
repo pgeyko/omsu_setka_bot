@@ -34,7 +34,7 @@ import (
 	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/classifier"
 	"omsu_bot/internal/config"
-	"omsu_bot/internal/db"
+	omsudb "omsu_bot/internal/db"
 	"omsu_bot/internal/forwarder"
 	"omsu_bot/internal/util"
 	handlers "omsu_bot/internal/handler"
@@ -76,7 +76,17 @@ func main() {
 	cfg := config.Load(configPath)
 	setupLogger(cfg)
 
-	database, err := db.New(cfg.DB.Path)
+	// Set timezone for all time.Now() calls
+	if cfg.Timezone != "" {
+		os.Setenv("TZ", cfg.Timezone)
+		if _, err := time.LoadLocation("Local"); err != nil {
+			slog.Warn("invalid timezone", "tz", cfg.Timezone, "error", err)
+		} else {
+			slog.Info("timezone set", "tz", cfg.Timezone)
+		}
+	}
+
+	database, err := omsudb.New(cfg.DB.Path)
 	if err != nil {
 		slog.Error("failed to open database", "error", err)
 		os.Exit(1)
@@ -221,7 +231,7 @@ func main() {
 		fwd := forwarder.New(tgBot, personaStore)
 		summaryBuf := buffer.NewSummaryBuffer(database.DB, 200)
 		usernameCache := telegram.NewUsernameCache()
-		h := handlers.NewHandler(classif, fwd, database.DB, summaryBuf, usernameCache)
+		h := handlers.NewHandler(classif, fwd, tgBot, database.DB, summaryBuf, usernameCache)
 
 		sessionStore := telegram.NewSessionStore()
 		adminCache := telegram.NewAdminCache(tgBot, cfg.Telegram.GroupID)
@@ -247,6 +257,7 @@ func main() {
 /help — эта справка
 /id — ID топика
 /topics — список топиков
+/tag #тег — поиск сообщений по хэштегу
 /resend — переслать в топик
 /register — зарегистрировать топик (админ)
 /summary — саммари
@@ -302,9 +313,19 @@ func main() {
 			antispam.HandleNewChatMembers(ctx, b, update.Message.Chat.ID, update.Message.NewChatMembers)
 		})
 
+		// Settings command (dedicated handler: Telegram may not send BotCommand entity in groups)
+		for _, cmd := range []string{"/settings", "/настройки"} {
+			cmd := cmd
+			tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, cmd, tgbot.MatchTypeExact, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+				if settingsHandler != nil {
+					settingsHandler.HandleSettingsCommand(ctx, b, update)
+				}
+			})
+		}
+
 		// Active groups messaging
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && database.IsGroupActive(context.Background(), update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help"
+			return update.Message != nil && database.IsGroupActive(context.Background(), update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки"
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if antispam.CheckFloodAndLinks(ctx, b, update.Message) {
 				return
@@ -581,6 +602,56 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
 			Text: "📋 <b>Топики:</b>\n" + list, ParseMode: models.ParseModeHTML,
+		})
+
+	case "tag", "тег":
+		tagName := strings.TrimPrefix(args, "#")
+		if tagName == "" {
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
+				Text: "Укажи тег: /tag #дедлайн",
+			})
+			return
+		}
+		dDB := &omsudb.DB{DB: db}
+		messages, err := dDB.GetMessagesByTag(ctx, msg.Chat.ID, tagName, 20)
+		if err != nil {
+			slog.Error("failed to search tags", "error", err)
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
+				Text: "❌ Ошибка при поиске тега.",
+			})
+			return
+		}
+		if len(messages) == 0 {
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
+				Text: fmt.Sprintf("Нет сообщений с тегом #%s.", tagName),
+			})
+			return
+		}
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("📌 <b>#%s</b> — найдено %d:\n\n", tagName, len(messages)))
+		chatIDPos := msg.Chat.ID
+		if chatIDPos < 0 {
+			chatIDPos = -chatIDPos
+		}
+		for i, m := range messages {
+			if i >= 10 {
+				sb.WriteString(fmt.Sprintf("\n... и ещё %d", len(messages)-10))
+				break
+			}
+			link := fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, m.MessageID)
+			preview := m.Text
+			if len(preview) > 100 {
+				preview = preview[:100] + "..."
+			}
+			timeStr := m.CreatedAt.Format("02.01 15:04")
+			sb.WriteString(fmt.Sprintf("<a href=\"%s\">🔗</a> %s @%s\n<code>%s</code>\n\n", link, timeStr, m.Username, preview))
+		}
+		b.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
+			Text: sb.String(), ParseMode: models.ParseModeHTML,
 		})
 
 	case "id", "topic_id":

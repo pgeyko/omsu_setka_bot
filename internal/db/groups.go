@@ -7,37 +7,34 @@ import (
 )
 
 type Group struct {
-	ChatID           int64     `json:"chat_id"`
-	Title            string    `json:"title"`
-	APIToken         string    `json:"api_token"`
-	OmsuGroupID      int       `json:"omsu_group_id"`
-	AnnounceThreadID int       `json:"announce_thread_id"`
-	IsActive         bool      `json:"is_active"`
-	IsVIP            bool      `json:"is_vip"`
-	CreatedAt        time.Time `json:"created_at"`
+	ChatID      int64     `json:"chat_id"`
+	Title       string    `json:"title"`
+	APIToken    string    `json:"api_token"`
+	OmsuGroupID int       `json:"omsu_group_id"`
+	IsActive    bool      `json:"is_active"`
+	IsVIP       bool      `json:"is_vip"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // GroupPublic is a safe view of Group that omits the api_token secret.
 type GroupPublic struct {
-	ChatID           int64     `json:"chat_id"`
-	Title            string    `json:"title"`
-	OmsuGroupID      int       `json:"omsu_group_id"`
-	AnnounceThreadID int       `json:"announce_thread_id"`
-	IsActive         bool      `json:"is_active"`
-	IsVIP            bool      `json:"is_vip"`
-	CreatedAt        time.Time `json:"created_at"`
+	ChatID      int64     `json:"chat_id"`
+	Title       string    `json:"title"`
+	OmsuGroupID int       `json:"omsu_group_id"`
+	IsActive    bool      `json:"is_active"`
+	IsVIP       bool      `json:"is_vip"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // ToPublic converts a Group to its public (token-stripped) representation.
 func (g *Group) ToPublic() GroupPublic {
 	return GroupPublic{
-		ChatID:           g.ChatID,
-		Title:            g.Title,
-		OmsuGroupID:      g.OmsuGroupID,
-		AnnounceThreadID: g.AnnounceThreadID,
-		IsActive:         g.IsActive,
-		IsVIP:            g.IsVIP,
-		CreatedAt:        g.CreatedAt,
+		ChatID:      g.ChatID,
+		Title:       g.Title,
+		OmsuGroupID: g.OmsuGroupID,
+		IsActive:    g.IsActive,
+		IsVIP:       g.IsVIP,
+		CreatedAt:   g.CreatedAt,
 	}
 }
 
@@ -50,9 +47,9 @@ type Superadmin struct {
 // CreateGroup inserts a new group into the database
 func (d *DB) CreateGroup(ctx context.Context, g *Group) error {
 	_, err := d.ExecContext(ctx,
-		`INSERT INTO groups (chat_id, title, api_token, omsu_group_id, announce_thread_id, is_active, is_vip, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		g.ChatID, g.Title, g.APIToken, g.OmsuGroupID, g.AnnounceThreadID, g.IsActive, g.IsVIP,
+		`INSERT INTO groups (chat_id, title, api_token, omsu_group_id, is_active, is_vip, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		g.ChatID, g.Title, g.APIToken, g.OmsuGroupID, g.IsActive, g.IsVIP,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create group: %w", err)
@@ -65,10 +62,10 @@ func (d *DB) GetGroup(ctx context.Context, chatID int64) (*Group, error) {
 	var g Group
 	var createdAt string
 	err := d.QueryRowContext(ctx,
-		`SELECT chat_id, title, api_token, omsu_group_id, announce_thread_id, is_active, is_vip, created_at
+		`SELECT chat_id, title, api_token, omsu_group_id, is_active, is_vip, created_at
 		 FROM groups WHERE chat_id = ?`,
 		chatID,
-	).Scan(&g.ChatID, &g.Title, &g.APIToken, &g.OmsuGroupID, &g.AnnounceThreadID, &g.IsActive, &g.IsVIP, &createdAt)
+	).Scan(&g.ChatID, &g.Title, &g.APIToken, &g.OmsuGroupID, &g.IsActive, &g.IsVIP, &createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -91,10 +88,10 @@ func (d *DB) GetGroupByToken(ctx context.Context, token string) (*Group, error) 
 	var g Group
 	var createdAt string
 	err := d.QueryRowContext(ctx,
-		`SELECT chat_id, title, api_token, omsu_group_id, announce_thread_id, is_active, is_vip, created_at
+		`SELECT chat_id, title, api_token, omsu_group_id, is_active, is_vip, created_at
 		 FROM groups WHERE api_token = ?`,
 		token,
-	).Scan(&g.ChatID, &g.Title, &g.APIToken, &g.OmsuGroupID, &g.AnnounceThreadID, &g.IsActive, &g.IsVIP, &createdAt)
+	).Scan(&g.ChatID, &g.Title, &g.APIToken, &g.OmsuGroupID, &g.IsActive, &g.IsVIP, &createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -109,9 +106,9 @@ func (d *DB) GetGroupByToken(ctx context.Context, token string) (*Group, error) 
 // UpdateGroup updates group settings
 func (d *DB) UpdateGroup(ctx context.Context, g *Group) error {
 	_, err := d.ExecContext(ctx,
-		`UPDATE groups SET title = ?, api_token = ?, omsu_group_id = ?, announce_thread_id = ?, is_active = ?, is_vip = ?
+		`UPDATE groups SET title = ?, api_token = ?, omsu_group_id = ?, is_active = ?, is_vip = ?
 		 WHERE chat_id = ?`,
-		g.Title, g.APIToken, g.OmsuGroupID, g.AnnounceThreadID, g.IsActive, g.IsVIP, g.ChatID,
+		g.Title, g.APIToken, g.OmsuGroupID, g.IsActive, g.IsVIP, g.ChatID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update group: %w", err)
@@ -150,7 +147,7 @@ func (d *DB) GroupExists(ctx context.Context, chatID int64) (bool, error) {
 // ListGroups returns all groups
 func (d *DB) ListGroups(ctx context.Context) ([]Group, error) {
 	rows, err := d.QueryContext(ctx,
-		`SELECT chat_id, title, api_token, omsu_group_id, announce_thread_id, is_active, is_vip, created_at
+		`SELECT chat_id, title, api_token, omsu_group_id, is_active, is_vip, created_at
 		 FROM groups ORDER BY title`)
 	if err != nil {
 		return nil, err
@@ -161,7 +158,7 @@ func (d *DB) ListGroups(ctx context.Context) ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var createdAt string
-		err := rows.Scan(&g.ChatID, &g.Title, &g.APIToken, &g.OmsuGroupID, &g.AnnounceThreadID, &g.IsActive, &g.IsVIP, &createdAt)
+		err := rows.Scan(&g.ChatID, &g.Title, &g.APIToken, &g.OmsuGroupID, &g.IsActive, &g.IsVIP, &createdAt)
 		if err != nil {
 			return nil, err
 		}

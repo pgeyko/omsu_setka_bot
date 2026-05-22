@@ -3,11 +3,13 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"strings"
 
 	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/classifier"
+	"omsu_bot/internal/db"
 	"omsu_bot/internal/forwarder"
 	"omsu_bot/internal/telegram"
 
@@ -21,15 +23,17 @@ type Handler struct {
 	db            *sql.DB
 	buffer        *buffer.SummaryBuffer
 	usernameCache *telegram.UsernameCache
+	bot           *tgbot.Bot
 }
 
-func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
+func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
 	return &Handler{
 		classifier:    classifier,
 		forwarder:     forwarder,
 		db:            db,
 		buffer:        buffer,
 		usernameCache: usernameCache,
+		bot:           bot,
 	}
 }
 
@@ -116,10 +120,36 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		fromTopicName = h.getTopicName(ctx, msg.Chat.ID, msg.MessageThreadID)
 	}
 
+	// Text-prefix deduplication: skip if same text already in target topic
+	if text != "" {
+		textPrefix := textPrefix(text)
+		d := &db.DB{DB: h.db}
+		exists, err := d.HasMessageWithText(ctx, msg.Chat.ID, targetThreadID, textPrefix)
+		if err == nil && exists {
+			slog.Debug("duplicate message detected, skipping forward", "msg_id", msg.ID, "topic", result.Topic)
+			h.bot.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID:          msg.Chat.ID,
+				MessageThreadID: msg.MessageThreadID,
+				Text:            fmt.Sprintf("⚠️ Это сообщение уже есть в топике «%s».", result.Topic),
+				ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
+			})
+			h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "duplicate", targetThreadID)
+			return
+		}
+	}
+
 	_, err = h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, fromTopicName, result.Hashtags, msg.ID)
 	if err != nil {
 		slog.Error("forward failed", "error", err, "msg_id", msg.ID)
 		return
+	}
+
+	// Persist hashtags for search
+	if len(result.Hashtags) > 0 {
+		d := &db.DB{DB: h.db}
+		if err := d.AddTags(ctx, msg.Chat.ID, msg.ID, result.Hashtags); err != nil {
+			slog.Error("failed to save tags", "error", err, "msg_id", msg.ID)
+		}
 	}
 
 	h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, result.Topic)
@@ -191,4 +221,11 @@ func countWords(s string) int {
 		return 0
 	}
 	return len(strings.Fields(s))
+}
+
+func textPrefix(s string) string {
+	if len(s) > 100 {
+		return s[:100]
+	}
+	return s
 }

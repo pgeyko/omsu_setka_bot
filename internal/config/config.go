@@ -61,6 +61,7 @@ type loggingConfig struct {
 type Config struct {
 	AppEnv         string `yaml:"app_env" env:"APP_ENV" envDefault:"development"`
 	SwaggerEnabled bool   `yaml:"swagger_enabled" env:"SWAGGER_ENABLED" envDefault:"false"`
+	Timezone       string `yaml:"timezone" env:"TZ" envDefault:"Asia/Omsk"`
 
 	Telegram  telegramConfig  `yaml:"telegram"`
 	LLM       llmConfig       `yaml:"llm"`

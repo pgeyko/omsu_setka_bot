@@ -175,6 +175,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   .mobile-overlay { display: block; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 105; }
   .content-area { margin-left: 0; }
   .mobile-menu-toggle { display: flex; }
+  .groups-back-btn { display: flex !important; }
 }
 
 /* Table responsive: cards on mobile */
@@ -204,6 +205,14 @@ textarea.input { resize: vertical; min-height: 80px; }
     margin-right: 0.5rem;
   }
   main { padding: 0.75rem !important; }
+}
+
+/* Groups page mobile: show list or detail, never both */
+@media (max-width: 768px) {
+  .groups-list-pane { flex: 1 !important; width: auto !important; }
+  .groups-detail-pane { flex: 1 !important; width: auto !important; }
+  .groups-list-pane.hidden-mobile { display: none !important; }
+  .groups-detail-pane.hidden-mobile { display: none !important; }
 }
 
 /* Modal responsive */

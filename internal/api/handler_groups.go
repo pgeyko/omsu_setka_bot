@@ -10,13 +10,12 @@ import (
 )
 
 type groupRequest struct {
-	ChatID           int64  `json:"chat_id"`
-	Title            string `json:"title"`
-	APIToken         string `json:"api_token"`
-	OmsuGroupID      int    `json:"omsu_group_id"`
-	AnnounceThreadID int    `json:"announce_thread_id"`
-	IsActive         bool   `json:"is_active"`
-	IsVIP            bool   `json:"is_vip"`
+	ChatID      int64  `json:"chat_id"`
+	Title       string `json:"title"`
+	APIToken    string `json:"api_token"`
+	OmsuGroupID int    `json:"omsu_group_id"`
+	IsActive    bool   `json:"is_active"`
+	IsVIP       bool   `json:"is_vip"`
 }
 
 func (s *Server) handleListGroups(c *fiber.Ctx) error {
@@ -44,13 +43,12 @@ func (s *Server) handleCreateGroup(c *fiber.Ctx) error {
 	}
 
 	g := &db.Group{
-		ChatID:           req.ChatID,
-		Title:            req.Title,
-		APIToken:         req.APIToken,
-		OmsuGroupID:      req.OmsuGroupID,
-		AnnounceThreadID: req.AnnounceThreadID,
-		IsActive:         req.IsActive,
-		IsVIP:            req.IsVIP,
+		ChatID:      req.ChatID,
+		Title:       req.Title,
+		APIToken:    req.APIToken,
+		OmsuGroupID: req.OmsuGroupID,
+		IsActive:    req.IsActive,
+		IsVIP:       req.IsVIP,
 	}
 
 	d := &db.DB{DB: s.DB}
@@ -108,7 +106,6 @@ func (s *Server) handleUpdateGroup(c *fiber.Ctx) error {
 		g.APIToken = req.APIToken
 	}
 	g.OmsuGroupID = req.OmsuGroupID
-	g.AnnounceThreadID = req.AnnounceThreadID
 	g.IsActive = req.IsActive
 	g.IsVIP = req.IsVIP
 
