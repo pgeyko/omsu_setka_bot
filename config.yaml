@@ -14,30 +14,71 @@ llm:
   skip_fallback_model: false
 
   providers:
-    - name: gemini-primary
+    # ── Text chain ── (classify, agent, summary, schedule)
+    - name: gemma-text
+      type: gemini
+      api_key: "${GEMINI_API_KEY}"
+      model: gemma-4-31b-it
+      multimodal: false
+      priority: 10
+
+    - name: gemma-text-reserve
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemma-4-31b-it
+      multimodal: false
+      priority: 20
+
+    - name: gemini-text-fallback
       type: gemini
       api_key: "${GEMINI_API_KEY}"
       model: gemini-3.1-flash-lite
-      fallback_models:
-        - gemini-2.5-flash-lite
-      multimodal: true
-      priority: 1
+      multimodal: false
+      priority: 30
 
-    - name: gemini-reserve
+    - name: gemini-text-fallback-reserve
       type: gemini
       api_key: "${GEMINI_RESERVE_API_KEY}"
       model: gemini-3.1-flash-lite
-      fallback_models:
-        - gemini-2.5-flash-lite
-      multimodal: true
-      priority: 2
+      multimodal: false
+      priority: 40
 
-    - name: deepseek-fallback
+    - name: deepseek-final
       type: deepseek
       api_key: "${DEEPSEEK_API_KEY}"
       model: deepseek-chat
       multimodal: false
-      priority: 3
+      priority: 90
+
+    # ── Vision chain ── (OCR, фото)
+    - name: gemini-vision
+      type: gemini
+      api_key: "${GEMINI_API_KEY}"
+      model: gemini-3.1-flash-lite
+      multimodal: true
+      priority: 50
+
+    - name: gemini-vision-reserve
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemini-3.1-flash-lite
+      multimodal: true
+      priority: 60
+
+    # ── Audio chain ── (голосовые, Native Audio Dialog)
+    - name: gemini-audio
+      type: gemini
+      api_key: "${GEMINI_API_KEY}"
+      model: gemini-2.5-flash
+      multimodal: true
+      priority: 70
+
+    - name: gemini-audio-fallback
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemini-2.5-flash
+      multimodal: true
+      priority: 80
 
 api:
   listen: ":8081"

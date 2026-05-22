@@ -53,7 +53,8 @@ export const api = {
     if (params?.limit !== undefined) qs.set('limit', String(params.limit))
     if (params?.offset !== undefined) qs.set('offset', String(params.offset))
     const q = qs.toString()
-    const fullPath = path + (q ? '?' + q : '')
+    const sep = path.includes('?') ? '&' : '?'
+    const fullPath = path + (q ? sep + q : '')
     return requestFull<PaginatedResponse<T>>(fullPath)
   },
   post: <T>(path: string, body?: unknown) =>

@@ -63,6 +63,9 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 			MessageThreadID: msg.MessageThreadID,
 			Text:            response,
 			ParseMode:       models.ParseModeHTML,
+			ReplyParameters: &models.ReplyParameters{
+				MessageID: msg.ID,
+			},
 		})
 	}
 }

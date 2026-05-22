@@ -113,12 +113,8 @@ func main() {
 
 	cmdReg := handlers.NewCommandRegistry()
 
-	var providers []*llm.Provider
+	var textProviders, visionProviders, audioProviders []*llm.Provider
 	for _, pcfg := range cfg.LLM.Providers {
-		capabilities := []llm.Capability{}
-		if pcfg.Multimodal {
-			capabilities = append(capabilities, llm.CapabilityMultimodal)
-		}
 		baseURL := pcfg.BaseURL
 		if baseURL == "" {
 			switch pcfg.Type {
@@ -132,20 +128,42 @@ func main() {
 		if len(fallbackModels) == 0 {
 			fallbackModels = []string{"gemini-2.5-flash-lite"}
 		}
-		providers = append(providers, &llm.Provider{
+		p := &llm.Provider{
 			Name:           pcfg.Name,
 			Type:           pcfg.Type,
 			BaseURL:        baseURL,
 			APIKey:         pcfg.APIKey,
 			Model:          pcfg.Model,
 			FallbackModels: fallbackModels,
-			Capabilities:   capabilities,
-		})
+		}
+
+		// Route by name convention: gemini-audio* → audio chain,
+		// gemini-vision* → vision chain, everything else → text chain.
+		switch {
+		case strings.HasPrefix(pcfg.Name, "gemini-audio"):
+			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
+			audioProviders = append(audioProviders, p)
+		case strings.HasPrefix(pcfg.Name, "gemini-vision"):
+			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
+			visionProviders = append(visionProviders, p)
+		default:
+			textProviders = append(textProviders, p)
+		}
 	}
-	llmChain := llm.NewChain(providers)
+
+	audioChain := llm.NewChain(audioProviders)
+	visionChain := llm.NewChain(visionProviders)
+	textChain := llm.NewChain(textProviders)
+
+	// Combined chain for API diagnostics (shows all providers)
+	var allProviders []*llm.Provider
+	allProviders = append(allProviders, textProviders...)
+	allProviders = append(allProviders, visionProviders...)
+	allProviders = append(allProviders, audioProviders...)
+	llmChain := llm.NewChain(allProviders)
 
 	tracker := llm.NewTracker(database.DB, int64(cfg.LLM.DailyTokenLimit), 0.8)
-	llmClient := llm.NewClient(llmChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
+	llmClient := llm.NewClient(textChain, visionChain, audioChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
 	globalLLM = llmClient
 
 	tgBot, err := tgbot.New(cfg.Telegram.Token)
@@ -153,7 +171,7 @@ func main() {
 		slog.Error("failed to create Telegram bot, continuing without bot", "error", err)
 	}
 
-	providerCount = len(providers)
+	providerCount = len(allProviders)
 	if tgBot != nil {
 		me, err := tgBot.GetMe(context.Background())
 		if err == nil {
@@ -243,6 +261,8 @@ func main() {
 			cfg.Setka.AdminKey,
 			cfg.Webhook.ScheduleSecret,
 			cfg.Setka.PublicURL,
+			apiServer.GlobalVoiceTranscription.Load,
+			apiServer.GlobalPhotoProcessing.Load,
 		)
 
 		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache)
@@ -292,19 +312,16 @@ func main() {
 			})
 		})
 
-		// Captcha callbacks
-		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "captcha:")
-		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-			antispam.HandleCallbackQuery(ctx, b, update)
-		})
-
-		// Settings callbacks
-		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.CallbackQuery != nil && strings.HasPrefix(update.CallbackQuery.Data, "settings:")
-		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-			settingsHandler.HandleCallbackQuery(ctx, b, update)
-		})
+		// Captcha callbacks — use RegisterHandler with HandlerTypeCallbackQueryData
+		tgBot.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "captcha:", tgbot.MatchTypePrefix,
+			func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+				antispam.HandleCallbackQuery(ctx, b, update)
+			})
+		// Settings callbacks — use RegisterHandler with HandlerTypeCallbackQueryData
+		tgBot.RegisterHandler(tgbot.HandlerTypeCallbackQueryData, "settings:", tgbot.MatchTypePrefix,
+			func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+				settingsHandler.HandleCallbackQuery(ctx, b, update)
+			})
 
 		// New Chat Members captcha prompt
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
@@ -339,6 +356,7 @@ func main() {
 			}
 
 			features := settingsHandler.LoadFeatures(msg.Chat.ID)
+			p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
 
 			if msg.Voice != nil && apiServer.GlobalVoiceTranscription.Load() && features["enable_voice_transcription"] {
 				txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
@@ -349,15 +367,49 @@ func main() {
 				}
 			}
 
-			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
-				ocrText, err := mediaProcessor.ProcessPhoto(ctx, msg.Photo[len(msg.Photo)-1].FileID)
-				if err != nil {
-					slog.Error("failed to process photo", "error", err)
-				} else if ocrText != "" {
-					if msg.Caption != "" {
-						msg.Caption = msg.Caption + "\n" + ocrText
-					} else {
-						msg.Text = ocrText
+			// Photo processing: three modes — off / auto / via @mention
+			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() {
+				doOCR := false
+				if features["enable_photo_processing"] && !features["photo_on_mention"] {
+					doOCR = true // auto — process all photos
+				} else if features["enable_photo_processing"] && features["photo_on_mention"] {
+					// mention-only: check if caption mentions bot or is reply to bot
+					captionText := msg.Caption
+					if captionText == "" {
+						captionText = msg.Text
+					}
+					if captionText != "" {
+						lowerText := strings.ToLower(captionText)
+						if isBotMention(msg) {
+							doOCR = true
+						} else if p.Name != "" && strings.Contains(lowerText, strings.ToLower(p.Name)) {
+							doOCR = true
+						} else {
+							for _, alias := range p.Aliases {
+								if strings.Contains(lowerText, strings.ToLower(alias)) {
+									doOCR = true
+									break
+								}
+							}
+						}
+					}
+					// Also process if photo is a reply to a bot message
+					if !doOCR && msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.Username == botUsername {
+						doOCR = true
+					}
+				}
+				// off — doOCR stays false
+
+				if doOCR {
+					ocrText, err := mediaProcessor.ProcessPhoto(ctx, msg.Photo[len(msg.Photo)-1].FileID)
+					if err != nil {
+						slog.Error("failed to process photo", "error", err)
+					} else if ocrText != "" {
+						if msg.Caption != "" {
+							msg.Caption = msg.Caption + "\n" + ocrText
+						} else {
+							msg.Text = ocrText
+						}
 					}
 				}
 			}
@@ -367,7 +419,6 @@ func main() {
 				text = msg.Caption
 			}
 
-			p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
 			isMentionOrAlias := false
 			if isBotMention(msg) {
 				isMentionOrAlias = true

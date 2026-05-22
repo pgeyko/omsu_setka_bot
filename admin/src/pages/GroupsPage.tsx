@@ -365,7 +365,6 @@ export default function GroupsPage() {
                           { id: 'enable_schedule', label: 'Расписание занятий' },
                           { id: 'enable_summary', label: 'Суммаризация топиков' },
                           { id: 'enable_voice_transcription', label: 'Расшифровка аудиосообщений' },
-                          { id: 'enable_photo_processing', label: 'Обработка изображений (LLM)' },
                         ].map(f => (
                           <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 0.75rem', background: 'var(--glass-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)' }}>
                             <input
@@ -376,6 +375,28 @@ export default function GroupsPage() {
                             <span style={{ fontSize: '0.85rem' }}>{f.label}</span>
                           </label>
                         ))}
+                        {/* Photo: three-state toggle */}
+                        <div
+                          onClick={() => {
+                            const auto = featuresForm.enable_photo_processing
+                            const mention = featuresForm.photo_on_mention
+                            if (!auto && !mention) {
+                              setFeaturesForm({ ...featuresForm, enable_photo_processing: true, photo_on_mention: false })
+                            } else if (auto && !mention) {
+                              setFeaturesForm({ ...featuresForm, enable_photo_processing: true, photo_on_mention: true })
+                            } else {
+                              setFeaturesForm({ ...featuresForm, enable_photo_processing: false, photo_on_mention: false })
+                            }
+                          }}
+                          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 0.75rem', background: 'var(--glass-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)', userSelect: 'none' }}
+                        >
+                          <span style={{ fontSize: '0.85rem' }}>
+                            Обработка фото:{' '}
+                            {!featuresForm.enable_photo_processing && !featuresForm.photo_on_mention ? '❌' :
+                             featuresForm.enable_photo_processing && !featuresForm.photo_on_mention ? '✅' :
+                             '✅ @'}
+                          </span>
+                        </div>
                       </div>
                     )}
 

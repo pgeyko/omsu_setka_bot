@@ -81,6 +81,17 @@ func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int
 
 		if len(resp.ToolCalls) == 0 {
 			// No more tool calls, return the final text response
+			if resp.Content != "" {
+				return resp.Content, nil
+			}
+			// LLM returned empty content after tool execution — return last tool result
+			if step > 0 {
+				for i := len(history) - 1; i >= 0; i-- {
+					if history[i].Role == "tool" && history[i].Content != "" {
+						return history[i].Content, nil
+					}
+				}
+			}
 			return resp.Content, nil
 		}
 

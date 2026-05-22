@@ -23,24 +23,28 @@ import (
 )
 
 type SettingsHandler struct {
-	db            *sql.DB
-	sessionStore  *telegram.SessionStore
-	adminCache    *telegram.AdminCache
-	setkaBaseURL  string
-	setkaAdminKey string
-	webhookSecret string
-	setkaPublicURL string
+	db               *sql.DB
+	sessionStore     *telegram.SessionStore
+	adminCache       *telegram.AdminCache
+	setkaBaseURL     string
+	setkaAdminKey    string
+	webhookSecret    string
+	setkaPublicURL   string
+	globalVoice      func() bool
+	globalPhoto      func() bool
 }
 
-func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCache *telegram.AdminCache, setkaBaseURL, setkaAdminKey, webhookSecret, setkaPublicURL string) *SettingsHandler {
+func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCache *telegram.AdminCache, setkaBaseURL, setkaAdminKey, webhookSecret, setkaPublicURL string, globalVoice, globalPhoto func() bool) *SettingsHandler {
 	return &SettingsHandler{
-		db:            db,
-		sessionStore:  sessionStore,
-		adminCache:    adminCache,
-		setkaBaseURL:  setkaBaseURL,
-		setkaAdminKey: setkaAdminKey,
-		webhookSecret: webhookSecret,
-		setkaPublicURL: setkaPublicURL,
+		db:               db,
+		sessionStore:     sessionStore,
+		adminCache:       adminCache,
+		setkaBaseURL:     setkaBaseURL,
+		setkaAdminKey:    setkaAdminKey,
+		webhookSecret:    webhookSecret,
+		setkaPublicURL:   setkaPublicURL,
+		globalVoice:      globalVoice,
+		globalPhoto:      globalPhoto,
 	}
 }
 
@@ -256,6 +260,24 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 		}
 		h.sessionStore.Clear(chatID, userID)
 		h.showSetkaScreen(ctx, b, chatID, messageID)
+	case action == "toggle:photo_processing":
+		features := h.LoadFeatures(chatID)
+		auto := features["enable_photo_processing"]
+		mention := features["photo_on_mention"]
+		// Cycle: off → auto → mention → off
+		if !auto && !mention {
+			features["enable_photo_processing"] = true  // → auto
+			features["photo_on_mention"] = false
+		} else if auto && !mention {
+			features["enable_photo_processing"] = true  // → mention
+			features["photo_on_mention"] = true
+		} else {
+			features["enable_photo_processing"] = false // → off
+			features["photo_on_mention"] = false
+		}
+		_ = h.saveFeatures(chatID, features)
+		h.showToolsScreen(ctx, b, chatID, messageID)
+
 	case strings.HasPrefix(action, "toggle:"):
 		feature := strings.TrimPrefix(action, "toggle:")
 		features := h.LoadFeatures(chatID)
@@ -266,6 +288,18 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 		}
 		_ = h.saveFeatures(chatID, features)
 		h.showToolsScreen(ctx, b, chatID, messageID)
+	case action == "planned:deadline_digest":
+		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "🕐 Будет добавлено в одном из следующих обновлений",
+			ShowAlert:       true,
+		})
+	case action == "planned:dead_topic":
+		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "🕐 Будет добавлено в одном из следующих обновлений",
+			ShowAlert:       true,
+		})
 	}
 }
 
@@ -338,68 +372,67 @@ func (h *SettingsHandler) showSetkaScreen(ctx context.Context, b *tgbot.Bot, cha
 func (h *SettingsHandler) showToolsScreen(ctx context.Context, b *tgbot.Bot, chatID int64, messageID int) {
 	features := h.LoadFeatures(chatID)
 
-	scheduleTick := "❌"
-	if features["enable_schedule"] {
-		scheduleTick = "✅"
-	}
-	summaryTick := "❌"
-	if features["enable_summary"] {
-		summaryTick = "✅"
-	}
-	moderationTick := "❌"
-	if features["enable_moderation"] {
-		moderationTick = "✅"
-	}
-	voiceTick := "❌"
-	if features["enable_voice_transcription"] {
-		voiceTick = "✅"
-	}
-	photoTick := "❌"
-	if features["enable_photo_processing"] {
-		photoTick = "✅"
-	}
-	captchaTick := "❌"
-	if features["enable_captcha"] {
-		captchaTick = "✅"
-	}
-	linkFilterTick := "❌"
-	if features["enable_link_filter"] {
-		linkFilterTick = "✅"
-	}
-	floodTick := "❌"
-	if features["enable_flood_control"] {
-		floodTick = "✅"
+	tick := func(key string) string {
+		if features[key] {
+			return "✅"
+		}
+		return "❌"
 	}
 
 	keyboard := [][]models.InlineKeyboardButton{
 		{
-			{Text: fmt.Sprintf("Расписание: %s", scheduleTick), CallbackData: "settings:toggle:schedule"},
+			{Text: fmt.Sprintf("Расписание: %s", tick("enable_schedule")), CallbackData: "settings:toggle:schedule"},
 		},
 		{
-			{Text: fmt.Sprintf("Саммари: %s", summaryTick), CallbackData: "settings:toggle:summary"},
+			{Text: fmt.Sprintf("Саммари: %s", tick("enable_summary")), CallbackData: "settings:toggle:summary"},
 		},
 		{
-			{Text: fmt.Sprintf("Модерация (общая): %s", moderationTick), CallbackData: "settings:toggle:moderation"},
+			{Text: fmt.Sprintf("Модерация (общая): %s", tick("enable_moderation")), CallbackData: "settings:toggle:moderation"},
 		},
 		{
-			{Text: fmt.Sprintf("Матем. капча: %s", captchaTick), CallbackData: "settings:toggle:captcha"},
+			{Text: fmt.Sprintf("Матем. капча: %s", tick("enable_captcha")), CallbackData: "settings:toggle:captcha"},
 		},
 		{
-			{Text: fmt.Sprintf("Фильтр ссылок: %s", linkFilterTick), CallbackData: "settings:toggle:link_filter"},
+			{Text: fmt.Sprintf("Фильтр ссылок: %s", tick("enable_link_filter")), CallbackData: "settings:toggle:link_filter"},
 		},
 		{
-			{Text: fmt.Sprintf("Флуд-контроль: %s", floodTick), CallbackData: "settings:toggle:flood_control"},
-		},
-		{
-			{Text: fmt.Sprintf("Расшифровка аудио: %s", voiceTick), CallbackData: "settings:toggle:voice_transcription"},
-		},
-		{
-			{Text: fmt.Sprintf("Обработка фото: %s", photoTick), CallbackData: "settings:toggle:photo_processing"},
-		},
-		{
-			{Text: "⬅️ Назад", CallbackData: "settings:menu:main"},
+			{Text: fmt.Sprintf("Флуд-контроль: %s", tick("enable_flood_control")), CallbackData: "settings:toggle:flood_control"},
 		},
 	}
+
+	// Voice transcription — show only if globally enabled
+	if h.globalVoice == nil || h.globalVoice() {
+		keyboard = append(keyboard, []models.InlineKeyboardButton{
+			{Text: fmt.Sprintf("Расшифровка аудио: %s", tick("enable_voice_transcription")), CallbackData: "settings:toggle:voice_transcription"},
+		})
+	}
+
+	// Photo processing — three-state toggle: off / auto / via @mention
+	if h.globalPhoto == nil || h.globalPhoto() {
+		photoLabel := "Обработка фото: ❌"
+		if features["enable_photo_processing"] && !features["photo_on_mention"] {
+			photoLabel = "Обработка фото: ✅"
+		} else if features["enable_photo_processing"] && features["photo_on_mention"] {
+			photoLabel = "Обработка фото: ✅ @"
+		}
+		keyboard = append(keyboard, []models.InlineKeyboardButton{
+			{Text: photoLabel, CallbackData: "settings:toggle:photo_processing"},
+		})
+	}
+
+	// Planned features (always visible, info-only)
+	keyboard = append(keyboard,
+		[]models.InlineKeyboardButton{
+			{Text: "📅 Дедлайн-дайджест (скоро)", CallbackData: "settings:planned:deadline_digest"},
+		},
+		[]models.InlineKeyboardButton{
+			{Text: "🛌 Детектор мёртвых топиков (скоро)", CallbackData: "settings:planned:dead_topic"},
+		},
+		[]models.InlineKeyboardButton{
+			{Text: "⬅️ Назад", CallbackData: "settings:menu:main"},
+		},
+	)
+
 	h.editMessage(ctx, b, chatID, messageID, "⚙️ <b>Управление функциями и инструментами ИИ</b>\n\nВключите или отключите определенные функции ИИ-ассистента для этого чата:", keyboard)
 }
 
@@ -594,6 +627,7 @@ func defaultFeatures() map[string]bool {
 		"enable_flood_control":        true,
 		"enable_voice_transcription": true,
 		"enable_photo_processing":    true,
+		"photo_on_mention":          false,
 	}
 }
 

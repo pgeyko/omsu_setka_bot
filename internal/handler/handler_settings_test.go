@@ -38,7 +38,7 @@ func TestSettingsHandler_Authorization(t *testing.T) {
 	sessionStore := telegram.NewSessionStore()
 	adminCache := telegram.NewAdminCache(nil, 12345)
 
-	h := NewSettingsHandler(database.DB, sessionStore, adminCache, "", "", "", "")
+	h := NewSettingsHandler(database.DB, sessionStore, adminCache, "", "", "", "", nil, nil)
 
 	// 1. Superadmin should be authorized
 	if !h.isAuthorized(ctx, 12345, 777) {
@@ -59,7 +59,7 @@ func TestSettingsHandler_LoadSaveFeatures(t *testing.T) {
 	defer database.Close()
 
 	sessionStore := telegram.NewSessionStore()
-	h := NewSettingsHandler(database.DB, sessionStore, nil, "", "", "", "")
+	h := NewSettingsHandler(database.DB, sessionStore, nil, "", "", "", "", nil, nil)
 
 	// Test default features
 	features := h.LoadFeatures(chatID)
@@ -88,7 +88,7 @@ func TestSettingsHandler_HandleAdminInput(t *testing.T) {
 	defer database.Close()
 
 	sessionStore := telegram.NewSessionStore()
-	h := NewSettingsHandler(database.DB, sessionStore, nil, "", "", "", "")
+	h := NewSettingsHandler(database.DB, sessionStore, nil, "", "", "", "", nil, nil)
 
 	chatID := int64(888888)
 	userID := int64(111)

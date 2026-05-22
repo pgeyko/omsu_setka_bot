@@ -88,7 +88,9 @@ func (mp *MediaProcessor) ProcessPhoto(ctx context.Context, fileID string) (stri
 }
 
 // ProcessVoice downloads a Telegram voice message and transcribes it.
-// Returns ("", nil) when no multimodal provider is active.
+// Uses Native Audio Dialog via the audio chain (gemini-2.5-flash), falls back
+// to vision chain (gemini-3.1-flash-lite STT). Returns ("", nil) when no
+// provider is active.
 func (mp *MediaProcessor) ProcessVoice(ctx context.Context, fileID string) (string, error) {
 	if !mp.llmClient.HasMultimodalProvider() {
 		slog.Debug("no multimodal provider available, skipping voice STT", "file_id", fileID)
@@ -104,22 +106,26 @@ func (mp *MediaProcessor) ProcessVoice(ctx context.Context, fileID string) (stri
 		mimeType = "audio/ogg"
 	}
 
-	history := []llm.AgentMessage{
-		{
-			Role:    "user",
-			Content: "Сделай дословную текстовую расшифровку этой аудиозаписи. Напиши только расшифрованный текст без форматирования, комментариев и метаданных. Если голоса нет или расшифровка невозможна, напиши '[Не удалось расшифровать аудио]'.",
-			MediaParts: []llm.MediaPart{
-				{
-					MimeType: mimeType,
-					Data:     data,
+	resp, err := mp.llmClient.CallAudio(ctx, "stt", "", data, mimeType)
+	if err != nil {
+		// Audio chain unavailable, fall back to vision chain with old STT approach
+		slog.Warn("native audio dialog failed, falling back to vision STT", "error", err)
+		history := []llm.AgentMessage{
+			{
+				Role:    "user",
+				Content: "Сделай дословную текстовую расшифровку этой аудиозаписи. Напиши только расшифрованный текст без форматирования, комментариев и метаданных. Если голоса нет или расшифровка невозможна, напиши '[Не удалось расшифровать аудио]'.",
+				MediaParts: []llm.MediaPart{
+					{
+						MimeType: mimeType,
+						Data:     data,
+					},
 				},
 			},
-		},
-	}
-
-	resp, err := mp.llmClient.CallGroupHistory(ctx, 0, "stt", "", history, nil, true)
-	if err != nil {
-		return "", err
+		}
+		resp, err = mp.llmClient.CallGroupHistory(ctx, 0, "stt", "", history, nil, true)
+		if err != nil {
+			return "", err
+		}
 	}
 	return strings.TrimSpace(resp.Content), nil
 }
