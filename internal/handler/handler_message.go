@@ -51,6 +51,37 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	if err := h.db.QueryRowContext(ctx, "SELECT is_active FROM groups WHERE chat_id = ?", msg.Chat.ID).Scan(&active); err != nil || active != 1 {
 		return
 	}
+
+	// Intercept Topic Creation and Edit
+	if msg.ForumTopicCreated != nil {
+		slug := "topic_" + fmt.Sprint(msg.MessageThreadID)
+		_, err := h.db.ExecContext(ctx,
+			`INSERT OR IGNORE INTO topics (group_id, tg_thread_id, name, slug, description, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
+			msg.Chat.ID, msg.MessageThreadID, msg.ForumTopicCreated.Name, slug, "",
+		)
+		if err != nil {
+			slog.Error("failed to insert forum topic created", "error", err)
+		} else {
+			slog.Info("registered new forum topic", "chat_id", msg.Chat.ID, "thread_id", msg.MessageThreadID, "name", msg.ForumTopicCreated.Name)
+		}
+		return
+	}
+
+	if msg.ForumTopicEdited != nil {
+		if msg.ForumTopicEdited.Name != "" {
+			_, err := h.db.ExecContext(ctx,
+				`UPDATE topics SET name = ? WHERE group_id = ? AND tg_thread_id = ?`,
+				msg.ForumTopicEdited.Name, msg.Chat.ID, msg.MessageThreadID,
+			)
+			if err != nil {
+				slog.Error("failed to update forum topic edited", "error", err)
+			} else {
+				slog.Info("updated forum topic name", "chat_id", msg.Chat.ID, "thread_id", msg.MessageThreadID, "name", msg.ForumTopicEdited.Name)
+			}
+		}
+		return
+	}
+
 	slog.Debug("tg message",
 		"msg_id", msg.ID,
 		"from", msg.From.ID,

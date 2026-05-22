@@ -68,9 +68,9 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 	// Explicit rule-based routing to forward classification
 	lowerText := strings.ToLower(text)
 	if strings.Contains(lowerText, "перешли") ||
-		strings.Contains(lowerText, "скинь в") ||
-		strings.Contains(lowerText, "отправь в") ||
-		strings.Contains(lowerText, "закинь в") {
+		strings.Contains(lowerText, "скинь") ||
+		strings.Contains(lowerText, "отправь") ||
+		strings.Contains(lowerText, "закинь") {
 		// Replace text payload to force a "forward message" tool behavior if available,
 		// but since we are handling mention via orchestrator, we can prepend a clear instruction
 		payload = "ПРИНУДИТЕЛЬНОЕ ДЕЙСТВИЕ: Это запрос на пересылку сообщения. Используй ТОЛЬКО инструмент forward_message. " + payload
