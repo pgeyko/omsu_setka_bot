@@ -268,7 +268,7 @@ func main() {
 
 		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache)
 		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache)
-		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername, cmdReg)
+		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername)
 		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
 		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient)
 

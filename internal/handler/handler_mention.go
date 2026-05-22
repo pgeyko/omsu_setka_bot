@@ -3,9 +3,7 @@ package handlers
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"log/slog"
-	"strings"
 
 	"omsu_bot/internal/agent"
 
@@ -17,15 +15,13 @@ type MentionHandler struct {
 	orchestrator *agent.AgentOrchestrator
 	db           *sql.DB
 	botUsername  string
-	cmd          *CommandRegistry
 }
 
-func NewMentionHandler(orchestrator *agent.AgentOrchestrator, db *sql.DB, botUsername string, cmd *CommandRegistry) *MentionHandler {
+func NewMentionHandler(orchestrator *agent.AgentOrchestrator, db *sql.DB, botUsername string) *MentionHandler {
 	return &MentionHandler{
 		orchestrator: orchestrator,
 		db:           db,
 		botUsername:  botUsername,
-		cmd:          cmd,
 	}
 }
 
@@ -46,38 +42,12 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 		text = msg.Caption
 	}
 
-	var payload string
-	if msg.ReplyToMessage != nil {
-		replyText := msg.ReplyToMessage.Text
-		if replyText == "" {
-			replyText = msg.ReplyToMessage.Caption
-		}
-		payload = fmt.Sprintf(
-			"Команда пользователя: %s\n\nКонтент исходного сообщения для пересылки:\n%s",
-			text,
-			replyText,
-		)
-	} else {
-		payload = text
-	}
-
-	if payload == "" {
+	if text == "" {
 		return
 	}
 
-	// Explicit rule-based routing to forward classification
-	lowerText := strings.ToLower(text)
-	if strings.Contains(lowerText, "перешли") ||
-		strings.Contains(lowerText, "скинь") ||
-		strings.Contains(lowerText, "отправь") ||
-		strings.Contains(lowerText, "закинь") {
-		// Replace text payload to force a "forward message" tool behavior if available,
-		// but since we are handling mention via orchestrator, we can prepend a clear instruction
-		payload = "ПРИНУДИТЕЛЬНОЕ ДЕЙСТВИЕ: Это запрос на пересылку сообщения. Используй ТОЛЬКО инструмент forward_message. " + payload
-	}
-
 	// 2. Run through Agent Orchestrator
-	response, err := h.orchestrator.Run(ctx, msg.Chat.ID, msg.MessageThreadID, payload, msg.From.Username, msg.From.ID)
+	response, err := h.orchestrator.Run(ctx, msg.Chat.ID, msg.MessageThreadID, text, msg.From.Username, msg.From.ID)
 	if err != nil {
 		slog.Error("agent orchestrator failed", "error", err)
 		h.reply(ctx, b, msg.Chat.ID, msg.MessageThreadID, msg.ID, "Не удалось обработать запрос.")

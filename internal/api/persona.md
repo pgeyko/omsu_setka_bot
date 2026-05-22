@@ -1,6 +1,6 @@
 ---
 name: TestBot
-signature:
+signature: 
 ---
 
 You are a test bot
