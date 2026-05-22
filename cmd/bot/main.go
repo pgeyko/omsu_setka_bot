@@ -272,7 +272,8 @@ func main() {
 		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
 		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient)
 
-		helpText := fmt.Sprintf(`🤖 <b>Пятница</b> — ИИ-ассистент группы
+		botDisplayName := personaStore.Get().Name
+		helpText := fmt.Sprintf(`🤖 <b>%s</b> — ассистент группы
 
 /start — приветствие
 /help — эта справка
@@ -286,14 +287,14 @@ func main() {
 /settings — настройки группы (админ)
 /status — состояние
 
-Подробнее: @%s`, botUsername)
+Подробнее: @%s`, botDisplayName, botUsername)
 
-		startHardcoded := "👋 Привет! Я <b>Пятница</b> — ИИ-ассистент. Работаю только в групповом чате. Напиши /help чтобы узнать что я умею."
+		startHardcoded := fmt.Sprintf("👋 Привет! Я <b>%s</b> — ассистент. Работаю только в групповом чате. Напиши /help чтобы узнать что я умею.", botDisplayName)
 
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypeExact, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if database.IsGroupActive(ctx, update.Message.Chat.ID) {
 				if globalLLM != nil {
-					resp, err := globalLLM.Call(ctx, "diagnostic", "", "Поприветствуй нового пользователя в группе. Представься как Пятница. Кратко расскажи что умеешь: пересылать сообщения между топиками, показывать расписание, делать саммари. Важно: используй ТОЛЬКО HTML-теги (<b>текст</b>), НЕ используй markdown (**). Максимум 100-150 слов. Эмодзи 1-2.", false)
+					resp, err := globalLLM.Call(ctx, "diagnostic", "", fmt.Sprintf("Поприветствуй нового пользователя в группе. Представься как %s. Кратко расскажи что умеешь: пересылать сообщения между топиками, показывать расписание, делать саммари. Важно: используй ТОЛЬКО HTML-теги (<b>текст</b>), НЕ используй markdown (**). Максимум 100-150 слов. Эмодзи 1-2.", botDisplayName), false)
 					if err == nil {
 						b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, MessageThreadID: update.Message.MessageThreadID, Text: resp.Content, ParseMode: models.ParseModeHTML})
 						return
@@ -301,7 +302,7 @@ func main() {
 				}
 				b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, MessageThreadID: update.Message.MessageThreadID, Text: startHardcoded, ParseMode: models.ParseModeHTML})
 			} else {
-				b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, Text: startHardcoded, ParseMode: models.ParseModeHTML})
+				b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, Text: helpText, ParseMode: models.ParseModeHTML})
 			}
 		})
 
@@ -678,7 +679,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 	case "start":
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
-			Text:      "👋 Привет! Я <b>Пятница</b> — ваш ИИ-ассистент.\n\n" + helpText,
+			Text:      helpText,
 			ParseMode: models.ParseModeHTML,
 		})
 
