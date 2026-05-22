@@ -65,7 +65,7 @@ func (s *Server) handleRegisterWebhooks(c *fiber.Ctx) error {
 		s.SetkaBaseURL,
 		s.SetkaAdminKey,
 		s.WebhookSecret,
-		s.ListenAddr,
+		s.SetkaPublicURL,
 	)
 	if err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to register webhooks with Setka: "+err.Error())

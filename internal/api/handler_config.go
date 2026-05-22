@@ -22,11 +22,15 @@ func (s *Server) LoadConfigFromDB(ctx context.Context) {
 	if val, err := d.GetConfig(ctx, "skip_fallback_model", strconv.FormatBool(s.SkipFallbackModel)); err == nil {
 		s.SkipFallbackModel, _ = strconv.ParseBool(val)
 	}
-	if val, err := d.GetConfig(ctx, "global_voice_transcription", strconv.FormatBool(s.GlobalVoiceTranscription)); err == nil {
-		s.GlobalVoiceTranscription, _ = strconv.ParseBool(val)
+	if val, err := d.GetConfig(ctx, "global_voice_transcription", strconv.FormatBool(s.GlobalVoiceTranscription.Load())); err == nil {
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			s.GlobalVoiceTranscription.Store(parsed)
+		}
 	}
-	if val, err := d.GetConfig(ctx, "global_photo_processing", strconv.FormatBool(s.GlobalPhotoProcessing)); err == nil {
-		s.GlobalPhotoProcessing, _ = strconv.ParseBool(val)
+	if val, err := d.GetConfig(ctx, "global_photo_processing", strconv.FormatBool(s.GlobalPhotoProcessing.Load())); err == nil {
+		if parsed, err := strconv.ParseBool(val); err == nil {
+			s.GlobalPhotoProcessing.Store(parsed)
+		}
 	}
 	if s.LLMClient != nil {
 		s.LLMClient.SetSkipFallbackModel(s.SkipFallbackModel)
@@ -36,8 +40,8 @@ func (s *Server) LoadConfigFromDB(ctx context.Context) {
 func (s *Server) handleGetConfig(c *fiber.Ctx) error {
 	return respondSuccess(c, configResponse{
 		SkipFallbackModel:        s.SkipFallbackModel,
-		GlobalVoiceTranscription: s.GlobalVoiceTranscription,
-		GlobalPhotoProcessing:    s.GlobalPhotoProcessing,
+		GlobalVoiceTranscription: s.GlobalVoiceTranscription.Load(),
+		GlobalPhotoProcessing:    s.GlobalPhotoProcessing.Load(),
 	})
 }
 
@@ -48,8 +52,8 @@ func (s *Server) handleUpdateConfig(c *fiber.Ctx) error {
 	}
 
 	s.SkipFallbackModel = req.SkipFallbackModel
-	s.GlobalVoiceTranscription = req.GlobalVoiceTranscription
-	s.GlobalPhotoProcessing = req.GlobalPhotoProcessing
+	s.GlobalVoiceTranscription.Store(req.GlobalVoiceTranscription)
+	s.GlobalPhotoProcessing.Store(req.GlobalPhotoProcessing)
 
 	if s.LLMClient != nil {
 		s.LLMClient.SetSkipFallbackModel(req.SkipFallbackModel)
@@ -63,7 +67,7 @@ func (s *Server) handleUpdateConfig(c *fiber.Ctx) error {
 
 	return respondSuccess(c, configResponse{
 		SkipFallbackModel:        s.SkipFallbackModel,
-		GlobalVoiceTranscription: s.GlobalVoiceTranscription,
-		GlobalPhotoProcessing:    s.GlobalPhotoProcessing,
+		GlobalVoiceTranscription: s.GlobalVoiceTranscription.Load(),
+		GlobalPhotoProcessing:    s.GlobalPhotoProcessing.Load(),
 	})
 }

@@ -25,8 +25,25 @@ func NewTracker(db *sql.DB, dailyLimit int64, alertThreshold float64) *Tracker {
 		dailyLimit:     dailyLimit,
 		alertThreshold: alertThreshold,
 	}
+	t.restoreDailyFromDB()
 	t.resetDailyIfNeeded()
 	return t
+}
+
+func (t *Tracker) restoreDailyFromDB() {
+	if t.db == nil {
+		return
+	}
+	var loaded int64
+	err := t.db.QueryRow(`SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM llm_requests WHERE date(created_at) = date('now')`).Scan(&loaded)
+	if err != nil {
+		slog.Warn("failed to restore daily token count from DB", "error", err)
+		return
+	}
+	if loaded > 0 {
+		t.dailyTokens.Store(loaded)
+		slog.Debug("restored daily token count from DB", "tokens", loaded)
+	}
 }
 
 func (t *Tracker) resetDailyIfNeeded() {

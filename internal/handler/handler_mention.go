@@ -50,7 +50,7 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 
 
 	// 2. Run through Agent Orchestrator
-	response, err := h.orchestrator.Run(ctx, msg.Chat.ID, msg.MessageThreadID, text, msg.From.Username)
+	response, err := h.orchestrator.Run(ctx, msg.Chat.ID, msg.MessageThreadID, text, msg.From.Username, msg.From.ID)
 	if err != nil {
 		slog.Error("agent orchestrator failed", "error", err)
 		h.reply(ctx, b, msg.Chat.ID, msg.MessageThreadID, msg.ID, "Не удалось обработать запрос.")

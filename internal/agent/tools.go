@@ -10,11 +10,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/telegram"
+	"omsu_bot/internal/util"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -125,6 +127,22 @@ var AvailableTools = []llm.Tool{
 	},
 }
 
+type protocolAction struct {
+	Type            string `json:"type"`
+	Count           int    `json:"count,omitempty"`
+	Text            string `json:"text,omitempty"`
+	DurationMinutes int    `json:"duration_minutes,omitempty"`
+}
+
+type protocolDef struct {
+	Name    string           `json:"name"`
+	Actions []protocolAction `json:"actions"`
+}
+
+type protocolsConfig struct {
+	Protocols []protocolDef `json:"protocols"`
+}
+
 type ToolExecutor struct {
 	db                  *sql.DB
 	bot                 *tgbot.Bot
@@ -133,9 +151,13 @@ type ToolExecutor struct {
 	setkaBaseURL        string
 	setkaPublicURL      string
 	ProtocolsConfigPath string
+	adminChecker        AdminChecker
+
+	protocolsOnce sync.Once
+	protocolsData *protocolsConfig
 }
 
-func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string) *ToolExecutor {
+func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string, adminChecker AdminChecker) *ToolExecutor {
 	return &ToolExecutor{
 		db:             db,
 		bot:            bot,
@@ -143,6 +165,7 @@ func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *
 		usernameCache:  uc,
 		setkaBaseURL:   setkaBase,
 		setkaPublicURL: setkaPublic,
+		adminChecker:   adminChecker,
 	}
 }
 
@@ -180,13 +203,14 @@ func (e *ToolExecutor) getSchedule(ctx context.Context, chatID int64, argsJSON s
 		return "", fmt.Errorf("failed to find omsu group id for this chat: %w", err)
 	}
 
-	date := resolveDate(args.Date, args.RelativeDay)
+	date := util.ResolveDate(args.Date, args.RelativeDay)
 	if date == "" {
 		date = time.Now().Format("2006-01-02")
 	}
 
 	url := fmt.Sprintf("%s/api/v1/schedule/group/%d/day?date=%s", e.setkaBaseURL, omsuGroupID, date)
-	resp, err := http.Get(url)
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to query setka schedule: %w", err)
 	}
@@ -216,7 +240,7 @@ func (e *ToolExecutor) generateSummary(ctx context.Context, chatID int64, argsJS
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
-	slug := makeSlug(args.TopicSlug)
+	slug := util.MakeSlug(args.TopicSlug)
 
 	var threadID int
 	err := e.db.QueryRowContext(ctx, "SELECT tg_thread_id FROM topics WHERE slug = ? OR name = ?", slug, args.TopicSlug).Scan(&threadID)
@@ -247,7 +271,7 @@ func (e *ToolExecutor) manageTopic(ctx context.Context, chatID int64, argsJSON s
 
 	switch args.Action {
 	case "create":
-		slug := makeSlug(args.Name)
+		slug := util.MakeSlug(args.Name)
 		forum, err := e.bot.CreateForumTopic(ctx, &tgbot.CreateForumTopicParams{
 			ChatID: chatID,
 			Name:   args.Name,
@@ -269,7 +293,7 @@ func (e *ToolExecutor) manageTopic(ctx context.Context, chatID int64, argsJSON s
 		var id, tgThreadID int
 		var name string
 		err := e.db.QueryRowContext(ctx,
-			`SELECT id, tg_thread_id, name FROM topics WHERE group_id = ? AND (name = ? OR slug = ?)`, chatID, args.Name, makeSlug(args.Name),
+			`SELECT id, tg_thread_id, name FROM topics WHERE group_id = ? AND (name = ? OR slug = ?)`, chatID, args.Name, util.MakeSlug(args.Name),
 		).Scan(&id, &tgThreadID, &name)
 		if err != nil {
 			return fmt.Sprintf("Топик «%s» не найден.", args.Name), nil
@@ -292,7 +316,7 @@ func (e *ToolExecutor) manageTopic(ctx context.Context, chatID int64, argsJSON s
 		}
 		var id, tgThreadID int
 		err := e.db.QueryRowContext(ctx,
-			`SELECT id, tg_thread_id FROM topics WHERE group_id = ? AND (name = ? OR slug = ?)`, chatID, args.Name, makeSlug(args.Name),
+			`SELECT id, tg_thread_id FROM topics WHERE group_id = ? AND (name = ? OR slug = ?)`, chatID, args.Name, util.MakeSlug(args.Name),
 		).Scan(&id, &tgThreadID)
 		if err != nil {
 			return fmt.Sprintf("Топик «%s» не найден.", args.Name), nil
@@ -307,7 +331,7 @@ func (e *ToolExecutor) manageTopic(ctx context.Context, chatID int64, argsJSON s
 			return fmt.Sprintf("Ошибка при переименовании топика: %v", err), nil
 		}
 
-		newSlug := makeSlug(args.NewName)
+		newSlug := util.MakeSlug(args.NewName)
 		e.db.ExecContext(ctx, `UPDATE topics SET name = ?, slug = ? WHERE id = ?`, args.NewName, newSlug, id)
 		return fmt.Sprintf("Топик «%s» переименован в «%s».", args.Name, args.NewName), nil
 
@@ -315,7 +339,7 @@ func (e *ToolExecutor) manageTopic(ctx context.Context, chatID int64, argsJSON s
 		var id, tgThreadID int
 		var name string
 		err := e.db.QueryRowContext(ctx,
-			`SELECT id, tg_thread_id, name FROM topics WHERE group_id = ? AND (name = ? OR slug = ?)`, chatID, args.Name, makeSlug(args.Name),
+			`SELECT id, tg_thread_id, name FROM topics WHERE group_id = ? AND (name = ? OR slug = ?)`, chatID, args.Name, util.MakeSlug(args.Name),
 		).Scan(&id, &tgThreadID, &name)
 		if err != nil {
 			return fmt.Sprintf("Топик «%s» не найден.", args.Name), nil
@@ -355,6 +379,12 @@ func (e *ToolExecutor) moderateUser(ctx context.Context, chatID int64, argsJSON 
 
 	if args.DurationMinutes <= 0 {
 		args.DurationMinutes = 10
+	}
+
+	if args.Action == "ban" || args.Action == "mute" {
+		if e.adminChecker != nil && e.adminChecker.IsOwner(ctx, chatID, userID) {
+			return "⛔ Нельзя забанить или замутить владельца группы.", nil
+		}
 	}
 
 	switch args.Action {
@@ -419,58 +449,6 @@ func (e *ToolExecutor) moderateUser(ctx context.Context, chatID int64, argsJSON 
 	}
 }
 
-var weekdayMap = map[string]int{
-	"sunday": 0, "saturday": 6, "friday": 5, "thursday": 4,
-	"wednesday": 3, "tuesday": 2, "monday": 1,
-	"воскресенье": 0, "суббота": 6, "пятница": 5, "четверг": 4,
-	"среда": 3, "вторник": 2, "понедельник": 1,
-}
-
-func resolveDate(date, relativeDate string) string {
-	if date != "" {
-		if _, err := time.Parse("2006-01-02", date); err == nil {
-			return date
-		}
-	}
-	now := time.Now()
-	switch relativeDate {
-	case "today":
-		return now.Format("2006-01-02")
-	case "tomorrow":
-		return now.AddDate(0, 0, 1).Format("2006-01-02")
-	case "":
-		return ""
-	}
-	if wd, ok := weekdayMap[relativeDate]; ok {
-		diff := (wd - int(now.Weekday()) + 7) % 7
-		if diff == 0 {
-			diff = 7
-		}
-		return now.AddDate(0, 0, diff).Format("2006-01-02")
-	}
-	return now.Format("2006-01-02")
-}
-
-var cyrToLat = strings.NewReplacer(
-	"а", "a", "б", "b", "в", "v", "г", "g", "д", "d", "е", "e", "ё", "e",
-	"ж", "zh", "з", "z", "и", "i", "й", "y", "к", "k", "л", "l", "м", "m",
-	"н", "n", "о", "o", "п", "p", "р", "r", "с", "s", "т", "t", "у", "u",
-	"ф", "f", "х", "kh", "ц", "ts", "ч", "ch", "ш", "sh", "щ", "shch",
-	"ы", "y", "э", "e", "ю", "yu", "я", "ya",
-)
-
-func makeSlug(name string) string {
-	slug := strings.ToLower(name)
-	slug = cyrToLat.Replace(slug)
-	slug = strings.ReplaceAll(slug, " ", "_")
-	slug = strings.ReplaceAll(slug, ".", "")
-	slug = strings.ReplaceAll(slug, "-", "_")
-	slug = strings.ReplaceAll(slug, "'", "")
-	slug = strings.ReplaceAll(slug, "`", "")
-	slug = strings.ReplaceAll(slug, "\"", "")
-	return slug
-}
-
 func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON string) (string, error) {
 	var args struct {
 		ProtocolName string `json:"protocol_name"`
@@ -481,42 +459,34 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
 	}
 
-	path := e.ProtocolsConfigPath
-	if path == "" {
-		path = "protocols.json"
+	if e.protocolsData == nil {
+		e.protocolsOnce.Do(func() {
+			path := e.ProtocolsConfigPath
+			if path == "" {
+				path = "protocols.json"
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				slog.Error("failed to read protocols file", "error", err)
+				return
+			}
+			var cfg protocolsConfig
+			if err := json.Unmarshal(content, &cfg); err != nil {
+				slog.Error("failed to parse protocols config", "error", err)
+				return
+			}
+			e.protocolsData = &cfg
+			slog.Info("protocols config loaded", "count", len(cfg.Protocols))
+		})
 	}
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return "", fmt.Errorf("failed to read protocols file: %w", err)
+	if e.protocolsData == nil {
+		return "", fmt.Errorf("failed to load protocols configuration")
 	}
 
-	var protoConfig struct {
-		Protocols []struct {
-			Name    string `json:"name"`
-			Actions []struct {
-				Type            string `json:"type"`
-				Count           int    `json:"count,omitempty"`
-				Text            string `json:"text,omitempty"`
-				DurationMinutes int    `json:"duration_minutes,omitempty"`
-			} `json:"actions"`
-		} `json:"protocols"`
-	}
-	if err := json.Unmarshal(content, &protoConfig); err != nil {
-		return "", fmt.Errorf("failed to parse protocols config: %w", err)
-	}
-
-	var foundProto *struct {
-		Name    string `json:"name"`
-		Actions []struct {
-			Type            string `json:"type"`
-			Count           int    `json:"count,omitempty"`
-			Text            string `json:"text,omitempty"`
-			DurationMinutes int    `json:"duration_minutes,omitempty"`
-		} `json:"actions"`
-	}
-	for i := range protoConfig.Protocols {
-		if protoConfig.Protocols[i].Name == args.ProtocolName {
-			foundProto = &protoConfig.Protocols[i]
+	var foundProto *protocolDef
+	for i := range e.protocolsData.Protocols {
+		if e.protocolsData.Protocols[i].Name == args.ProtocolName {
+			foundProto = &e.protocolsData.Protocols[i]
 			break
 		}
 	}

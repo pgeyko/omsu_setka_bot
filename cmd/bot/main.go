@@ -36,6 +36,7 @@ import (
 	"omsu_bot/internal/config"
 	"omsu_bot/internal/db"
 	"omsu_bot/internal/forwarder"
+	"omsu_bot/internal/util"
 	handlers "omsu_bot/internal/handler"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/media"
@@ -86,6 +87,7 @@ func main() {
 		slog.Error("failed to migrate database", "error", err)
 		os.Exit(1)
 	}
+	database.StartCleanup(context.Background())
 
 	personaStore := persona.NewStore(database.DB)
 	if err := personaStore.Load(context.Background(), "persona.md"); err != nil {
@@ -187,6 +189,7 @@ func main() {
 		cfg.RateLimit.APIWindow,
 		cfg.Setka.BaseURL,
 		cfg.Setka.AdminKey,
+		cfg.Setka.PublicURL,
 		cfg.Webhook.ScheduleSecret,
 		cfg.API.Listen,
 	)
@@ -229,11 +232,11 @@ func main() {
 			cfg.Setka.BaseURL,
 			cfg.Setka.AdminKey,
 			cfg.Webhook.ScheduleSecret,
-			cfg.API.Listen,
+			cfg.Setka.PublicURL,
 		)
 
-		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL)
-		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor)
+		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache)
+		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache)
 		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername, cmdReg)
 		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
 		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient)
@@ -316,7 +319,7 @@ func main() {
 
 			features := settingsHandler.LoadFeatures(msg.Chat.ID)
 
-			if msg.Voice != nil && apiServer.GlobalVoiceTranscription && features["enable_voice_transcription"] {
+			if msg.Voice != nil && apiServer.GlobalVoiceTranscription.Load() && features["enable_voice_transcription"] {
 				txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
 				if err != nil {
 					slog.Error("failed to process voice", "error", err)
@@ -325,7 +328,7 @@ func main() {
 				}
 			}
 
-			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing && features["enable_photo_processing"] {
+			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
 				ocrText, err := mediaProcessor.ProcessPhoto(ctx, msg.Photo[len(msg.Photo)-1].FileID)
 				if err != nil {
 					slog.Error("failed to process photo", "error", err)
@@ -539,7 +542,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: reply})
 			return
 		}
-		slug := makeSlug(args)
+		slug := util.MakeSlug(args)
 		_, err := db.ExecContext(ctx,
 			`INSERT INTO topics (group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
 			 VALUES (?, ?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
@@ -633,8 +636,12 @@ func setupLogger(cfg *config.Config) {
 }
 
 func registerWithSetka(ctx context.Context, cfg *config.Config) {
+	publicURL := cfg.Setka.PublicURL
+	if publicURL == "" {
+		publicURL = fmt.Sprintf("http://localhost%s", cfg.API.Listen)
+	}
 	body := map[string]interface{}{
-		"url":       fmt.Sprintf("http://localhost%s/webhook/schedule", cfg.API.Listen),
+		"url":       publicURL + "/webhook/schedule",
 		"secret":    cfg.Webhook.ScheduleSecret,
 		"group_ids": []int{cfg.Telegram.OmsuGroupID},
 		"enabled":   true,
@@ -651,7 +658,8 @@ func registerWithSetka(ctx context.Context, cfg *config.Config) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Admin-Key", cfg.Setka.AdminKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		slog.Warn("failed to register with omsu_setka", "error", err)
 		return
@@ -663,24 +671,6 @@ func registerWithSetka(ctx context.Context, cfg *config.Config) {
 	} else {
 		slog.Warn("omsu_setka registration returned non-2xx", "status", resp.StatusCode)
 	}
-}
-
-func makeSlug(name string) string {
-	slug := strings.ToLower(name)
-	slug = strings.NewReplacer(
-		"а", "a", "б", "b", "в", "v", "г", "g", "д", "d", "е", "e", "ё", "e",
-		"ж", "zh", "з", "z", "и", "i", "й", "y", "к", "k", "л", "l", "м", "m",
-		"н", "n", "о", "o", "п", "p", "р", "r", "с", "s", "т", "t", "у", "u",
-		"ф", "f", "х", "kh", "ц", "ts", "ч", "ch", "ш", "sh", "щ", "shch",
-		"ы", "y", "э", "e", "ю", "yu", "я", "ya",
-	).Replace(slug)
-	slug = strings.ReplaceAll(slug, " ", "_")
-	slug = strings.ReplaceAll(slug, ".", "")
-	slug = strings.ReplaceAll(slug, "-", "_")
-	slug = strings.ReplaceAll(slug, "'", "")
-	slug = strings.ReplaceAll(slug, "`", "")
-	slug = strings.ReplaceAll(slug, "\"", "")
-	return slug
 }
 
 func isBotMention(msg *models.Message) bool {

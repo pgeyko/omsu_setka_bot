@@ -11,20 +11,33 @@ import (
 	"omsu_bot/internal/llm"
 )
 
-type AgentOrchestrator struct {
-	llmClient *llm.Client
-	executor  *ToolExecutor
+type AdminChecker interface {
+	IsAdmin(ctx context.Context, chatID int64, userID int64) bool
+	IsOwner(ctx context.Context, chatID int64, userID int64) bool
 }
 
-func NewAgentOrchestrator(llmClient *llm.Client, executor *ToolExecutor) *AgentOrchestrator {
+type AgentOrchestrator struct {
+	llmClient    *llm.Client
+	executor     *ToolExecutor
+	adminChecker AdminChecker
+}
+
+func NewAgentOrchestrator(llmClient *llm.Client, executor *ToolExecutor, adminChecker AdminChecker) *AgentOrchestrator {
 	return &AgentOrchestrator{
-		llmClient: llmClient,
-		executor:  executor,
+		llmClient:    llmClient,
+		executor:     executor,
+		adminChecker: adminChecker,
 	}
 }
 
+var restrictedTools = map[string]bool{
+	"moderate_user": true,
+	"run_protocol":  true,
+	"manage_topic":  true,
+}
+
 // Run executes the agent loop for a given user query
-func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int, query string, username string) (string, error) {
+func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int, query string, username string, userID int64) (string, error) {
 	// 1. Load group features
 	enabledTools := ao.loadEnabledTools(chatID)
 
@@ -73,10 +86,18 @@ func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int
 
 		// Execute each tool call
 		for _, tc := range resp.ToolCalls {
-			toolResult, err := ao.executor.Execute(ctx, chatID, tc.Function.Name, tc.Function.Arguments)
-			if err != nil {
-				slog.Error("failed to execute tool", "tool", tc.Function.Name, "error", err)
-				toolResult = fmt.Sprintf("Ошибка при выполнении инструмента: %v", err)
+			var toolResult string
+			var err error
+
+			if restrictedTools[tc.Function.Name] && ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) {
+				toolResult = fmt.Sprintf("⛔ Инструмент «%s» доступен только администраторам группы.", tc.Function.Name)
+				slog.Warn("non-admin tried to use restricted tool", "tool", tc.Function.Name, "user_id", userID, "chat_id", chatID)
+			} else {
+				toolResult, err = ao.executor.Execute(ctx, chatID, tc.Function.Name, tc.Function.Arguments)
+				if err != nil {
+					slog.Error("failed to execute tool", "tool", tc.Function.Name, "error", err)
+					toolResult = fmt.Sprintf("Ошибка при выполнении инструмента: %v", err)
+				}
 			}
 
 			// Append tool output to history

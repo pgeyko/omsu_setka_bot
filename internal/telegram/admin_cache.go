@@ -95,6 +95,27 @@ func (ac *AdminCache) IsAdmin(ctx context.Context, chatID int64, userID int64) b
 	return isAdmin
 }
 
+func (ac *AdminCache) IsOwner(ctx context.Context, chatID int64, userID int64) bool {
+	if chatID == 0 || ac.bot == nil {
+		return false
+	}
+	members, err := ac.bot.GetChatAdministrators(ctx, &tgbot.GetChatAdministratorsParams{
+		ChatID: chatID,
+	})
+	if err != nil {
+		slog.Error("failed to get admins for owner check", "error", err, "chat_id", chatID)
+		return false
+	}
+	for _, m := range members {
+		if m.Type == models.ChatMemberTypeOwner {
+			if uid := GetChatMemberUserID(m); uid == userID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func GetChatMemberUserID(m models.ChatMember) int64 {
 	switch m.Type {
 	case models.ChatMemberTypeOwner:

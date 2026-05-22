@@ -12,6 +12,7 @@ import (
 	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/telegram"
+	"omsu_bot/internal/util"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -113,7 +114,7 @@ func (t *TopicCRUD) handleCreate(ctx context.Context, msg *models.Message, inten
 		return
 	}
 
-	slug := makeSlug(intent.TopicName)
+	slug := util.MakeSlug(intent.TopicName)
 
 	forum, err := t.bot.CreateForumTopic(ctx, &tgbot.CreateForumTopicParams{
 		ChatID: msg.Chat.ID,
@@ -185,7 +186,7 @@ func (t *TopicCRUD) handleRegister(ctx context.Context, msg *models.Message, int
 		return
 	}
 
-	slug := makeSlug(topicName)
+	slug := util.MakeSlug(topicName)
 	var exists string
 	t.db.QueryRowContext(ctx, `SELECT name FROM topics WHERE group_id = ? AND slug = ?`, msg.Chat.ID, slug).Scan(&exists)
 	if exists != "" {
@@ -275,7 +276,7 @@ func (t *TopicCRUD) handleRename(ctx context.Context, msg *models.Message, inten
 		return
 	}
 
-	newSlug := makeSlug(intent.NewName)
+	newSlug := util.MakeSlug(intent.NewName)
 	t.db.ExecContext(ctx,
 		`UPDATE topics SET name = ?, slug = ? WHERE id = ?`,
 		intent.NewName, newSlug, topic.ID)
@@ -320,22 +321,4 @@ func (t *TopicCRUD) reply(ctx context.Context, chatID int64, threadID int, reply
 	})
 }
 
-var cyrToLat = strings.NewReplacer(
-	"а", "a", "б", "b", "в", "v", "г", "g", "д", "d", "е", "e", "ё", "e",
-	"ж", "zh", "з", "z", "и", "i", "й", "y", "к", "k", "л", "l", "м", "m",
-	"н", "n", "о", "o", "п", "p", "р", "r", "с", "s", "т", "t", "у", "u",
-	"ф", "f", "х", "kh", "ц", "ts", "ч", "ch", "ш", "sh", "щ", "shch",
-	"ы", "y", "э", "e", "ю", "yu", "я", "ya",
-)
 
-func makeSlug(name string) string {
-	slug := strings.ToLower(name)
-	slug = cyrToLat.Replace(slug)
-	slug = strings.ReplaceAll(slug, " ", "_")
-	slug = strings.ReplaceAll(slug, ".", "")
-	slug = strings.ReplaceAll(slug, "-", "_")
-	slug = strings.ReplaceAll(slug, "'", "")
-	slug = strings.ReplaceAll(slug, "`", "")
-	slug = strings.ReplaceAll(slug, "\"", "")
-	return slug
-}

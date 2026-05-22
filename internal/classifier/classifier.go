@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"omsu_bot/internal/llm"
 )
@@ -25,13 +26,20 @@ type TopicInfo struct {
 	Description string `json:"description"`
 }
 
+type visionCacheEntry struct {
+	result   ClassifyResult
+	cachedAt time.Time
+}
+
 type Classifier struct {
 	llmClient *llm.Client
 	prompts   *llm.PromptRegistry
 	topics    TopicsProvider
 
 	mu          sync.RWMutex
-	visionCache map[string]ClassifyResult
+	visionCache map[string]visionCacheEntry
+	maxCache    int
+	cacheTTL    time.Duration
 }
 
 func New(llmClient *llm.Client, prompts *llm.PromptRegistry, topics TopicsProvider) *Classifier {
@@ -39,16 +47,18 @@ func New(llmClient *llm.Client, prompts *llm.PromptRegistry, topics TopicsProvid
 		llmClient:   llmClient,
 		prompts:     prompts,
 		topics:      topics,
-		visionCache: make(map[string]ClassifyResult),
+		visionCache: make(map[string]visionCacheEntry),
+		maxCache:    200,
+		cacheTTL:    1 * time.Hour,
 	}
 }
 
 func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text string, fileID string) (*ClassifyResult, error) {
 	if fileID != "" {
 		c.mu.RLock()
-		if result, ok := c.visionCache[fileID]; ok {
+		if entry, ok := c.visionCache[fileID]; ok && time.Since(entry.cachedAt) < c.cacheTTL {
 			c.mu.RUnlock()
-			return &result, nil
+			return &entry.result, nil
 		}
 		c.mu.RUnlock()
 	}
@@ -78,7 +88,18 @@ func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text str
 
 	if fileID != "" {
 		c.mu.Lock()
-		c.visionCache[fileID] = result
+		if len(c.visionCache) >= c.maxCache {
+			var oldest string
+			var oldestTime time.Time
+			for k, v := range c.visionCache {
+				if oldest == "" || v.cachedAt.Before(oldestTime) {
+					oldest = k
+					oldestTime = v.cachedAt
+				}
+			}
+			delete(c.visionCache, oldest)
+		}
+		c.visionCache[fileID] = visionCacheEntry{result: result, cachedAt: time.Now()}
 		c.mu.Unlock()
 	}
 

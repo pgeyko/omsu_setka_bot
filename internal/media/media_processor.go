@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"omsu_bot/internal/llm"
 
@@ -200,7 +201,8 @@ func (mp *MediaProcessor) downloadFile(ctx context.Context, fileID string) ([]by
 		return nil, "", err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download file: %w", err)
 	}

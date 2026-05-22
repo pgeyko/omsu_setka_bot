@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	_ "omsu_bot/docs"
@@ -38,17 +39,18 @@ type Server struct {
 	SkipFallbackModel        bool
 	SetkaBaseURL             string
 	SetkaAdminKey            string
+	SetkaPublicURL           string
 	WebhookSecret            string
 	ListenAddr               string
-	GlobalVoiceTranscription bool
-	GlobalPhotoProcessing    bool
+	GlobalVoiceTranscription atomic.Bool
+	GlobalPhotoProcessing    atomic.Bool
 }
 
 func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, auth *AuthMiddleware,
 	swaggerEnabled bool, appEnv string, corsOrigin string, chain *llm.Chain, llmClient *llm.Client,
 	tgBot BotSender, tgGroupID int64, skipFallbackModel bool,
 	rateLimitGeneral, rateLimitSearch, rateLimitWindowSec int,
-	setkaBaseURL, setkaAdminKey, webhookSecret, listenAddr string) *Server {
+	setkaBaseURL, setkaAdminKey, setkaPublicURL, webhookSecret, listenAddr string) *Server {
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -93,11 +95,12 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 		SkipFallbackModel:        skipFallbackModel,
 		SetkaBaseURL:             setkaBaseURL,
 		SetkaAdminKey:            setkaAdminKey,
+		SetkaPublicURL:           setkaPublicURL,
 		WebhookSecret:            webhookSecret,
 		ListenAddr:               listenAddr,
-		GlobalVoiceTranscription: true,
-		GlobalPhotoProcessing:    true,
 	}
+	s.GlobalVoiceTranscription.Store(true)
+	s.GlobalPhotoProcessing.Store(true)
 
 	startTime := time.Now()
 	app.Get("/health", func(c *fiber.Ctx) error {

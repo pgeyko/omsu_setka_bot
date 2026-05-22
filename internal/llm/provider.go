@@ -19,6 +19,7 @@ type providerState struct {
 }
 
 type Provider struct {
+	mu             sync.Mutex
 	Name           string
 	Type           string // "gemini" or "deepseek" or "openai"
 	BaseURL        string
@@ -39,6 +40,9 @@ func (p *Provider) HasCapability(c Capability) bool {
 }
 
 func (p *Provider) IsActive() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.state == nil {
 		return true
 	}
@@ -54,6 +58,9 @@ func (p *Provider) IsActive() bool {
 }
 
 func (p *Provider) RecordFailure() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.state == nil {
 		p.state = &providerState{}
 	}
@@ -65,6 +72,9 @@ func (p *Provider) RecordFailure() {
 }
 
 func (p *Provider) RecordSuccess() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if p.state != nil {
 		p.state.failures = 0
 	}

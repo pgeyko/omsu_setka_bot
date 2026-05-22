@@ -52,7 +52,7 @@ func setupTestServer(t *testing.T) *Server {
 		t.Fatalf("failed to create prompts: %v", err)
 	}
 
-	s := NewServer(database.DB, personaStore, prompts, auth, false, "test", "*", nil, nil, nil, 0, false, 9999, 9999, 60, "http://localhost:8080", "test-setka-key", "test-webhook-secret", ":8081")
+	s := NewServer(database.DB, personaStore, prompts, auth, false, "test", "*", nil, nil, nil, 0, false, 9999, 9999, 60, "http://localhost:8080", "test-setka-key", "", "test-webhook-secret", ":8081")
 	return s
 }
 

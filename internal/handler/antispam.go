@@ -58,6 +58,12 @@ func (a *Antispam) HandleNewChatMembers(ctx context.Context, b *tgbot.Bot, chatI
 		key := fmt.Sprintf("%d:%d", chatID, member.ID)
 		a.mu.Lock()
 		a.joinedUsers[key] = time.Now()
+		// Clean up entries older than 24 hours
+		for k, t := range a.joinedUsers {
+			if time.Since(t) > 24*time.Hour {
+				delete(a.joinedUsers, k)
+			}
+		}
 		a.mu.Unlock()
 
 		if b != nil {
@@ -172,6 +178,10 @@ func (a *Antispam) CheckFloodAndLinks(ctx context.Context, b *tgbot.Bot, msg *mo
 		if hasLink {
 			a.mu.Lock()
 			joinTime, exists := a.joinedUsers[key]
+			if exists && now.Sub(joinTime) >= 24*time.Hour {
+				delete(a.joinedUsers, key)
+				exists = false
+			}
 			a.mu.Unlock()
 
 			if exists && now.Sub(joinTime) < 24*time.Hour {

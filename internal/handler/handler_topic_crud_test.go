@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"testing"
+
+	"omsu_bot/internal/util"
 )
 
 func TestMakeSlug(t *testing.T) {
@@ -16,7 +18,7 @@ func TestMakeSlug(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := makeSlug(tt.input)
+		result := util.MakeSlug(tt.input)
 		if result != tt.expected {
 			t.Errorf("makeSlug('%s') = '%s', expected '%s'", tt.input, result, tt.expected)
 		}

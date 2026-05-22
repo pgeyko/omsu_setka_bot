@@ -8,11 +8,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 // RegisterWebhooksWithSetka queries all active groups with a valid omsu_group_id,
 // registers their webhooks with the Setka schedule microservice, and returns the group IDs.
-func RegisterWebhooksWithSetka(ctx context.Context, db *sql.DB, setkaBaseURL, setkaAdminKey, webhookSecret, listenAddr string) ([]int, error) {
+func RegisterWebhooksWithSetka(ctx context.Context, db *sql.DB, setkaBaseURL, setkaAdminKey, webhookSecret, setkaPublicURL string) ([]int, error) {
 	if setkaBaseURL == "" || setkaAdminKey == "" {
 		return nil, fmt.Errorf("setka config is empty")
 	}
@@ -37,8 +38,13 @@ func RegisterWebhooksWithSetka(ctx context.Context, db *sql.DB, setkaBaseURL, se
 		return nil, nil
 	}
 
+	publicURL := setkaPublicURL
+	if publicURL == "" {
+		publicURL = "http://localhost"
+	}
+
 	body := map[string]interface{}{
-		"url":       fmt.Sprintf("http://localhost%s/webhook/schedule", listenAddr),
+		"url":       publicURL + "/webhook/schedule",
 		"secret":    webhookSecret,
 		"group_ids": groupIDs,
 		"enabled":   true,
@@ -58,7 +64,8 @@ func RegisterWebhooksWithSetka(ctx context.Context, db *sql.DB, setkaBaseURL, se
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Admin-Key", setkaAdminKey)
 
-	resp, err := http.DefaultClient.Do(req)
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute webhook registration request: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"omsu_bot/internal/llm"
+	"omsu_bot/internal/util"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -78,13 +79,14 @@ func (h *ScheduleQueryHandler) Handle(ctx context.Context, b *tgbot.Bot, update 
 		return
 	}
 
-	date := resolveDate(intent.Date, intent.RelativeDate)
+	date := util.ResolveDate(intent.Date, intent.RelativeDate)
 	if date == "" {
 		date = today
 	}
 
 	url := fmt.Sprintf("%s/api/v1/schedule/group/%d/day?date=%s", h.setkaBaseURL, h.omsuGroupID, date)
-	httpResp, err := http.Get(url)
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	httpResp, err := httpClient.Get(url)
 	if err != nil {
 		slog.Error("failed to fetch schedule from setka", "error", err)
 		h.reply(ctx, b, msg.Chat.ID, msg.MessageThreadID, msg.ID, "Не удалось получить расписание. Сервис временно недоступен.")
@@ -148,34 +150,4 @@ func (h *ScheduleQueryHandler) reply(ctx context.Context, b *tgbot.Bot, chatID i
 	})
 }
 
-var weekdayMap = map[string]int{
-	"sunday": 0, "saturday": 6, "friday": 5, "thursday": 4,
-	"wednesday": 3, "tuesday": 2, "monday": 1,
-	"воскресенье": 0, "суббота": 6, "пятница": 5, "четверг": 4,
-	"среда": 3, "вторник": 2, "понедельник": 1,
-}
 
-func resolveDate(date, relativeDate string) string {
-	if date != "" {
-		if _, err := time.Parse("2006-01-02", date); err == nil {
-			return date
-		}
-	}
-	now := time.Now()
-	switch relativeDate {
-	case "today":
-		return now.Format("2006-01-02")
-	case "tomorrow":
-		return now.AddDate(0, 0, 1).Format("2006-01-02")
-	case "":
-		return ""
-	}
-	if wd, ok := weekdayMap[relativeDate]; ok {
-		diff := (wd - int(now.Weekday()) + 7) % 7
-		if diff == 0 {
-			diff = 7
-		}
-		return now.AddDate(0, 0, diff).Format("2006-01-02")
-	}
-	return now.Format("2006-01-02")
-}

@@ -3,6 +3,8 @@ package db
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"time"
 )
 
 func (d *DB) Migrate() error {
@@ -14,7 +16,15 @@ func (d *DB) Migrate() error {
 	}
 
 	if exists == 0 {
-		slog.Info("legacy database schema detected, performing clean schema drop for migration")
+		slog.Warn("legacy database schema detected, performing clean schema drop for migration")
+
+		// Backup the database before destructive migration
+		if dbPath, err := d.backupBeforeMigration(); err != nil {
+			slog.Error("failed to backup database before migration", "error", err)
+		} else if dbPath != "" {
+			slog.Warn("database backed up before migration", "backup", dbPath)
+		}
+
 		dropQueries := []string{
 			"DROP TABLE IF EXISTS bot_persona;",
 			"DROP TABLE IF EXISTS topics;",
@@ -183,4 +193,39 @@ func (d *DB) Migrate() error {
 
 	slog.Info("database migration completed")
 	return nil
+}
+
+func (d *DB) backupBeforeMigration() (string, error) {
+	backupPath := fmt.Sprintf("data/groupbot.bak.%d", time.Now().Unix())
+
+	// Try VACUUM INTO (SQLite 3.27.0+) for a safe online backup
+	_, err := d.Exec(fmt.Sprintf("VACUUM INTO '%s'", backupPath))
+	if err == nil {
+		return backupPath, nil
+	}
+
+	// Fallback: copy the database file from the source path
+	slog.Warn("VACUUM INTO failed, trying file copy fallback", "error", err)
+
+	// Try to find the database path from PRAGMA
+	var dbPath string
+	row := d.QueryRow("PRAGMA database_list")
+	var seq int
+	var name, file string
+	if scanErr := row.Scan(&seq, &name, &file); scanErr == nil && file != "" {
+		dbPath = file
+	}
+
+	if dbPath == "" {
+		return "", fmt.Errorf("cannot determine database file path for backup")
+	}
+
+	input, err := os.ReadFile(dbPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read database file for backup: %w", err)
+	}
+	if err := os.WriteFile(backupPath, input, 0644); err != nil {
+		return "", fmt.Errorf("failed to write backup file: %w", err)
+	}
+	return backupPath, nil
 }

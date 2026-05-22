@@ -1,8 +1,10 @@
 package main
 
 import (
-	"unicode/utf16"
 	"testing"
+	"unicode/utf16"
+
+	"omsu_bot/internal/util"
 
 	"github.com/go-telegram/bot/models"
 )
@@ -139,7 +141,7 @@ func TestMakeSlug(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got := makeSlug(tt.input)
+			got := util.MakeSlug(tt.input)
 			if got != tt.want {
 				t.Errorf("makeSlug(%q) = %q, want %q", tt.input, got, tt.want)
 			}

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -28,10 +29,10 @@ type SettingsHandler struct {
 	setkaBaseURL  string
 	setkaAdminKey string
 	webhookSecret string
-	listenAddr    string
+	setkaPublicURL string
 }
 
-func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCache *telegram.AdminCache, setkaBaseURL, setkaAdminKey, webhookSecret, listenAddr string) *SettingsHandler {
+func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCache *telegram.AdminCache, setkaBaseURL, setkaAdminKey, webhookSecret, setkaPublicURL string) *SettingsHandler {
 	return &SettingsHandler{
 		db:            db,
 		sessionStore:  sessionStore,
@@ -39,7 +40,7 @@ func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCa
 		setkaBaseURL:  setkaBaseURL,
 		setkaAdminKey: setkaAdminKey,
 		webhookSecret: webhookSecret,
-		listenAddr:    listenAddr,
+		setkaPublicURL: setkaPublicURL,
 	}
 }
 
@@ -221,7 +222,7 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 			slog.Error("failed to unlink Setka group", "error", err, "chat_id", chatID)
 		}
 		go func() {
-			_, _ = telegram.RegisterWebhooksWithSetka(context.Background(), h.db, h.setkaBaseURL, h.setkaAdminKey, h.webhookSecret, h.listenAddr)
+			_, _ = telegram.RegisterWebhooksWithSetka(context.Background(), h.db, h.setkaBaseURL, h.setkaAdminKey, h.webhookSecret, h.setkaPublicURL)
 		}()
 		h.showSetkaScreen(ctx, b, chatID, messageID)
 	case strings.HasPrefix(action, "setka_sel:"):
@@ -233,7 +234,7 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 				slog.Error("failed to update omsu_group_id", "error", err, "chat_id", chatID)
 			}
 			go func() {
-				_, _ = telegram.RegisterWebhooksWithSetka(context.Background(), h.db, h.setkaBaseURL, h.setkaAdminKey, h.webhookSecret, h.listenAddr)
+		_, _ = telegram.RegisterWebhooksWithSetka(context.Background(), h.db, h.setkaBaseURL, h.setkaAdminKey, h.webhookSecret, h.setkaPublicURL)
 			}()
 		}
 		h.sessionStore.Clear(chatID, userID)
@@ -542,7 +543,8 @@ func (h *SettingsHandler) searchSetkaGroups(ctx context.Context, query string) (
 		return nil, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	httpClient := &http.Client{Timeout: 15 * time.Second}
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
