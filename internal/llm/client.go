@@ -75,7 +75,6 @@ type PersonaProvider interface {
 type Client struct {
 	textChain         *Chain
 	visionChain       *Chain
-	audioChain        *Chain
 	tracker           *Tracker
 	persona           PersonaProvider
 	prompts           *PromptRegistry
@@ -83,11 +82,10 @@ type Client struct {
 	skipFallbackModel bool
 }
 
-func NewClient(textChain, visionChain, audioChain *Chain, tracker *Tracker, persona PersonaProvider, prompts *PromptRegistry, timeoutSec int, skipFallbackModel bool) *Client {
+func NewClient(textChain, visionChain *Chain, tracker *Tracker, persona PersonaProvider, prompts *PromptRegistry, timeoutSec int, skipFallbackModel bool) *Client {
 	return &Client{
 		textChain:   textChain,
 		visionChain: visionChain,
-		audioChain:  audioChain,
 		tracker:     tracker,
 		persona:     persona,
 		prompts:     prompts,
@@ -242,91 +240,6 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 		return nil, fmt.Errorf("all providers failed (%d tried), last error: %w", tried, lastErr)
 	}
 	return nil, fmt.Errorf("no active provider available")
-}
-
-// CallAudio sends an audio file for direct processing (Native Audio Dialog).
-// Uses the audio chain first (gemini-2.5-flash), falls back to vision chain if audio is unavailable.
-func (c *Client) CallAudio(ctx context.Context, reqType, systemExtra string, audioData []byte, mimeType string) (*Response, error) {
-	if c.tracker.IsLimitReached() {
-		return nil, fmt.Errorf("daily token limit reached")
-	}
-
-	var systemContent string
-	if c.persona != nil {
-		systemContent = c.persona.SystemPrompt()
-	}
-	if systemExtra != "" {
-		if systemContent != "" {
-			systemContent += "\n\n"
-		}
-		systemContent += systemExtra
-	}
-
-	history := []AgentMessage{
-		{
-			Role:    "user",
-			Content: "Сделай дословную текстовую расшифровку этой аудиозаписи. Напиши только расшифрованный текст без форматирования, комментариев и метаданных. Если голоса нет или расшифровка невозможна, напиши '[Не удалось расшифровать аудио]'.",
-			MediaParts: []MediaPart{
-				{MimeType: mimeType, Data: audioData},
-			},
-		},
-	}
-
-	// Try audio chain first (gemini-2.5-flash Native Audio Dialog)
-	if c.audioChain != nil {
-		for _, provider := range c.audioChain.Providers() {
-			if !provider.IsActive() {
-				continue
-			}
-			modelsToTry := []string{provider.Model}
-			if !c.skipFallbackModel {
-				modelsToTry = append(modelsToTry, provider.FallbackModels...)
-			}
-			for mi, model := range modelsToTry {
-				provider.Model = model
-				resp, err := c.callProviderHistory(ctx, provider, systemContent, history, nil)
-				if err == nil {
-					resp.Provider = provider.Name
-					resp.Model = model
-					c.tracker.LogRequest(ctx, reqType, provider.Name, model, resp.InputTokens, resp.OutputTokens, 0)
-					return resp, nil
-				}
-				if mi < len(modelsToTry)-1 {
-					slog.Warn("audio model failed, trying fallback", "model", model, "error", err)
-				}
-			}
-			provider.RecordFailure()
-		}
-	}
-
-	// Fallback to vision chain (gemini-3.1-flash-lite STT)
-	if c.visionChain != nil {
-		for _, provider := range c.visionChain.Providers() {
-			if !provider.IsActive() {
-				continue
-			}
-			modelsToTry := []string{provider.Model}
-			if !c.skipFallbackModel {
-				modelsToTry = append(modelsToTry, provider.FallbackModels...)
-			}
-			for mi, model := range modelsToTry {
-				provider.Model = model
-				resp, err := c.callProviderHistory(ctx, provider, systemContent, history, nil)
-				if err == nil {
-					resp.Provider = provider.Name
-					resp.Model = model
-					c.tracker.LogRequest(ctx, reqType, provider.Name, model, resp.InputTokens, resp.OutputTokens, 0)
-					return resp, nil
-				}
-				if mi < len(modelsToTry)-1 {
-					slog.Warn("vision STT model failed, trying fallback", "model", model, "error", err)
-				}
-			}
-			provider.RecordFailure()
-		}
-	}
-
-	return nil, fmt.Errorf("audio chain unavailable (no active providers)")
 }
 
 func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, systemContent string, history []AgentMessage, tools []Tool) (*Response, error) {
@@ -695,17 +608,14 @@ func (c *Client) SetSkipFallbackModel(skip bool) {
 }
 
 // HasMultimodalProvider returns true when at least one active provider in
-// vision or audio chain supports the multimodal capability.
+// the vision chain supports the multimodal capability.
 func (c *Client) HasMultimodalProvider() bool {
-	chains := []*Chain{c.visionChain, c.audioChain}
-	for _, chain := range chains {
-		if chain == nil {
-			continue
-		}
-		for _, p := range chain.Providers() {
-			if p.IsActive() && p.HasCapability(CapabilityMultimodal) {
-				return true
-			}
+	if c.visionChain == nil {
+		return false
+	}
+	for _, p := range c.visionChain.Providers() {
+		if p.IsActive() && p.HasCapability(CapabilityMultimodal) {
+			return true
 		}
 	}
 	return false

@@ -113,7 +113,7 @@ func main() {
 
 	cmdReg := handlers.NewCommandRegistry()
 
-	var textProviders, visionProviders, audioProviders []*llm.Provider
+	var textProviders, visionProviders []*llm.Provider
 	for _, pcfg := range cfg.LLM.Providers {
 		baseURL := pcfg.BaseURL
 		if baseURL == "" {
@@ -137,21 +137,14 @@ func main() {
 			FallbackModels: fallbackModels,
 		}
 
-		// Route by name convention: gemini-audio* → audio chain,
-		// gemini-vision* → vision chain, everything else → text chain.
-		switch {
-		case strings.HasPrefix(pcfg.Name, "gemini-audio"):
-			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
-			audioProviders = append(audioProviders, p)
-		case strings.HasPrefix(pcfg.Name, "gemini-vision"):
+		if pcfg.Multimodal {
 			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
 			visionProviders = append(visionProviders, p)
-		default:
+		} else {
 			textProviders = append(textProviders, p)
 		}
 	}
 
-	audioChain := llm.NewChain(audioProviders)
 	visionChain := llm.NewChain(visionProviders)
 	textChain := llm.NewChain(textProviders)
 
@@ -159,11 +152,10 @@ func main() {
 	var allProviders []*llm.Provider
 	allProviders = append(allProviders, textProviders...)
 	allProviders = append(allProviders, visionProviders...)
-	allProviders = append(allProviders, audioProviders...)
 	llmChain := llm.NewChain(allProviders)
 
 	tracker := llm.NewTracker(database.DB, int64(cfg.LLM.DailyTokenLimit), 0.8)
-	llmClient := llm.NewClient(textChain, visionChain, audioChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
+	llmClient := llm.NewClient(textChain, visionChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
 	globalLLM = llmClient
 
 	tgBot, err := tgbot.New(cfg.Telegram.Token)

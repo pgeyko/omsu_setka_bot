@@ -22,26 +22,19 @@ llm:
       multimodal: false
       priority: 10
 
-    - name: gemma-text-reserve
+    - name: gemma-text-fallback
       type: gemini
-      api_key: "${GEMINI_RESERVE_API_KEY}"
-      model: gemma-4-31b-it
+      api_key: "${GEMINI_API_KEY}"
+      model: gemma-4-26b-it
       multimodal: false
       priority: 20
 
-    - name: gemini-text-fallback
-      type: gemini
-      api_key: "${GEMINI_API_KEY}"
-      model: gemini-3.1-flash-lite
-      multimodal: false
-      priority: 30
-
-    - name: gemini-text-fallback-reserve
+    - name: gemini-text-reserve
       type: gemini
       api_key: "${GEMINI_RESERVE_API_KEY}"
       model: gemini-3.1-flash-lite
       multimodal: false
-      priority: 40
+      priority: 30
 
     - name: deepseek-final
       type: deepseek
@@ -50,11 +43,11 @@ llm:
       multimodal: false
       priority: 90
 
-    # ── Vision chain ── (OCR, фото)
-    - name: gemini-vision
+    # ── Vision + Audio STT chain ── (OCR, фото, расшифровка голоса)
+    - name: gemma-vision
       type: gemini
       api_key: "${GEMINI_API_KEY}"
-      model: gemini-3.1-flash-lite
+      model: gemma-4-31b-it
       multimodal: true
       priority: 50
 
@@ -64,21 +57,6 @@ llm:
       model: gemini-3.1-flash-lite
       multimodal: true
       priority: 60
-
-    # ── Audio chain ── (голосовые, Native Audio Dialog)
-    - name: gemini-audio
-      type: gemini
-      api_key: "${GEMINI_API_KEY}"
-      model: gemini-2.5-flash
-      multimodal: true
-      priority: 70
-
-    - name: gemini-audio-fallback
-      type: gemini
-      api_key: "${GEMINI_RESERVE_API_KEY}"
-      model: gemini-2.5-flash
-      multimodal: true
-      priority: 80
 
 api:
   listen: ":8081"
