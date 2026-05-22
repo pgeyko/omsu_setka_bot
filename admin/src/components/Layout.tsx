@@ -6,7 +6,6 @@ import ErrorBoundary from './ErrorBoundary'
 import Toast from './Toast'
 
 const nav = [
-  { to: '/', icon: Bot, label: 'Личность' },
   { to: '/groups', icon: Users, label: 'Группы' },
   { to: '/topics', icon: MessageSquare, label: 'Топики' },
   { to: '/permissions', icon: Shield, label: 'Действия' },

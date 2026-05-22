@@ -52,6 +52,7 @@ func (s *Server) handleUploadPersona(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write persona file")
 	}
 
+	// Reload the global store if we just modified group context, because it will be dynamically merged with the system prompt or we can let GetGroupSystemPrompt read it live. It reads it live.
 	return respondSuccess(c, fiber.Map{"status": "ok", "file": "persona.md"})
 }
 
@@ -88,6 +89,8 @@ func (s *Server) handleUploadSystemPrompt(c *fiber.Ctx) error {
 	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write system_prompt file")
 	}
+
+	// Also re-read for dynamic prompts
 
 	return respondSuccess(c, fiber.Map{"status": "ok", "file": "system_prompt.txt"})
 }

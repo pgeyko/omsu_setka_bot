@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"errors"
+	"log/slog"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -56,7 +57,11 @@ func (s *Server) handleCreateGroup(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, err.Error())
 	}
 
-	return respondSuccess(c, g.ToPublic())
+	publicGrp := g.ToPublic()
+
+	slog.Info("handleGetGroup returning structure", "chat_id", publicGrp.ChatID, "omsu_group_id", publicGrp.OmsuGroupID, "title", publicGrp.Title)
+
+	return respondSuccess(c, publicGrp)
 }
 
 func (s *Server) handleGetGroup(c *fiber.Ctx) error {
@@ -74,6 +79,8 @@ func (s *Server) handleGetGroup(c *fiber.Ctx) error {
 		}
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, err.Error())
 	}
+
+	slog.Info("handleGetGroup returning structure", "chat_id", g.ChatID, "omsu_group_id", g.OmsuGroupID, "title", g.Title)
 
 	return respondSuccess(c, g.ToPublic())
 }
