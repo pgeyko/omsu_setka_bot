@@ -174,10 +174,61 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		}
 	}
 
-	_, err = h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, fromTopicName, result.Hashtags, msg.ID)
-	if err != nil {
-		slog.Error("forward failed", "error", err, "msg_id", msg.ID)
-		return
+	// Try to forward as album if this message is part of a media group
+	albumSent := false
+	if msg.MediaGroupID != "" {
+		rows, err := h.db.QueryContext(ctx,
+			`SELECT message_id, file_id, caption FROM media_group_items
+			 WHERE media_group_id = ? AND chat_id = ?
+			 ORDER BY message_id`,
+			msg.MediaGroupID, msg.Chat.ID,
+		)
+		if err == nil {
+			defer rows.Close()
+			var groupItems []mediaGroupItem
+			for rows.Next() {
+				var item mediaGroupItem
+				rows.Scan(&item.MessageID, &item.FileID, &item.Caption)
+				groupItems = append(groupItems, item)
+			}
+			if len(groupItems) > 1 {
+				slog.Debug("auto-classify sending album", "count", len(groupItems), "topic", result.Topic)
+				var media []models.InputMedia
+				hashtagText := ""
+				for _, ht := range result.Hashtags {
+					hashtagText += " #" + ht
+				}
+				for i, item := range groupItems {
+					cap := ""
+					if i == 0 {
+						cap = item.Caption + hashtagText
+					}
+					media = append(media, &models.InputMediaPhoto{
+						Media:                 item.FileID,
+						Caption:               cap,
+						ShowCaptionAboveMedia: true,
+					})
+				}
+				_, err := h.bot.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
+					ChatID:          msg.Chat.ID,
+					MessageThreadID: targetThreadID,
+					Media:           media,
+				})
+				if err != nil {
+					slog.Error("album forward failed", "error", err)
+				} else {
+					albumSent = true
+				}
+			}
+		}
+	}
+
+	if !albumSent {
+		_, err = h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, fromTopicName, result.Hashtags, msg.ID)
+		if err != nil {
+			slog.Error("forward failed", "error", err, "msg_id", msg.ID)
+			return
+		}
 	}
 
 	// Persist hashtags for search
@@ -304,4 +355,10 @@ func textPrefix(s string) string {
 		return s[:100]
 	}
 	return s
+}
+
+type mediaGroupItem struct {
+	MessageID int
+	FileID    string
+	Caption   string
 }
