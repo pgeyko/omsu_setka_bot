@@ -140,12 +140,12 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 
 	var fileID string
 	isPhoto := false
-	if len(msg.Photo) > 0 {
+	if msg.Document != nil {
+		fileID = msg.Document.FileID
+	} else if len(msg.Photo) > 0 {
 		idx := len(msg.Photo) / 2
 		fileID = msg.Photo[idx].FileID
 		isPhoto = true
-	} else if msg.Document != nil {
-		fileID = msg.Document.FileID
 	}
 
 	if text == "" && fileID == "" {
