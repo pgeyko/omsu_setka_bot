@@ -155,7 +155,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 
 	// Defer classification for media groups until all photos arrive
 	if msg.MediaGroupID != "" {
-		h.deferMediaGroup(ctx, b, msg, text, fileID)
+		h.deferMediaGroup(ctx, b, msg, text, fileID, isPhoto)
 		return
 	}
 
@@ -515,7 +515,7 @@ func (h *Handler) fuzzyLookupThreadID(ctx context.Context, chatID int64, topic s
 	return 0, fmt.Errorf("no fuzzy match for topic: %s", topic)
 }
 
-func (h *Handler) deferMediaGroup(ctx context.Context, b *tgbot.Bot, msg *models.Message, text, fileID string) {
+func (h *Handler) deferMediaGroup(ctx context.Context, b *tgbot.Bot, msg *models.Message, text, fileID string, isPhoto bool) {
 	h.pendingMu.Lock()
 	if cancel, ok := h.pendingMediaCancel[msg.MediaGroupID]; ok {
 		cancel()
@@ -524,24 +524,30 @@ func (h *Handler) deferMediaGroup(ctx context.Context, b *tgbot.Bot, msg *models
 	h.pendingMediaCancel[msg.MediaGroupID] = cancel
 	h.pendingMu.Unlock()
 
-	go func() {
-		select {
-		case <-time.After(2 * time.Second):
-			h.processDeferredAlbum(childCtx, b, msg, text, fileID)
-		case <-childCtx.Done():
-			return
-		}
-	}()
+		go func() {
+			select {
+			case <-time.After(2 * time.Second):
+				h.processDeferredAlbum(childCtx, b, msg, text, fileID, isPhoto)
+			case <-childCtx.Done():
+				return
+			}
+		}()
 }
 
-func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *models.Message, text, fileID string) {
+func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *models.Message, text, fileID string, isPhoto bool) {
 	defer func() {
 		h.pendingMu.Lock()
 		delete(h.pendingMediaCancel, msg.MediaGroupID)
 		h.pendingMu.Unlock()
 	}()
 
-	result, err := h.classifyPhoto(ctx, msg.Chat.ID, text, fileID)
+	var result *classifier.ClassifyResult
+	var err error
+	if isPhoto && fileID != "" {
+		result, err = h.classifyPhoto(ctx, msg.Chat.ID, text, fileID)
+	} else {
+		result, err = h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
+	}
 	if err != nil {
 		slog.Warn("deferred album classification failed", "error", err)
 		return
