@@ -590,37 +590,67 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 	slog.Debug("deferred album forward", "count", len(groupItems), "topic", result.Topic)
 
 	if len(groupItems) > 1 {
-		var media []models.InputMedia
-		hashtagText := ""
-		for _, ht := range result.Hashtags {
-			ht = strings.ReplaceAll(ht, " ", "-")
-			hashtagText += " #" + ht
-		}
-		for i, item := range groupItems {
-			cap := ""
-			if i == 0 {
-				cap = item.Caption + hashtagText
+		if !isPhoto {
+			// Documents: forward individually via copyMessage
+			var lastCopied *models.MessageID
+			hashtagText := ""
+			for _, ht := range result.Hashtags {
+				ht = strings.ReplaceAll(ht, " ", "-")
+				hashtagText += " #" + ht
 			}
-			media = append(media, &models.InputMediaPhoto{
-				Media:                 item.FileID,
-				Caption:               cap,
-				ShowCaptionAboveMedia: true,
+			for _, item := range groupItems {
+				copied, err := h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, "", nil, item.MessageID)
+				if err != nil {
+					slog.Error("deferred doc forward failed", "error", err, "msg_id", item.MessageID)
+				} else {
+					lastCopied = copied
+				}
+			}
+			if lastCopied != nil {
+				// Send hashtags as reply on the last copied document
+				if hashtagText != "" {
+					b.SendMessage(ctx, &tgbot.SendMessageParams{
+						ChatID: msg.Chat.ID, MessageThreadID: targetThreadID,
+						Text: hashtagText, ParseMode: models.ParseModeHTML,
+						ReplyParameters: &models.ReplyParameters{MessageID: lastCopied.ID},
+					})
+				}
+				h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, lastCopied.ID, result.Topic)
+			}
+		} else {
+			// Photos: send as media group
+			var media []models.InputMedia
+			hashtagText := ""
+			for _, ht := range result.Hashtags {
+				ht = strings.ReplaceAll(ht, " ", "-")
+				hashtagText += " #" + ht
+			}
+			for i, item := range groupItems {
+				cap := ""
+				if i == 0 {
+					cap = item.Caption + hashtagText
+				}
+				media = append(media, &models.InputMediaPhoto{
+					Media:                 item.FileID,
+					Caption:               cap,
+					ShowCaptionAboveMedia: true,
+				})
+			}
+			res, err := b.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
+				ChatID:          msg.Chat.ID,
+				MessageThreadID: targetThreadID,
+				Media:           media,
 			})
+			if err != nil {
+				slog.Error("deferred album forward failed", "error", err)
+				return
+			}
+			var newMsgID int
+			if len(res) > 0 {
+				newMsgID = res[0].ID
+			}
+			h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, newMsgID, result.Topic)
 		}
-		res, err := b.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
-			ChatID:          msg.Chat.ID,
-			MessageThreadID: targetThreadID,
-			Media:           media,
-		})
-		if err != nil {
-			slog.Error("deferred album forward failed", "error", err)
-			return
-		}
-		var newMsgID int
-		if len(res) > 0 {
-			newMsgID = res[0].ID
-		}
-		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, newMsgID, result.Topic)
 	} else {
 		copied, err := h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, "", result.Hashtags, msg.ID)
 		if err != nil {
