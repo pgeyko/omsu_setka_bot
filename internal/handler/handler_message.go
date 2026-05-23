@@ -140,7 +140,9 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 
 	var fileID string
 	if len(msg.Photo) > 0 {
-		fileID = msg.Photo[len(msg.Photo)-1].FileID
+		// Use medium size (not largest) to avoid 413 on Groq and 400 on Gemini
+		idx := len(msg.Photo) / 2
+		fileID = msg.Photo[idx].FileID
 	} else if msg.Document != nil {
 		fileID = msg.Document.FileID
 	}
