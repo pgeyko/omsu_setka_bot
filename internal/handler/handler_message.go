@@ -142,8 +142,13 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 
 	targetThreadID, err := h.lookupThreadID(ctx, msg.Chat.ID, result.Topic)
 	if err != nil || targetThreadID == 0 {
-		slog.Warn("target topic not found", "topic", result.Topic)
-		return
+		// Fuzzy fallback: try matching by name or partial slug
+		targetThreadID, err = h.fuzzyLookupThreadID(ctx, msg.Chat.ID, result.Topic)
+		if err != nil || targetThreadID == 0 {
+			slog.Warn("target topic not found", "topic", result.Topic)
+			return
+		}
+		slog.Debug("fuzzy topic match", "topic", result.Topic, "thread_id", targetThreadID)
 	}
 
 	fromTopicName := ""
@@ -238,6 +243,46 @@ func (h *Handler) lookupThreadID(ctx context.Context, chatID int64, slug string)
 		`SELECT tg_thread_id FROM topics WHERE group_id = ? AND slug = ? AND is_active = 1`, chatID, slug,
 	).Scan(&tgThreadID)
 	return tgThreadID, err
+}
+
+func (h *Handler) fuzzyLookupThreadID(ctx context.Context, chatID int64, topic string) (int, error) {
+	// Try exact name match
+	var tgThreadID int
+	err := h.db.QueryRowContext(ctx,
+		`SELECT tg_thread_id FROM topics WHERE group_id = ? AND name = ? AND is_active = 1 LIMIT 1`,
+		chatID, topic,
+	).Scan(&tgThreadID)
+	if err == nil {
+		return tgThreadID, nil
+	}
+
+	// Try name contains match (case-insensitive)
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT name, tg_thread_id FROM topics WHERE group_id = ? AND is_active = 1 ORDER BY name`,
+		chatID,
+	)
+	if err == nil {
+		defer rows.Close()
+		lowerTopic := strings.ToLower(topic)
+		var bestName string
+		var bestID int
+		for rows.Next() {
+			var name string
+			var id int
+			rows.Scan(&name, &id)
+			if strings.Contains(strings.ToLower(name), lowerTopic) || strings.Contains(lowerTopic, strings.ToLower(name)) {
+				if bestID == 0 || len(name) < len(bestName) {
+					bestID = id
+					bestName = name
+				}
+			}
+		}
+		if bestID != 0 {
+			return bestID, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no fuzzy match for topic: %s", topic)
 }
 
 func truncate(s string, max int) string {
