@@ -265,10 +265,15 @@ func (e *ToolExecutor) getSchedule(ctx context.Context, chatID int64, argsJSON s
 	}
 
 	result := string(wrapper.Data)
-	// Append Setka public link if configured
 	if e.setkaPublicURL != "" {
-		link := fmt.Sprintf("%s/schedule/group/%d?date=%s", strings.TrimRight(e.setkaPublicURL, "/"), omsuGroupID, date)
-		result += fmt.Sprintf("\n\n📅 ССЫЛКА НА РАСПИСАНИЕ В SETKA (ОБЯЗАТЕЛЬНО добавь в конец своего ответа): <a href=\"%s\">Открыть расписание в Setka</a>", link)
+		base := strings.TrimRight(e.setkaPublicURL, "/")
+		var link string
+		if omsuGroupID != 0 {
+			link = fmt.Sprintf("%s/schedule/group/%d?date=%s", base, omsuGroupID, date)
+		} else {
+			link = base
+		}
+		result += fmt.Sprintf("\n\n<a href=\"%s\">[расписание]</a>", link)
 	}
 	return result, nil
 }
