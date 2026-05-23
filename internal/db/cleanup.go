@@ -28,6 +28,7 @@ func (d *DB) runCleanup(ctx context.Context) {
 		`DELETE FROM processed_messages WHERE processed_at < datetime('now', '-30 days')`,
 		`DELETE FROM llm_requests WHERE created_at < datetime('now', '-90 days')`,
 		`DELETE FROM summary_requests WHERE requested_at < datetime('now', '-1 day')`,
+		`DELETE FROM media_group_items WHERE created_at < datetime('now', '-1 day')`,
 	}
 	for _, q := range queries {
 		res, err := d.ExecContext(ctx, q)

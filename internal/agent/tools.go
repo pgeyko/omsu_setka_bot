@@ -756,6 +756,29 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 			return true
 		})
 	}
+
+	// Fallback: query DB when in-memory map is cold (after restart)
+	if len(groupItems) == 0 {
+		rows, err := e.db.QueryContext(ctx,
+			`SELECT mg.media_group_id, mg.message_id, mg.file_id, mg.caption
+			 FROM media_group_items mg
+			 WHERE mg.media_group_id = (
+				SELECT media_group_id FROM media_group_items WHERE message_id = ?
+			 ) AND mg.chat_id = ?
+			 ORDER BY mg.message_id`,
+			forwardMsgID, chatID,
+		)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var item MediaGroupItem
+				var groupID string
+				rows.Scan(&groupID, &item.MessageID, &item.FileID, &item.Caption)
+				groupItems = append(groupItems, item)
+			}
+		}
+	}
+
 	slog.Debug("forward_message media group lookup", "forward_msg_id", forwardMsgID, "group_items", len(groupItems))
 
 	// Generate hashtags from caption text

@@ -447,6 +447,13 @@ func main() {
 			})
 			mediaGroupMessages.Store(msg.MediaGroupID, items)
 			mediaGroupMu.Unlock()
+
+			// Persist to DB so album forwarding survives restarts
+			database.DB.ExecContext(ctx,
+				`INSERT OR IGNORE INTO media_group_items (media_group_id, message_id, chat_id, file_id, caption, created_at)
+				 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+				msg.MediaGroupID, msg.ID, msg.Chat.ID, fileID, msg.Caption,
+			)
 			slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", len(items))
 		}
 

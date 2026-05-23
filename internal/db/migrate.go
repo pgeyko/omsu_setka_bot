@@ -165,6 +165,16 @@ func (d *DB) Migrate() error {
 			expires_at INTEGER NOT NULL
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_revoked_tokens_exp ON revoked_tokens(expires_at);`,
+		`CREATE TABLE IF NOT EXISTS media_group_items (
+			media_group_id TEXT NOT NULL,
+			message_id     INTEGER NOT NULL,
+			chat_id        INTEGER NOT NULL,
+			file_id        TEXT NOT NULL DEFAULT '',
+			caption        TEXT NOT NULL DEFAULT '',
+			created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (media_group_id, message_id)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_media_group_items_group ON media_group_items(media_group_id, chat_id);`,
 	}
 
 	for _, q := range queries {
