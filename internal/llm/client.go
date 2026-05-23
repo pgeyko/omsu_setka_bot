@@ -167,6 +167,12 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 		return nil, fmt.Errorf("daily token limit reached")
 	}
 
+	// Reject if estimated input would exceed remaining daily budget
+	estInput := len(systemContent)/4 + historyTokens(history)
+	if c.tracker.WouldExceed(estInput) {
+		return nil, fmt.Errorf("request would exceed daily token limit (est %d tokens)", estInput)
+	}
+
 	chain := c.PickChain(reqType, requiresVision)
 	if chain == nil {
 		return nil, fmt.Errorf("no chain available for request type=%s (vision=%v)", reqType, requiresVision)
@@ -781,4 +787,15 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "..."
+}
+
+func historyTokens(history []AgentMessage) int {
+	total := 0
+	for _, msg := range history {
+		total += len(msg.Content) / 4
+		for _, tc := range msg.ToolCalls {
+			total += len(tc.Function.Name)/4 + len(tc.Function.Arguments)/4
+		}
+	}
+	return total
 }

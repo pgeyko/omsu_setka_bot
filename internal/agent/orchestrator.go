@@ -92,6 +92,10 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 		systemExtra += "\n\nБаза знаний группы:\n" + string(kbBytes)
 	}
 
+	if len(query) > 2000 {
+		query = query[:2000]
+	}
+
 	history := []llm.AgentMessage{
 		{
 			Role:    "user",

@@ -97,3 +97,23 @@ func (t *Tracker) IsLimitReached() bool {
 	t.resetDailyIfNeeded()
 	return t.dailyLimit > 0 && t.dailyTokens.Load() >= t.dailyLimit
 }
+
+func (t *Tracker) Remaining() int64 {
+	t.resetDailyIfNeeded()
+	if t.dailyLimit <= 0 {
+		return 1<<63 - 1 // effectively unlimited
+	}
+	used := t.dailyTokens.Load()
+	if used >= t.dailyLimit {
+		return 0
+	}
+	return t.dailyLimit - used
+}
+
+func (t *Tracker) WouldExceed(estimatedTokens int) bool {
+	t.resetDailyIfNeeded()
+	if t.dailyLimit <= 0 {
+		return false
+	}
+	return t.dailyTokens.Load()+int64(estimatedTokens) >= t.dailyLimit
+}

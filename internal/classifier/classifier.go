@@ -76,6 +76,9 @@ func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text s
 		return nil, fmt.Errorf("failed to get topics: %w", err)
 	}
 
+	if len(text) > 2000 {
+		text = text[:2000]
+	}
 	userPrompt := c.fillPrompt(c.prompts.Get("classify"), topicList, text)
 	systemPrompt := "Ты — классификатор сообщений студенческой группы. Отвечай ТОЛЬКО JSON без пояснений."
 
