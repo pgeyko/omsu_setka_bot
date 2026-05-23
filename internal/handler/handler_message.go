@@ -14,6 +14,7 @@ import (
 	"omsu_bot/internal/db"
 	"omsu_bot/internal/forwarder"
 	"omsu_bot/internal/telegram"
+	"omsu_bot/internal/util"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -152,16 +153,11 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	targetThreadID, err := h.lookupThreadID(ctx, msg.Chat.ID, result.Topic)
+	targetThreadID, err := h.findOrCreateTopic(ctx, msg, result.Topic, result.Confidence)
 	if err != nil || targetThreadID == 0 {
-		// Fuzzy fallback: try matching by name or partial slug
-		targetThreadID, err = h.fuzzyLookupThreadID(ctx, msg.Chat.ID, result.Topic)
-		if err != nil || targetThreadID == 0 {
-			slog.Warn("target topic not found", "topic", result.Topic)
-			return
+		slog.Warn("target topic not found", "topic", result.Topic, "confidence", result.Confidence)
+		return
 	}
-	slog.Debug("fuzzy topic match", "topic", result.Topic, "thread_id", targetThreadID)
-}
 
 if targetThreadID == msg.MessageThreadID {
 	h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped_same_topic", 0)
@@ -210,7 +206,11 @@ func (h *Handler) prefilter(msg *models.Message) bool {
 		text = msg.Caption
 	}
 
-	if text != "" && countWords(text) >= 15 {
+	if text != "" && countWords(text) >= 8 {
+		return true
+	}
+
+	if text != "" && countWords(text) >= 5 && strings.Contains(text, "http") {
 		return true
 	}
 
@@ -254,6 +254,48 @@ func (h *Handler) lookupThreadID(ctx context.Context, chatID int64, slug string)
 		`SELECT tg_thread_id FROM topics WHERE group_id = ? AND slug = ? AND is_active = 1`, chatID, slug,
 	).Scan(&tgThreadID)
 	return tgThreadID, err
+}
+
+func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, topic string, confidence float64) (int, error) {
+	tgThreadID, err := h.lookupThreadID(ctx, msg.Chat.ID, topic)
+	if err == nil && tgThreadID != 0 {
+		return tgThreadID, nil
+	}
+
+	tgThreadID, err = h.fuzzyLookupThreadID(ctx, msg.Chat.ID, topic)
+	if err == nil && tgThreadID != 0 {
+		slog.Debug("fuzzy topic match", "topic", topic, "thread_id", tgThreadID)
+		return tgThreadID, nil
+	}
+
+	// Auto-create topic for high-confidence important content with no matching topic
+	if confidence < 0.90 {
+		return 0, fmt.Errorf("no matching topic and confidence too low (%0.2f)", confidence)
+	}
+
+	// Convert classifier output to a proper name: "важная-информация" → "Важная информация"
+	topicName := strings.ReplaceAll(topic, "-", " ")
+	topicName = strings.Title(strings.ToLower(topicName))
+
+	forum, err := h.bot.CreateForumTopic(ctx, &tgbot.CreateForumTopicParams{
+		ChatID: msg.Chat.ID,
+		Name:   topicName,
+	})
+	if err != nil {
+		slog.Error("auto-create topic failed", "error", err, "name", topicName)
+		return 0, fmt.Errorf("create forum topic failed: %w", err)
+	}
+
+	slug := util.MakeSlug(topicName)
+	h.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO topics (group_id, tg_thread_id, name, slug, is_active) VALUES (?, ?, ?, ?, 1)`,
+		msg.Chat.ID, forum.MessageThreadID, topicName, slug,
+	)
+
+	slog.Info("auto-created topic for important message",
+		"name", topicName, "thread_id", forum.MessageThreadID, "slug", slug,
+	)
+	return forum.MessageThreadID, nil
 }
 
 func (h *Handler) fuzzyLookupThreadID(ctx context.Context, chatID int64, topic string) (int, error) {
@@ -334,13 +376,10 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 		return
 	}
 
-	targetThreadID, err := h.lookupThreadID(ctx, msg.Chat.ID, result.Topic)
+	targetThreadID, err := h.findOrCreateTopic(ctx, msg, result.Topic, result.Confidence)
 	if err != nil || targetThreadID == 0 {
-		targetThreadID, err = h.fuzzyLookupThreadID(ctx, msg.Chat.ID, result.Topic)
-		if err != nil || targetThreadID == 0 {
-			slog.Warn("deferred album: target topic not found", "topic", result.Topic)
-			return
-		}
+		slog.Warn("deferred album: target topic not found", "topic", result.Topic, "confidence", result.Confidence)
+		return
 	}
 
 	if targetThreadID == msg.MessageThreadID {
