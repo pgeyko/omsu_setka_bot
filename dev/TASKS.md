@@ -241,6 +241,24 @@
 
 ---
 
+## Этап 13 — Промпты, персона, документация ✅
+✅ Completed: 2026-05-23
+
+- [x] Extract LLM prompts from main.go to prompts/ (greeting, status_report)
+- [x] Extract bot messages to messages.yaml (internal/messages)
+- [x] Remove all hardcoded strings from cmd/bot/main.go
+- [x] Update persona.md: comprehensive Russian synonym mapping
+- [x] Update tool descriptions with Russian aliases (замути/забань/тема etc.)
+- [x] /init omsu_id optional (can init without Setka ID)
+- [x] Filter restricted tools pre-LLM for non-admin users
+- [x] Owner recognized as admin in orchestrator
+- [x] /summary defaults to current topic
+- [x] setMyCommands API at startup (Telegram command menu)
+- [x] get_schedule tool appends Setka public URL
+- [x] README.md created
+
+---
+
 ## Легенда
 
 ```
