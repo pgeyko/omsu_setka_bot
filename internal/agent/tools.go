@@ -798,10 +798,6 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 	}
 
 	var lastLink string
-	chatIDPos := chatID
-	if chatIDPos < 0 {
-		chatIDPos = -chatIDPos
-	}
 
 	if len(groupItems) > 1 {
 		// Album: send all photos as a media group with caption + hashtags on first
@@ -827,7 +823,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 			return fmt.Sprintf("Не удалось переслать альбом: %v", err), nil
 		}
 		if len(result) > 0 {
-			lastLink = fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, result[0].ID)
+			lastLink = util.ChatLink(chatID, result[0].ID)
 		}
 		return fmt.Sprintf("Альбом из %d фото переслан в топик «%s». %s", len(groupItems), topicName, lastLink), nil
 	}
@@ -843,7 +839,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		slog.Error("failed to copy message in forward tool", "error", err, "message_id", forwardMsgID)
 		return fmt.Sprintf("Не удалось переслать сообщение: %v", err), nil
 	}
-	lastLink = fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, result.ID)
+	lastLink = util.ChatLink(chatID, result.ID)
 
 	if hashtagStr != "" {
 		tagText := strings.TrimSpace(strings.ReplaceAll(hashtagStr, "\n", " "))

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"omsu_bot/internal/util"
+
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -32,7 +34,7 @@ func (f *Forwarder) Duplicate(ctx context.Context, fromChatID int64, fromThreadI
 		ReplyMarkup: &models.InlineKeyboardMarkup{
 			InlineKeyboard: [][]models.InlineKeyboardButton{
 				{
-					{Text: "📌 Перейти", URL: fmt.Sprintf("https://t.me/c/%d/%d", -fromChatID, messageID)},
+					{Text: "📌 Перейти", URL: util.ChatLink(fromChatID, messageID)},
 				},
 			},
 		},
@@ -60,7 +62,7 @@ func (f *Forwarder) Duplicate(ctx context.Context, fromChatID int64, fromThreadI
 }
 
 func (f *Forwarder) ReplyWithLink(ctx context.Context, chatID int64, threadID int, replyToID int, topicName string) error {
-	link := fmt.Sprintf("https://t.me/c/%d/%d", -chatID, replyToID)
+	link := util.ChatLink(chatID, replyToID)
 	text := fmt.Sprintf("↗️ Продублировал в «%s» → <a href=\"%s\">link</a>", topicName, link)
 
 	_, err := f.b.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -76,9 +78,13 @@ func (f *Forwarder) ReplyWithLink(ctx context.Context, chatID int64, threadID in
 }
 
 func (f *Forwarder) buildHeader(fromTopic, username string, hashtags []string) string {
-	header := fmt.Sprintf("📌 Из #%s | @%s", fromTopic, username)
-	for _, tag := range hashtags {
-		header += " #" + tag
+	var header string
+	for i, tag := range hashtags {
+		if i == 0 {
+			header = "#" + tag
+		} else {
+			header += " #" + tag
+		}
 	}
 	return header
 }
