@@ -283,6 +283,7 @@ func (c *Client) callWhisper(ctx context.Context, provider *Provider, history []
 	part, _ := w.CreateFormFile("file", "audio.ogg")
 	part.Write(audioData)
 	w.WriteField("model", provider.Model)
+	w.WriteField("language", "ru")
 	w.Close()
 
 	apiURL := provider.BaseURL + "/v1/audio/transcriptions"
