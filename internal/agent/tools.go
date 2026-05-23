@@ -47,7 +47,7 @@ var AvailableTools = []llm.Tool{
 	},
 	{
 		Name:        "generate_summary",
-		Description: "Собрать последние сообщения из указанного топика и предоставить их для суммаризации.",
+		Description: "Собрать последние сообщения из указанного топика (темы, ветки, раздела) и предоставить их для суммаризации. Пользователи могут сказать: 'саммари', 'что тут было', 'о чём говорили'.",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -61,7 +61,7 @@ var AvailableTools = []llm.Tool{
 	},
 	{
 		Name:        "manage_topic",
-		Description: "Управление топиками в группе: создание, закрытие, переименование.",
+		Description: "Управление топиками (темами, ветками, разделами) форума: создание (create), закрытие (close), переименование (rename), открытие (reopen). Пользователи могут сказать: 'создай тему X', 'закрой топик Y', 'переименуй ветку Z в W', 'открой раздел Q'.",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -83,7 +83,7 @@ var AvailableTools = []llm.Tool{
 	},
 	{
 		Name:        "moderate_user",
-		Description: "Модерация участников группы: мут (mute), бан (ban), размут (unmute).",
+		Description: "Модерация участников: мут/замутить/заглушить (mute), бан/забанить/заблокировать (ban), размут/разбан/разблокировать (unmute). Пользователи могут сказать: 'замуть @user', 'забань @user', 'заблокируй @user', 'размуть @user', 'разбань @user', 'разблокируй @user'.",
 		Parameters: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
