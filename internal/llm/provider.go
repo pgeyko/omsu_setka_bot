@@ -38,6 +38,7 @@ type Provider struct {
 	RPMLimit int // requests per minute (0 = unlimited)
 	TPMLimit int // tokens per minute (0 = unlimited)
 	RPDLimit int // requests per day (0 = unlimited)
+	TPDLimit int // tokens per day (0 = unlimited)
 
 	rateHistory []rateEntry
 }

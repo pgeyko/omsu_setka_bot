@@ -118,7 +118,7 @@ func main() {
 
 	botMessages := messages.Load("messages.yaml")
 
-	var textProviders, visionProviders, audioProviders []*llm.Provider
+	var agentProviders, simpleProviders, visionProviders, audioProviders []*llm.Provider
 	for _, pcfg := range cfg.LLM.Providers {
 		baseURL := pcfg.BaseURL
 		if baseURL == "" {
@@ -127,6 +127,8 @@ func main() {
 				baseURL = "https://generativelanguage.googleapis.com"
 			case "deepseek":
 				baseURL = "https://api.deepseek.com"
+			case "groq":
+				baseURL = "https://api.groq.com/openai"
 			}
 		}
 		p := &llm.Provider{
@@ -139,34 +141,40 @@ func main() {
 			RPMLimit: pcfg.RPMLimit,
 			TPMLimit: pcfg.TPMLimit,
 			RPDLimit: pcfg.RPDLimit,
+			TPDLimit: pcfg.TPDLimit,
 		}
-		// FallbackModels are configured exclusively via config.yaml — no hardcoded defaults.
 
-		switch {
-		case strings.HasPrefix(pcfg.Name, "gemini-audio"):
-			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
-			audioProviders = append(audioProviders, p)
-		case pcfg.Multimodal:
+		switch pcfg.Chain {
+		case "agent":
+			agentProviders = append(agentProviders, p)
+		case "simple":
+			simpleProviders = append(simpleProviders, p)
+		case "vision":
 			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
 			visionProviders = append(visionProviders, p)
+		case "audio":
+			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
+			audioProviders = append(audioProviders, p)
 		default:
-			textProviders = append(textProviders, p)
+			simpleProviders = append(simpleProviders, p)
 		}
 	}
 
+	agentChain := llm.NewChain(agentProviders)
+	simpleChain := llm.NewChain(simpleProviders)
 	visionChain := llm.NewChain(visionProviders)
 	audioChain := llm.NewChain(audioProviders)
-	textChain := llm.NewChain(textProviders)
 
 	// Combined chain for API diagnostics (shows all providers)
 	var allProviders []*llm.Provider
-	allProviders = append(allProviders, textProviders...)
+	allProviders = append(allProviders, agentProviders...)
+	allProviders = append(allProviders, simpleProviders...)
 	allProviders = append(allProviders, visionProviders...)
 	allProviders = append(allProviders, audioProviders...)
 	llmChain := llm.NewChain(allProviders)
 
 	tracker := llm.NewTracker(database.DB, int64(cfg.LLM.DailyTokenLimit), 0.8)
-	llmClient := llm.NewClient(textChain, visionChain, audioChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
+	llmClient := llm.NewClient(agentChain, simpleChain, visionChain, audioChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
 	globalLLM = llmClient
 
 	tgBot, err := tgbot.New(cfg.Telegram.Token)

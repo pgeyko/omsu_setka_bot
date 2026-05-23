@@ -76,15 +76,17 @@ type Config struct {
 type LLMProviderConfig struct {
 	Name           string   `yaml:"name"`
 	Type           string   `yaml:"type"`
+	Chain          string   `yaml:"chain"` // "agent", "simple", "vision", "audio"
 	APIKey         string   `yaml:"api_key"`
 	Model          string   `yaml:"model"`
 	FallbackModels []string `yaml:"fallback_models"`
 	Multimodal     bool     `yaml:"multimodal"`
 	Priority       int      `yaml:"priority"`
 	BaseURL        string   `yaml:"base_url" env-default:""`
-	RPMLimit       int      `yaml:"rpm_limit"`       // requests per minute (0 = unlimited)
-	TPMLimit       int      `yaml:"tpm_limit"`       // tokens per minute (0 = unlimited)
-	RPDLimit       int      `yaml:"rpd_limit"`       // requests per day (0 = unlimited)
+	RPMLimit       int      `yaml:"rpm_limit"`
+	TPMLimit       int      `yaml:"tpm_limit"`
+	RPDLimit       int      `yaml:"rpd_limit"`
+	TPDLimit       int      `yaml:"tpd_limit"`
 }
 
 func Load(configPath string) *Config {

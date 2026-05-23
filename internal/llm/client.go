@@ -73,7 +73,8 @@ type PersonaProvider interface {
 }
 
 type Client struct {
-	textChain         *Chain
+	agentChain        *Chain
+	simpleChain       *Chain
 	visionChain       *Chain
 	audioChain        *Chain
 	tracker           *Tracker
@@ -83,9 +84,10 @@ type Client struct {
 	skipFallbackModel bool
 }
 
-func NewClient(textChain, visionChain, audioChain *Chain, tracker *Tracker, persona PersonaProvider, prompts *PromptRegistry, timeoutSec int, skipFallbackModel bool) *Client {
+func NewClient(agentChain, simpleChain, visionChain, audioChain *Chain, tracker *Tracker, persona PersonaProvider, prompts *PromptRegistry, timeoutSec int, skipFallbackModel bool) *Client {
 	return &Client{
-		textChain:   textChain,
+		agentChain:  agentChain,
+		simpleChain: simpleChain,
 		visionChain: visionChain,
 		audioChain:  audioChain,
 		tracker:     tracker,
@@ -98,11 +100,27 @@ func NewClient(textChain, visionChain, audioChain *Chain, tracker *Tracker, pers
 	}
 }
 
-func (c *Client) pickChain(requiresVision bool) *Chain {
-	if requiresVision && c.visionChain != nil {
-		return c.visionChain
+func (c *Client) PickChain(taskType string, requiresVision bool) *Chain {
+	switch taskType {
+	case "agent_loop":
+		if c.agentChain != nil {
+			return c.agentChain
+		}
+		return c.simpleChain
+	case "ocr", "stt":
+		if taskType == "stt" && c.audioChain != nil {
+			return c.audioChain
+		}
+		if c.visionChain != nil {
+			return c.visionChain
+		}
+		return c.simpleChain
+	default:
+		if c.simpleChain != nil {
+			return c.simpleChain
+		}
+		return c.agentChain
 	}
-	return c.textChain
 }
 
 func (c *Client) buildMessages(systemExtra, userPrompt string) []Message {
@@ -141,12 +159,9 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 		return nil, fmt.Errorf("daily token limit reached")
 	}
 
-	chain := c.audioChain
-	if reqType != "stt" || chain == nil {
-		chain = c.pickChain(requiresVision)
-	}
+	chain := c.PickChain(reqType, requiresVision)
 	if chain == nil {
-		return nil, fmt.Errorf("no chain available for request type (vision=%v)", requiresVision)
+		return nil, fmt.Errorf("no chain available for request type=%s (vision=%v)", reqType, requiresVision)
 	}
 
 	requiredCaps := []Capability{}

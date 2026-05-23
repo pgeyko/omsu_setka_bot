@@ -99,9 +99,22 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 		},
 	}
 
+	type completedStep struct {
+		Tool   string `json:"tool"`
+		Status string `json:"status"`
+		Result string `json:"result"`
+	}
+	var completedSteps []completedStep
+
 	// 3. Loop up to N times
 	maxSteps := 5
 	for step := 0; step < maxSteps; step++ {
+		// Inject completed steps context so models understand what's been done
+		if len(completedSteps) > 0 {
+			ctxJSON, _ := json.Marshal(completedSteps)
+			systemExtra += fmt.Sprintf("\n\nВыполненные шаги (НЕ повторяй их): %s", string(ctxJSON))
+		}
+
 		var resp *llm.Response
 		var err error
 
@@ -150,29 +163,68 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 			return resp.Content, nil
 		}
 
-		// Execute each tool call
+		// Execute tool calls — async for independent tools, sequential for dependent
+		sideEffectTools := map[string]bool{"manage_topic": true, "moderate_user": true, "run_protocol": true}
+		hasSideEffect := false
 		for _, tc := range resp.ToolCalls {
-			var toolResult string
-			var err error
-
-			if restrictedTools[tc.Function.Name] && ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) && !ao.adminChecker.IsOwner(ctx, chatID, userID) {
-				toolResult = fmt.Sprintf("⛔ Инструмент «%s» доступен только администраторам группы.", tc.Function.Name)
-				slog.Warn("non-admin tried to use restricted tool", "tool", tc.Function.Name, "user_id", userID, "chat_id", chatID)
-			} else {
-				toolResult, err = ao.executor.Execute(ctx, chatID, tc.Function.Name, tc.Function.Arguments)
-				if err != nil {
-					slog.Error("failed to execute tool", "tool", tc.Function.Name, "error", err)
-					toolResult = fmt.Sprintf("Ошибка при выполнении инструмента: %v", err)
-				}
+			if sideEffectTools[tc.Function.Name] {
+				hasSideEffect = true
+				break
 			}
+		}
 
-			// Append tool output to history
-			history = append(history, llm.AgentMessage{
-				Role:       "tool",
-				Content:    toolResult,
-				ToolCallID: tc.ID,
-				ToolName:   tc.Function.Name,
-			})
+		if !hasSideEffect && len(resp.ToolCalls) > 1 {
+			// Async: run independent tools in parallel
+			type toolResult struct {
+				idx  int
+				id   string
+				name string
+				text string
+			}
+			ch := make(chan toolResult, len(resp.ToolCalls))
+			for i, tc := range resp.ToolCalls {
+				go func(i int, tc llm.ToolCall) {
+					var tr string
+					var execErr error
+					if restrictedTools[tc.Function.Name] && ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) && !ao.adminChecker.IsOwner(ctx, chatID, userID) {
+						tr = fmt.Sprintf("⛔ Инструмент «%s» доступен только администраторам группы.", tc.Function.Name)
+					} else {
+						tr, execErr = ao.executor.Execute(ctx, chatID, tc.Function.Name, tc.Function.Arguments)
+						if execErr != nil {
+							slog.Error("failed to execute tool", "tool", tc.Function.Name, "error", execErr)
+							tr = fmt.Sprintf("Ошибка при выполнении инструмента: %v", execErr)
+						}
+					}
+					ch <- toolResult{idx: i, id: tc.ID, name: tc.Function.Name, text: tr}
+				}(i, tc)
+			}
+			results := make([]toolResult, len(resp.ToolCalls))
+			for range resp.ToolCalls {
+				r := <-ch
+				results[r.idx] = r
+			}
+			for _, r := range results {
+				history = append(history, llm.AgentMessage{Role: "tool", Content: r.text, ToolCallID: r.id, ToolName: r.name})
+				completedSteps = append(completedSteps, completedStep{Tool: r.name, Status: "done", Result: fmt.Sprintf("%.200s", r.text)})
+			}
+		} else {
+			// Sequential: respect dependencies
+			for _, tc := range resp.ToolCalls {
+				var toolResult string
+				var execErr error
+				if restrictedTools[tc.Function.Name] && ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) && !ao.adminChecker.IsOwner(ctx, chatID, userID) {
+					toolResult = fmt.Sprintf("⛔ Инструмент «%s» доступен только администраторам группы.", tc.Function.Name)
+					slog.Warn("non-admin tried to use restricted tool", "tool", tc.Function.Name, "user_id", userID, "chat_id", chatID)
+				} else {
+					toolResult, execErr = ao.executor.Execute(ctx, chatID, tc.Function.Name, tc.Function.Arguments)
+					if execErr != nil {
+						slog.Error("failed to execute tool", "tool", tc.Function.Name, "error", execErr)
+						toolResult = fmt.Sprintf("Ошибка при выполнении инструмента: %v", execErr)
+					}
+				}
+				history = append(history, llm.AgentMessage{Role: "tool", Content: toolResult, ToolCallID: tc.ID, ToolName: tc.Function.Name})
+				completedSteps = append(completedSteps, completedStep{Tool: tc.Function.Name, Status: "done", Result: fmt.Sprintf("%.200s", toolResult)})
+			}
 		}
 	}
 
