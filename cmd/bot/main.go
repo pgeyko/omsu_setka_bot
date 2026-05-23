@@ -278,7 +278,7 @@ func main() {
 		fwd := forwarder.New(tgBot, personaStore)
 		summaryBuf := buffer.NewSummaryBuffer(database.DB, 200)
 		usernameCache := telegram.NewUsernameCache()
-		h := handlers.NewHandler(classif, fwd, tgBot, database.DB, summaryBuf, usernameCache)
+		h := handlers.NewHandler(classif, fwd, tgBot, cfg.Telegram.Token, database.DB, summaryBuf, usernameCache)
 
 		sessionStore := telegram.NewSessionStore()
 		adminCache := telegram.NewAdminCache(tgBot, cfg.Telegram.GroupID)

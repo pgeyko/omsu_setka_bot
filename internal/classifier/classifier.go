@@ -54,6 +54,10 @@ func New(llmClient *llm.Client, prompts *llm.PromptRegistry, topics TopicsProvid
 }
 
 func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text string, fileID string) (*ClassifyResult, error) {
+	return c.ClassifyWithImage(ctx, chatID, text, fileID, nil, "")
+}
+
+func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text string, fileID string, imageData []byte, imageMime string) (*ClassifyResult, error) {
 	if fileID != "" {
 		c.mu.RLock()
 		if entry, ok := c.visionCache[fileID]; ok && time.Since(entry.cachedAt) < c.cacheTTL {
@@ -75,7 +79,20 @@ func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text str
 	userPrompt := c.fillPrompt(c.prompts.Get("classify"), topicList, text)
 	systemPrompt := "Ты — классификатор сообщений студенческой группы. Отвечай ТОЛЬКО JSON без пояснений."
 
-	resp, err := c.llmClient.CallWithSystemPrompt(ctx, "classify", systemPrompt, userPrompt)
+	var resp *llm.Response
+	if len(imageData) > 0 {
+		history := []llm.AgentMessage{{
+			Role:    "user",
+			Content: userPrompt,
+			MediaParts: []llm.MediaPart{{
+				MimeType: imageMime,
+				Data:     imageData,
+			}},
+		}}
+		resp, err = c.llmClient.CallWithSystemHistory(ctx, chatID, "classify", systemPrompt, history, true)
+	} else {
+		resp, err = c.llmClient.CallWithSystemPrompt(ctx, "classify", systemPrompt, userPrompt)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("classification failed: %w", err)
 	}
@@ -110,60 +127,6 @@ func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text str
 		c.mu.Unlock()
 	}
 
-	return &result, nil
-}
-
-func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text string, fileID string, imageData []byte, imageMime string) (*ClassifyResult, error) {
-	if len(imageData) == 0 {
-		return c.ClassifyMessage(ctx, chatID, text, fileID)
-	}
-	// Vision classify path — bypass text-only, use image with vision chain
-	if fileID != "" {
-		c.mu.RLock()
-		if entry, ok := c.visionCache[fileID]; ok && time.Since(entry.cachedAt) < c.cacheTTL {
-			c.mu.RUnlock()
-			return &entry.result, nil
-		}
-		c.mu.RUnlock()
-	}
-	if c.topics == nil {
-		return nil, fmt.Errorf("topics provider not configured")
-	}
-	topicList, err := c.topics.GetTopics(ctx, chatID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get topics: %w", err)
-	}
-	userPrompt := c.fillPrompt(c.prompts.Get("classify"), topicList, text)
-	systemPrompt := "Ты — классификатор сообщений студенческой группы. Отвечай ТОЛЬКО JSON без пояснений."
-	history := []llm.AgentMessage{{
-		Role:    "user",
-		Content: userPrompt,
-		MediaParts: []llm.MediaPart{{MimeType: imageMime, Data: imageData}},
-	}}
-	resp, err := c.llmClient.CallWithSystemHistory(ctx, chatID, "classify", systemPrompt, history, true)
-	if err != nil {
-		return nil, fmt.Errorf("classification failed: %w", err)
-	}
-	var result ClassifyResult
-	if err := json.Unmarshal([]byte(llm.ExtractJSON(resp.Content)), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse classification: %w", err)
-	}
-	if fileID != "" {
-		c.mu.Lock()
-		if len(c.visionCache) >= c.maxCache {
-			var oldest string
-			var oldestTime time.Time
-			for k, v := range c.visionCache {
-				if oldest == "" || v.cachedAt.Before(oldestTime) {
-					oldest = k
-					oldestTime = v.cachedAt
-				}
-			}
-			delete(c.visionCache, oldest)
-		}
-		c.visionCache[fileID] = visionCacheEntry{result: result, cachedAt: time.Now()}
-		c.mu.Unlock()
-	}
 	return &result, nil
 }
 
