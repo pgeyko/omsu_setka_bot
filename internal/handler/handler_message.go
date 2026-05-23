@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -27,12 +29,13 @@ type Handler struct {
 	buffer        *buffer.SummaryBuffer
 	usernameCache *telegram.UsernameCache
 	bot           *tgbot.Bot
+	token         string
 
 	pendingMediaCancel map[string]context.CancelFunc
 	pendingMu          sync.Mutex
 }
 
-func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
+func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, token string, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
 	return &Handler{
 		classifier:         classifier,
 		forwarder:          forwarder,
@@ -40,6 +43,7 @@ func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarde
 		buffer:             buffer,
 		usernameCache:      usernameCache,
 		bot:                bot,
+		token:              token,
 		pendingMediaCancel: make(map[string]context.CancelFunc),
 	}
 }
@@ -141,7 +145,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	result, err := h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
+	result, err := h.classifyMsg(ctx, msg.Chat.ID, text, fileID)
 	if err != nil {
 		slog.Warn("classification skipped", "reason", err, "msg_id", msg.ID)
 		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
@@ -305,6 +309,34 @@ func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, to
 	return forum.MessageThreadID, nil
 }
 
+func (h *Handler) classifyMsg(ctx context.Context, chatID int64, text, fileID string) (*classifier.ClassifyResult, error) {
+	if fileID == "" {
+		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
+	}
+
+	file, err := h.bot.GetFile(ctx, &tgbot.GetFileParams{FileID: fileID})
+	if err != nil {
+		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
+	}
+
+	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", h.token, file.FilePath)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
+	}
+	defer resp.Body.Close()
+	imageData, err := io.ReadAll(resp.Body)
+	if err != nil || len(imageData) == 0 {
+		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
+	}
+
+	return h.classifier.ClassifyWithImage(ctx, chatID, text, fileID, imageData, "image/jpeg")
+}
+
 func (h *Handler) fuzzySlugMatch(ctx context.Context, chatID int64, topic string) (int, error) {
 	// Tokenize and match against existing slugs by word overlap
 	words := strings.FieldsFunc(strings.ToLower(topic), func(r rune) bool {
@@ -418,7 +450,7 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 		h.pendingMu.Unlock()
 	}()
 
-	result, err := h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
+	result, err := h.classifyMsg(ctx, msg.Chat.ID, text, fileID)
 	if err != nil {
 		slog.Warn("deferred album classification failed", "error", err)
 		return

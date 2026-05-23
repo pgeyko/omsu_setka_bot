@@ -54,6 +54,10 @@ func New(llmClient *llm.Client, prompts *llm.PromptRegistry, topics TopicsProvid
 }
 
 func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text string, fileID string) (*ClassifyResult, error) {
+	return c.ClassifyWithImage(ctx, chatID, text, fileID, nil, "")
+}
+
+func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text string, fileID string, imageData []byte, imageMime string) (*ClassifyResult, error) {
 	if fileID != "" {
 		c.mu.RLock()
 		if entry, ok := c.visionCache[fileID]; ok && time.Since(entry.cachedAt) < c.cacheTTL {
@@ -75,7 +79,20 @@ func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text str
 	userPrompt := c.fillPrompt(c.prompts.Get("classify"), topicList, text)
 	systemPrompt := "Ты — классификатор сообщений студенческой группы. Отвечай ТОЛЬКО JSON без пояснений."
 
-	resp, err := c.llmClient.CallWithSystemPrompt(ctx, "classify", systemPrompt, userPrompt)
+	var resp *llm.Response
+	if len(imageData) > 0 {
+		history := []llm.AgentMessage{{
+			Role:    "user",
+			Content: userPrompt,
+			MediaParts: []llm.MediaPart{{
+				MimeType: imageMime,
+				Data:     imageData,
+			}},
+		}}
+		resp, err = c.llmClient.CallGroupHistory(ctx, chatID, "classify", systemPrompt, history, nil, true)
+	} else {
+		resp, err = c.llmClient.CallWithSystemPrompt(ctx, "classify", systemPrompt, userPrompt)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("classification failed: %w", err)
 	}
