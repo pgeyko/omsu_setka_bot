@@ -139,10 +139,11 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	}
 
 	var fileID string
+	isPhoto := false
 	if len(msg.Photo) > 0 {
-		// Use medium size (not largest) to avoid 413 on Groq and 400 on Gemini
 		idx := len(msg.Photo) / 2
 		fileID = msg.Photo[idx].FileID
+		isPhoto = true
 	} else if msg.Document != nil {
 		fileID = msg.Document.FileID
 	}
@@ -158,7 +159,12 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	result, err := h.classifyMsg(ctx, msg.Chat.ID, text, fileID)
+	var result *classifier.ClassifyResult
+	if isPhoto && fileID != "" {
+		result, err = h.classifyPhoto(ctx, msg.Chat.ID, text, fileID)
+	} else {
+		result, err = h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
+	}
 	if err != nil {
 		slog.Warn("classification skipped", "reason", err, "msg_id", msg.ID)
 		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
@@ -385,7 +391,7 @@ func resizeImage(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (h *Handler) classifyMsg(ctx context.Context, chatID int64, text, fileID string) (*classifier.ClassifyResult, error) {
+func (h *Handler) classifyPhoto(ctx context.Context, chatID int64, text, fileID string) (*classifier.ClassifyResult, error) {
 	if fileID == "" {
 		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
 	}
@@ -535,7 +541,7 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 		h.pendingMu.Unlock()
 	}()
 
-	result, err := h.classifyMsg(ctx, msg.Chat.ID, text, fileID)
+	result, err := h.classifyPhoto(ctx, msg.Chat.ID, text, fileID)
 	if err != nil {
 		slog.Warn("deferred album classification failed", "error", err)
 		return
