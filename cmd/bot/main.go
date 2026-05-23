@@ -414,44 +414,46 @@ func main() {
 				return
 			}
 
-			features := settingsHandler.LoadFeatures(msg.Chat.ID)
-			p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
+		features := settingsHandler.LoadFeatures(msg.Chat.ID)
+		p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
 
-			if msg.Voice != nil && apiServer.GlobalVoiceTranscription.Load() && features["enable_voice_transcription"] {
-				txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
-				if err != nil {
-					slog.Error("failed to process voice", "error", err)
-				} else if txt != "" {
-					msg.Text = txt
-				}
+		voiceTranscribed := false
+		if msg.Voice != nil && apiServer.GlobalVoiceTranscription.Load() && features["enable_voice_transcription"] {
+			txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
+			if err != nil {
+				slog.Error("failed to process voice", "error", err)
+			} else if txt != "" {
+				msg.Text = txt
+				voiceTranscribed = true
 			}
+		}
 
-			originalCaption := msg.Caption
+		originalCaption := msg.Caption
 
-			// Photo processing: only when bot is explicitly mentioned (reply, @bot, alias).
-			// Auto-OCR on all photos is wasteful — ~60s per photo with fallback chain.
-			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
-				// Track message IDs and file IDs for media groups (used by forward_message for albums)
-				if msg.MediaGroupID != "" {
-					existing, _ := mediaGroupMessages.Load(msg.MediaGroupID)
-					var items []agent.MediaGroupItem
-					if existing != nil {
-						items = existing.([]agent.MediaGroupItem)
-					}
-					fileID := ""
-					if len(msg.Photo) > 0 {
-						fileID = msg.Photo[len(msg.Photo)-1].FileID
-					}
-					items = append(items, agent.MediaGroupItem{
-						MessageID: msg.ID,
-						FileID:    fileID,
-						Caption:   msg.Caption,
-					})
-					mediaGroupMessages.Store(msg.MediaGroupID, items)
-				}
+		// Track media group messages regardless of photo processing — needed for album forwarding
+		if msg.MediaGroupID != "" {
+			existing, _ := mediaGroupMessages.Load(msg.MediaGroupID)
+			var items []agent.MediaGroupItem
+			if existing != nil {
+				items = existing.([]agent.MediaGroupItem)
+			}
+			fileID := ""
+			if len(msg.Photo) > 0 {
+				fileID = msg.Photo[len(msg.Photo)-1].FileID
+			}
+			items = append(items, agent.MediaGroupItem{
+				MessageID: msg.ID,
+				FileID:    fileID,
+				Caption:   msg.Caption,
+			})
+			mediaGroupMessages.Store(msg.MediaGroupID, items)
+		}
 
-				shouldOCR := isBotMention(msg) ||
-					(msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.Username == botUsername)
+		// Photo processing: only when bot is explicitly mentioned (reply, @bot, alias).
+		// Auto-OCR on all photos is wasteful — ~60s per photo with fallback chain.
+		if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
+			shouldOCR := isBotMention(msg) ||
+				(msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.Username == botUsername)
 
 				if !shouldOCR && originalCaption != "" {
 					lowerCaption := strings.ToLower(originalCaption)
@@ -520,10 +522,10 @@ func main() {
 				}
 			}
 
-			if isBotCommand(msg) {
-				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
-			} else if isMentionOrAlias {
-				mentionHandler.Handle(ctx, b, update)
+		if isBotCommand(msg) {
+			handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
+		} else if isMentionOrAlias || voiceTranscribed {
+			mentionHandler.Handle(ctx, b, update)
 			} else {
 				h.HandleMessage(ctx, b, update)
 			}

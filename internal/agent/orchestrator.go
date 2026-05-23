@@ -105,14 +105,16 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 		Result string `json:"result"`
 	}
 	var completedSteps []completedStep
+	baseSystemExtra := systemExtra
 
 	// 3. Loop up to N times
-	maxSteps := 5
+	maxSteps := 3
 	for step := 0; step < maxSteps; step++ {
-		// Inject completed steps context so models understand what's been done
+		// Reset systemExtra each step — only inject completed context, don't accumulate
+		stepExtra := baseSystemExtra
 		if len(completedSteps) > 0 {
 			ctxJSON, _ := json.Marshal(completedSteps)
-			systemExtra += fmt.Sprintf("\n\nВыполненные шаги (НЕ повторяй их): %s", string(ctxJSON))
+			stepExtra += fmt.Sprintf("\n\nУже выполнено (НЕ делай это снова, НЕ закрывай темы без запроса): %s", string(ctxJSON))
 		}
 
 		var resp *llm.Response
@@ -120,7 +122,7 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 
 		// Retry LLM call up to 2 extra times when all providers are exhausted (transient outage)
 		for attempt := 0; attempt < 3; attempt++ {
-			resp, err = ao.llmClient.CallGroupHistory(ctx, chatID, "agent_loop", systemExtra, history, enabledTools, false)
+			resp, err = ao.llmClient.CallGroupHistory(ctx, chatID, "agent_loop", stepExtra, history, enabledTools, false)
 			if err == nil {
 				break
 			}
