@@ -690,17 +690,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		}
 
 	case "summary", "саммари":
-		if msg.MessageThreadID != 0 {
-			var topicName string
-			db.QueryRowContext(ctx, "SELECT name FROM topics WHERE group_id = ? AND tg_thread_id = ?", msg.Chat.ID, msg.MessageThreadID).Scan(&topicName)
-			if topicName != "" {
-				update.Message.Text = fmt.Sprintf("саммари топика «%s»", topicName)
-			} else {
-				update.Message.Text = "саммари этого топика"
-			}
-		} else {
-			update.Message.Text = "саммари"
-		}
+		update.Message.Text = "саммари"
 		mh.Handle(ctx, b, update)
 
 	case "start":
