@@ -33,6 +33,25 @@ llm:
       tpm_limit: 1500
       priority: 20
 
+    # Резервные gemma-провайдеры на резервном ключе (при исчерпании лимитов основного)
+    - name: gemma-text-reserve
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemma-4-31b-it
+      multimodal: false
+      rpm_limit: 15
+      tpm_limit: 1500
+      priority: 25
+
+    - name: gemma-text-fallback-reserve
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemma-4-26b-it
+      multimodal: false
+      rpm_limit: 15
+      tpm_limit: 1500
+      priority: 27
+
     - name: gemini-text-reserve
       type: gemini
       api_key: "${GEMINI_RESERVE_API_KEY}"
@@ -59,6 +78,16 @@ llm:
       rpm_limit: 15
       tpm_limit: 1500
       priority: 50
+
+    # Резервный gemma-vision на резервном ключе
+    - name: gemma-vision-reserve
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemma-4-31b-it
+      multimodal: true
+      rpm_limit: 15
+      tpm_limit: 1500
+      priority: 55
 
     - name: gemini-vision-reserve
       type: gemini

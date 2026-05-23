@@ -121,17 +121,27 @@ WebhookHandler.Handle()
 ```
 config.yaml:
   llm.providers:
-    [0] gemini-primary      ← приоритет 1
-        model: gemini-3.1-flash-lite
-        fallback_models: [gemini-2.5-flash-lite]
-        multimodal: true
+    [0] gemma-text             ← приоритет 10
+        model: gemma-4-31b-it
+        api_key: GEMINI_API_KEY
+        multimodal: false
 
-    [1] gemini-reserve      ← приоритет 2
-        model: gemini-3.1-flash-lite
-        fallback_models: [gemini-2.5-flash-lite]
-        multimodal: true
+    [1] gemma-text-fallback    ← приоритет 20
+        model: gemma-4-26b-it
+        api_key: GEMINI_API_KEY
+        multimodal: false
 
-    [2] deepseek-fallback   ← приоритет 3
+    [2] gemma-text-reserve     ← приоритет 25 (резервный ключ)
+        model: gemma-4-31b-it
+        api_key: GEMINI_RESERVE_API_KEY
+        multimodal: false
+
+    [3] gemini-text-reserve    ← приоритет 30 (резервный ключ)
+        model: gemini-3.1-flash-lite
+        api_key: GEMINI_RESERVE_API_KEY
+        multimodal: false
+
+    [4] deepseek-final         ← приоритет 90
         model: deepseek-chat
         multimodal: false
 ```

@@ -139,9 +139,7 @@ func main() {
 			TPMLimit: pcfg.TPMLimit,
 			RPDLimit: pcfg.RPDLimit,
 		}
-		if len(p.FallbackModels) == 0 {
-			p.FallbackModels = []string{"gemini-2.5-flash-lite"}
-		}
+		// FallbackModels are configured exclusively via config.yaml — no hardcoded defaults.
 
 		switch {
 		case strings.HasPrefix(pcfg.Name, "gemini-audio"):
@@ -311,7 +309,8 @@ func main() {
 
 ` + botMessages.Format(botMessages.HelpDetail, map[string]string{"username": botUsername})
 
-		startHardcoded := fmt.Sprintf("👋 Привет! Я <b>%s</b> — ассистент. Работаю только в групповом чате. Напиши /help чтобы узнать что я умею.", botDisplayName)
+		// Fallback text for /start when LLM is unavailable — loaded from prompts/start_fallback.txt.
+		startFallback := strings.ReplaceAll(prompts.Get("start_fallback"), "{name}", botDisplayName)
 
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypeExact, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if database.IsGroupActive(ctx, update.Message.Chat.ID) {
@@ -323,7 +322,7 @@ func main() {
 						return
 					}
 				}
-				b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, MessageThreadID: update.Message.MessageThreadID, Text: startHardcoded, ParseMode: models.ParseModeHTML})
+				b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, MessageThreadID: update.Message.MessageThreadID, Text: startFallback, ParseMode: models.ParseModeHTML})
 			} else {
 				b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, Text: helpText, ParseMode: models.ParseModeHTML})
 			}
