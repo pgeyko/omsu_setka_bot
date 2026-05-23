@@ -193,7 +193,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	}
 
 	if copied != nil {
-		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, copied.ID, result.Topic)
+		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, copied.ID, result.Topic)
 	}
 
 	h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
@@ -389,7 +389,7 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 		if len(res) > 0 {
 			newMsgID = res[0].ID
 		}
-		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, newMsgID, result.Topic)
+		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, newMsgID, result.Topic)
 	} else {
 		copied, err := h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, "", result.Hashtags, msg.ID)
 		if err != nil {
@@ -397,7 +397,7 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 			return
 		}
 		if copied != nil {
-			h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, copied.ID, result.Topic)
+			h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, copied.ID, result.Topic)
 		}
 	}
 

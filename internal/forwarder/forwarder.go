@@ -51,8 +51,8 @@ func (f *Forwarder) Duplicate(ctx context.Context, fromChatID int64, fromThreadI
 	return copied, nil
 }
 
-func (f *Forwarder) ReplyWithLink(ctx context.Context, chatID int64, threadID int, replyToID int, topicName string) error {
-	link := util.ChatLink(chatID, replyToID)
+func (f *Forwarder) ReplyWithLink(ctx context.Context, chatID int64, threadID int, replyToSourceID int, forwardedMsgID int, topicName string) error {
+	link := util.ChatLink(chatID, forwardedMsgID)
 	text := fmt.Sprintf("↗️ Продублировал в «%s» → <a href=\"%s\">link</a>", topicName, link)
 
 	_, err := f.b.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -61,7 +61,7 @@ func (f *Forwarder) ReplyWithLink(ctx context.Context, chatID int64, threadID in
 		Text:            text,
 		ParseMode:       models.ParseModeHTML,
 		ReplyParameters: &models.ReplyParameters{
-			MessageID: replyToID,
+			MessageID: replyToSourceID,
 		},
 	})
 	return err
