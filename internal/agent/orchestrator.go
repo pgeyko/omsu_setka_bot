@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,7 +102,26 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 	// 3. Loop up to N times
 	maxSteps := 5
 	for step := 0; step < maxSteps; step++ {
-		resp, err := ao.llmClient.CallGroupHistory(ctx, chatID, "agent_loop", systemExtra, history, enabledTools, false)
+		var resp *llm.Response
+		var err error
+
+		// Retry LLM call up to 2 extra times when all providers are exhausted (transient outage)
+		for attempt := 0; attempt < 3; attempt++ {
+			resp, err = ao.llmClient.CallGroupHistory(ctx, chatID, "agent_loop", systemExtra, history, enabledTools, false)
+			if err == nil {
+				break
+			}
+			if attempt < 2 && strings.Contains(err.Error(), "all providers failed") {
+				slog.Warn("agent llm call failed, retrying after delay", "attempt", attempt+1, "error", err)
+				select {
+				case <-ctx.Done():
+					return "", ctx.Err()
+				case <-time.After(time.Duration(attempt+1) * 3 * time.Second):
+				}
+				continue
+			}
+			return "", fmt.Errorf("llm call failed: %w", err)
+		}
 		if err != nil {
 			return "", fmt.Errorf("llm call failed: %w", err)
 		}
