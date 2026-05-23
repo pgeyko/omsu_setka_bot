@@ -430,6 +430,7 @@ func main() {
 
 		// Track media group messages regardless of photo processing — needed for album forwarding
 		if msg.MediaGroupID != "" {
+			mediaGroupMu.Lock()
 			existing, _ := mediaGroupMessages.Load(msg.MediaGroupID)
 			var items []agent.MediaGroupItem
 			if existing != nil {
@@ -445,6 +446,8 @@ func main() {
 				Caption:   msg.Caption,
 			})
 			mediaGroupMessages.Store(msg.MediaGroupID, items)
+			mediaGroupMu.Unlock()
+			slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", len(items))
 		}
 
 		// Photo processing: only when bot is explicitly mentioned (reply, @bot, alias).
@@ -570,7 +573,8 @@ var (
 	providerCount        int
 	globalLLM            *llm.Client
 	processedMediaGroups sync.Map // key=media_group_id, value=true — dedup OCR per group
-	mediaGroupMessages   sync.Map // key=media_group_id, value=[]int — message IDs in group
+	mediaGroupMessages   sync.Map // key=media_group_id, value=[]agent.MediaGroupItem
+	mediaGroupMu         sync.Mutex // guards Load+append+Store for mediaGroupMessages
 )
 
 func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry, settingsHandler *handlers.SettingsHandler, botMsgs *messages.Messages, promptRegistry *llm.PromptRegistry) {

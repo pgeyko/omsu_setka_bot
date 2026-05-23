@@ -756,6 +756,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 			return true
 		})
 	}
+	slog.Debug("forward_message media group lookup", "forward_msg_id", forwardMsgID, "group_items", len(groupItems))
 
 	// Generate hashtags from caption text
 	captionText := ""
