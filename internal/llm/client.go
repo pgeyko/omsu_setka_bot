@@ -127,12 +127,20 @@ func (c *Client) CallGroup(ctx context.Context, chatID int64, reqType, systemExt
 	return c.CallGroupHistory(ctx, chatID, reqType, systemExtra, history, nil, requiresVision)
 }
 
-func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, systemExtra string, history []AgentMessage, tools []Tool, requiresVision bool) (*Response, error) {
+func (c *Client) CallWithSystemPrompt(ctx context.Context, reqType, systemPrompt, userPrompt string) (*Response, error) {
+	return c.CallGroupWithSystem(ctx, 0, reqType, systemPrompt, userPrompt)
+}
+
+func (c *Client) CallGroupWithSystem(ctx context.Context, chatID int64, reqType, systemPrompt, userPrompt string) (*Response, error) {
+	history := []AgentMessage{{Role: "user", Content: userPrompt}}
+	return c.callHistoryWithSystem(ctx, chatID, reqType, systemPrompt, history, nil, false)
+}
+
+func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqType, systemContent string, history []AgentMessage, tools []Tool, requiresVision bool) (*Response, error) {
 	if c.tracker.IsLimitReached() {
 		return nil, fmt.Errorf("daily token limit reached")
 	}
 
-	// Audio STT routes through audioChain if available, else visionChain
 	chain := c.audioChain
 	if reqType != "stt" || chain == nil {
 		chain = c.pickChain(requiresVision)
@@ -146,19 +154,6 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 		requiredCaps = append(requiredCaps, CapabilityMultimodal)
 	}
 
-	var systemContent string
-	if store, ok := c.persona.(*persona.Store); ok && store != nil {
-		defaultPersona := store.Get()
-		sysPrompt, _ := persona.GetGroupSystemPrompt(chatID, defaultPersona)
-		systemContent = sysPrompt
-	} else {
-		systemContent = c.persona.SystemPrompt()
-	}
-
-	if systemExtra != "" {
-		systemContent += "\n\n" + systemExtra
-	}
-
 	providers := chain.Providers()
 	var lastErr error
 	tried := 0
@@ -167,8 +162,6 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 		if !provider.IsActive() {
 			continue
 		}
-
-		// Skip providers that don't support required capabilities (e.g. multimodal).
 		hasAllCaps := true
 		for _, cap := range requiredCaps {
 			if !provider.HasCapability(cap) {
@@ -177,10 +170,6 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 			}
 		}
 		if !hasAllCaps {
-			slog.Debug("skipping provider — missing required capability",
-				"provider", provider.Name,
-				"required", requiredCaps,
-			)
 			continue
 		}
 
@@ -191,7 +180,6 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 
 		for mi, model := range modelsToTry {
 			tried++
-
 			slog.Debug("llm request history",
 				"type", reqType,
 				"provider", provider.Name,
@@ -207,10 +195,7 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 			if err == nil {
 				resp.Provider = provider.Name
 				resp.Model = model
-
-				// Record the call for rate limiting
 				provider.recordCall(resp.InputTokens + resp.OutputTokens)
-
 				slog.Debug("llm response history",
 					"type", reqType,
 					"provider", provider.Name,
@@ -219,7 +204,6 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 					"tool_calls_len", len(resp.ToolCalls),
 					"content", resp.Content,
 				)
-
 				if err := c.tracker.LogRequest(ctx, reqType, provider.Name, model, resp.InputTokens, resp.OutputTokens, 0); err != nil {
 					return resp, fmt.Errorf("llm ok but failed to log: %w", err)
 				}
@@ -249,6 +233,21 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 		return nil, fmt.Errorf("all providers failed (%d tried), last error: %w", tried, lastErr)
 	}
 	return nil, fmt.Errorf("no active provider available")
+}
+
+func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, systemExtra string, history []AgentMessage, tools []Tool, requiresVision bool) (*Response, error) {
+	var systemContent string
+	if store, ok := c.persona.(*persona.Store); ok && store != nil {
+		defaultPersona := store.Get()
+		sysPrompt, _ := persona.GetGroupSystemPrompt(chatID, defaultPersona)
+		systemContent = sysPrompt
+	} else {
+		systemContent = c.persona.SystemPrompt()
+	}
+	if systemExtra != "" {
+		systemContent += "\n\n" + systemExtra
+	}
+	return c.callHistoryWithSystem(ctx, chatID, reqType, systemContent, history, tools, requiresVision)
 }
 
 func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, systemContent string, history []AgentMessage, tools []Tool) (*Response, error) {

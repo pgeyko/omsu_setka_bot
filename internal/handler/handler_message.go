@@ -198,7 +198,7 @@ func (h *Handler) prefilter(msg *models.Message) bool {
 		return true
 	}
 
-	if len(msg.Photo) > 0 || msg.Document != nil {
+	if (len(msg.Photo) > 0 || msg.Document != nil) && text != "" {
 		return true
 	}
 

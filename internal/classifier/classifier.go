@@ -67,23 +67,30 @@ func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text str
 		return nil, fmt.Errorf("topics provider not configured")
 	}
 
-	prompt := c.prompts.Get("classify")
-
 	topicList, err := c.topics.GetTopics(ctx, chatID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get topics: %w", err)
 	}
 
-	prompt = c.fillPrompt(prompt, topicList, text)
+	userPrompt := c.fillPrompt(c.prompts.Get("classify"), topicList, text)
+	systemPrompt := "Ты — классификатор сообщений студенческой группы. Отвечай ТОЛЬКО JSON без пояснений."
 
-	resp, err := c.llmClient.Call(ctx, "classify", "", prompt, false)
+	resp, err := c.llmClient.CallWithSystemPrompt(ctx, "classify", systemPrompt, userPrompt)
 	if err != nil {
 		return nil, fmt.Errorf("classification failed: %w", err)
 	}
 
 	var result ClassifyResult
 	if err := json.Unmarshal([]byte(llm.ExtractJSON(resp.Content)), &result); err != nil {
-		return nil, fmt.Errorf("failed to parse classification: %w", err)
+		// Retry once with explicit JSON instruction
+		retryPrompt := userPrompt + "\n\nОТВЕТЬ ТОЛЬКО JSON. Никакого текста, только фигурные скобки."
+		resp2, err2 := c.llmClient.CallWithSystemPrompt(ctx, "classify", systemPrompt, retryPrompt)
+		if err2 != nil {
+			return nil, fmt.Errorf("classification failed after retry: %w", err2)
+		}
+		if err := json.Unmarshal([]byte(llm.ExtractJSON(resp2.Content)), &result); err != nil {
+			return nil, fmt.Errorf("failed to parse classification: %w (content: %s)", err, truncateR(resp2.Content, 200))
+		}
 	}
 
 	if fileID != "" {
@@ -104,6 +111,13 @@ func (c *Classifier) ClassifyMessage(ctx context.Context, chatID int64, text str
 	}
 
 	return &result, nil
+}
+
+func truncateR(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "..."
 }
 
 func (c *Classifier) fillPrompt(template string, topics []TopicInfo, text string) string {
