@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf16"
@@ -285,7 +286,7 @@ func main() {
 			apiServer.GlobalPhotoProcessing.Load,
 		)
 
-		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache)
+		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache, &mediaGroupMessages)
 		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache)
 		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername)
 		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
@@ -417,48 +418,55 @@ func main() {
 				}
 			}
 
-			// Photo processing: three modes — off / auto / via @mention
-			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() {
-				doOCR := false
-				if features["enable_photo_processing"] && !features["photo_on_mention"] {
-					doOCR = true // auto — process all photos
-				} else if features["enable_photo_processing"] && features["photo_on_mention"] {
-					// mention-only: check if caption mentions bot or is reply to bot
-					captionText := msg.Caption
-					if captionText == "" {
-						captionText = msg.Text
+			originalCaption := msg.Caption
+
+			// Photo processing: only when bot is explicitly mentioned (reply, @bot, alias).
+			// Auto-OCR on all photos is wasteful — ~60s per photo with fallback chain.
+			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
+				// Track message IDs for media groups (used by forward_message to copy all)
+				if msg.MediaGroupID != "" {
+					existing, _ := mediaGroupMessages.Load(msg.MediaGroupID)
+					var ids []int
+					if existing != nil {
+						ids = existing.([]int)
 					}
-					if captionText != "" {
-						lowerText := strings.ToLower(captionText)
-						if isBotMention(msg) {
-							doOCR = true
-						} else if p.Name != "" && strings.Contains(lowerText, strings.ToLower(p.Name)) {
-							doOCR = true
-						} else {
-							for _, alias := range p.Aliases {
-								if strings.Contains(lowerText, strings.ToLower(alias)) {
-									doOCR = true
-									break
-								}
+					ids = append(ids, msg.ID)
+					mediaGroupMessages.Store(msg.MediaGroupID, ids)
+				}
+
+				shouldOCR := isBotMention(msg) ||
+					(msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.Username == botUsername)
+
+				if !shouldOCR && originalCaption != "" {
+					lowerCaption := strings.ToLower(originalCaption)
+					if p.Name != "" && strings.Contains(lowerCaption, strings.ToLower(p.Name)) {
+						shouldOCR = true
+					} else {
+						for _, alias := range p.Aliases {
+							if strings.Contains(lowerCaption, strings.ToLower(alias)) {
+								shouldOCR = true
+								break
 							}
 						}
 					}
-					// Also process if photo is a reply to a bot message
-					if !doOCR && msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.Username == botUsername {
-						doOCR = true
+				}
+
+				// Skip photos in already-processed media groups to avoid duplicate OCR
+				if msg.MediaGroupID != "" {
+					if _, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, true); seen {
+						shouldOCR = false
 					}
 				}
-				// off — doOCR stays false
 
-				if doOCR {
+				if shouldOCR {
 					ocrText, err := mediaProcessor.ProcessPhoto(ctx, msg.Photo[len(msg.Photo)-1].FileID)
 					if err != nil {
 						slog.Error("failed to process photo", "error", err)
 					} else if ocrText != "" {
-						if msg.Caption != "" {
-							msg.Caption = msg.Caption + "\n" + ocrText
+						if originalCaption != "" {
+							msg.Caption = originalCaption + "\n---\n" + ocrText
 						} else {
-							msg.Text = ocrText
+							msg.Caption = ocrText
 						}
 					}
 				}
@@ -469,11 +477,21 @@ func main() {
 				text = msg.Caption
 			}
 
+			// Detect mention/alias from ORIGINAL caption+text only, not from OCR-generated text.
+			// OCR adds noise and false triggers (e.g. "сессия" in OCR → alias match).
+			mentionCheckText := msg.Text
+			if mentionCheckText == "" {
+				mentionCheckText = originalCaption
+			}
+			if mentionCheckText == "" {
+				mentionCheckText = text
+			}
+
 			isMentionOrAlias := false
 			if isBotMention(msg) {
 				isMentionOrAlias = true
-			} else if text != "" {
-				lowerText := strings.ToLower(text)
+			} else if mentionCheckText != "" {
+				lowerText := strings.ToLower(mentionCheckText)
 				if p.Name != "" && strings.Contains(lowerText, strings.ToLower(p.Name)) {
 					isMentionOrAlias = true
 				} else {
@@ -531,10 +549,12 @@ func main() {
 }
 
 var (
-	botStartTime  = time.Now()
-	botUsername   string
-	providerCount int
-	globalLLM     *llm.Client
+	botStartTime         = time.Now()
+	botUsername          string
+	providerCount        int
+	globalLLM            *llm.Client
+	processedMediaGroups sync.Map // key=media_group_id, value=true — dedup OCR per group
+	mediaGroupMessages   sync.Map // key=media_group_id, value=[]int — message IDs in group
 )
 
 func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry, settingsHandler *handlers.SettingsHandler, botMsgs *messages.Messages, promptRegistry *llm.PromptRegistry) {

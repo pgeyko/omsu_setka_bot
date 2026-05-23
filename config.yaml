@@ -8,7 +8,7 @@ telegram:
 llm:
   daily_token_limit: 100000
   classify_confidence_threshold: 0.75
-  request_timeout_sec: 30
+  request_timeout_sec: 15
   circuit_breaker_failures: 3
   circuit_breaker_cooldown_min: 5
   skip_fallback_model: false
@@ -33,7 +33,17 @@ llm:
       tpm_limit: 1500
       priority: 20
 
-    # Резервные gemma-провайдеры на резервном ключе (при исчерпании лимитов основного)
+    - name: gemini-text-fast
+      type: gemini
+      api_key: "${GEMINI_API_KEY}"
+      model: gemini-3.1-flash-lite
+      multimodal: false
+      rpm_limit: 15
+      rpd_limit: 1500
+      tpm_limit: 500000
+      priority: 25
+
+    # Резервные провайдеры на резервном ключе
     - name: gemma-text-reserve
       type: gemini
       api_key: "${GEMINI_RESERVE_API_KEY}"
@@ -41,7 +51,7 @@ llm:
       multimodal: false
       rpm_limit: 15
       tpm_limit: 1500
-      priority: 25
+      priority: 30
 
     - name: gemma-text-fallback-reserve
       type: gemini
@@ -50,7 +60,7 @@ llm:
       multimodal: false
       rpm_limit: 15
       tpm_limit: 1500
-      priority: 27
+      priority: 35
 
     - name: gemini-text-reserve
       type: gemini
@@ -60,7 +70,7 @@ llm:
       rpm_limit: 15
       rpd_limit: 500
       tpm_limit: 500000
-      priority: 30
+      priority: 40
 
     - name: deepseek-final
       type: deepseek
@@ -69,20 +79,20 @@ llm:
       multimodal: false
       priority: 90
 
-    # ── Vision chain ── (OCR, фото)
+    # ── Vision chain ── (OCR, фото) — flash-lite первый, он быстрее
+    - name: gemini-vision-fast
+      type: gemini
+      api_key: "${GEMINI_API_KEY}"
+      model: gemini-3.1-flash-lite
+      multimodal: true
+      rpm_limit: 15
+      rpd_limit: 1500
+      tpm_limit: 500000
+      priority: 50
+
     - name: gemma-vision
       type: gemini
       api_key: "${GEMINI_API_KEY}"
-      model: gemma-4-31b-it
-      multimodal: true
-      rpm_limit: 15
-      tpm_limit: 1500
-      priority: 50
-
-    # Резервный gemma-vision на резервном ключе
-    - name: gemma-vision-reserve
-      type: gemini
-      api_key: "${GEMINI_RESERVE_API_KEY}"
       model: gemma-4-31b-it
       multimodal: true
       rpm_limit: 15
@@ -99,7 +109,16 @@ llm:
       tpm_limit: 500000
       priority: 60
 
-    # ── Audio STT chain ── (голосовые, только gemini, без gemma)
+    - name: gemma-vision-reserve
+      type: gemini
+      api_key: "${GEMINI_RESERVE_API_KEY}"
+      model: gemma-4-31b-it
+      multimodal: true
+      rpm_limit: 15
+      tpm_limit: 1500
+      priority: 65
+
+    # ── Audio STT chain ── (голосовые)
     - name: gemini-audio-stt
       type: gemini
       api_key: "${GEMINI_API_KEY}"

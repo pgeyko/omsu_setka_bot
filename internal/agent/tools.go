@@ -166,6 +166,7 @@ type ToolExecutor struct {
 	setkaPublicURL      string
 	ProtocolsConfigPath string
 	adminChecker        AdminChecker
+	mediaGroupMessages  *sync.Map // media_group_id → []int message IDs
 
 	sourceMessageID  int
 	replyToMessageID int
@@ -174,15 +175,16 @@ type ToolExecutor struct {
 	protocolsData *protocolsConfig
 }
 
-func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string, adminChecker AdminChecker) *ToolExecutor {
+func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string, adminChecker AdminChecker, mediaGroupMessages *sync.Map) *ToolExecutor {
 	return &ToolExecutor{
-		db:             db,
-		bot:            bot,
-		buffer:         buf,
-		usernameCache:  uc,
-		setkaBaseURL:   setkaBase,
-		setkaPublicURL: setkaPublic,
-		adminChecker:   adminChecker,
+		db:                 db,
+		bot:                bot,
+		buffer:             buf,
+		usernameCache:      uc,
+		setkaBaseURL:       setkaBase,
+		setkaPublicURL:     setkaPublic,
+		adminChecker:       adminChecker,
+		mediaGroupMessages: mediaGroupMessages,
 	}
 }
 
@@ -725,22 +727,50 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		return "Ошибка: бот не инициализирован.", nil
 	}
 
-	fromChatID := fmt.Sprintf("%d", chatID)
-	result, err := e.bot.CopyMessage(ctx, &tgbot.CopyMessageParams{
-		ChatID:          chatID,
-		FromChatID:      fromChatID,
-		MessageID:       forwardMsgID,
-		MessageThreadID: tgThreadID,
-	})
-	if err != nil {
-		slog.Error("failed to copy message in forward tool", "error", err, "message_id", forwardMsgID)
-		return fmt.Sprintf("Не удалось переслать сообщение: %v", err), nil
+	// Collect all message IDs to forward (media group support).
+	// If the replied-to message was part of a media group, forward all group messages.
+	messageIDs := []int{forwardMsgID}
+	if e.mediaGroupMessages != nil {
+		e.mediaGroupMessages.Range(func(key, value interface{}) bool {
+			if ids, ok := value.([]int); ok {
+				for _, id := range ids {
+					if id == forwardMsgID {
+						messageIDs = ids
+						return false
+					}
+				}
+			}
+			return true
+		})
 	}
 
-	chatIDPos := chatID
-	if chatIDPos < 0 {
-		chatIDPos = -chatIDPos
+	fromChatID := fmt.Sprintf("%d", chatID)
+	var lastLink string
+	copied := 0
+	for _, msgID := range messageIDs {
+		result, err := e.bot.CopyMessage(ctx, &tgbot.CopyMessageParams{
+			ChatID:          chatID,
+			FromChatID:      fromChatID,
+			MessageID:       msgID,
+			MessageThreadID: tgThreadID,
+		})
+		if err != nil {
+			slog.Error("failed to copy message in forward tool", "error", err, "message_id", msgID)
+		} else {
+			copied++
+			chatIDPos := chatID
+			if chatIDPos < 0 {
+				chatIDPos = -chatIDPos
+			}
+			lastLink = fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, result.ID)
+		}
 	}
-	link := fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, result.ID)
-	return fmt.Sprintf("Сообщение переслано в топик «%s». Ссылка на скопированное сообщение: %s", topicName, link), nil
+
+	if copied == 0 {
+		return "Не удалось переслать сообщение.", nil
+	}
+	if len(messageIDs) > 1 {
+		return fmt.Sprintf("Переслано %d сообщений в топик «%s». Последнее: %s", copied, topicName, lastLink), nil
+	}
+	return fmt.Sprintf("Сообщение переслано в топик «%s». Ссылка: %s", topicName, lastLink), nil
 }

@@ -90,7 +90,11 @@ func (mp *MediaProcessor) ProcessPhoto(ctx context.Context, fileID string) (stri
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(resp.Content), nil
+	result := strings.TrimSpace(resp.Content)
+	if len(result) > 500 {
+		result = result[:500] + "…"
+	}
+	return result, nil
 }
 
 // ProcessVoice downloads a Telegram voice message and transcribes it through
