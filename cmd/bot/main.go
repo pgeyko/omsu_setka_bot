@@ -963,6 +963,16 @@ func isBotMention(msg *models.Message) bool {
 	if checkEntities(msg.CaptionEntities, msg.Caption) {
 		return true
 	}
+
+	// Fallback: search text for @botUsername when entities are missing (e.g. replies to photos)
+	atBot := "@" + botUsername
+	if msg.Text != "" && strings.Contains(strings.ToLower(msg.Text), strings.ToLower(atBot)) {
+		return true
+	}
+	if msg.Caption != "" && strings.Contains(strings.ToLower(msg.Caption), strings.ToLower(atBot)) {
+		return true
+	}
+
 	return false
 }
 

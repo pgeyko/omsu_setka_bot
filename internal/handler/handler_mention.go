@@ -35,6 +35,7 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 
 	var active int
 	if err := h.db.QueryRowContext(ctx, "SELECT is_active FROM groups WHERE chat_id = ?", msg.Chat.ID).Scan(&active); err != nil || active != 1 {
+		slog.Debug("mention handler: group not active", "chat_id", msg.Chat.ID, "err", err)
 		return
 	}
 
@@ -46,6 +47,8 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 	if text == "" {
 		return
 	}
+
+	slog.Debug("mention handler: processing", "msg_id", msg.ID, "text", text[:min(len(text), 200)], "chat", msg.Chat.ID, "thread", msg.MessageThreadID)
 
 	// 2. Run through Agent Orchestrator
 	var replyToMsgID int
