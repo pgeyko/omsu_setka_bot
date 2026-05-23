@@ -184,9 +184,17 @@ X-Webhook-Signature: sha256=<hex(HMAC-SHA256(body, SCHEDULE_WEBHOOK_SECRET))>
 ### Agent chain (agent_loop — сложные многошаговые)
 ```
 llama-3.3-70b-versatile  (Groq, 30 RPM, 1K RPD, 12K TPM)
-  → gemma-4-31b-it        (Gemini, 15 RPM, 1.5K RPD)
-    → qwen/qwen3-32b      (Groq, 60 RPM, 1K RPD, 6K TPM)
-      → gemma-4-26b-a4b-it (Gemini, 15 RPM, 1.5K RPD)
+  → qwen/qwen3-32b       (Groq, 60 RPM, 1K RPD, 6K TPM)
+    → gemma-4-31b-it      (Gemini, 15 RPM, 1.5K RPD)
+      → gemma-4-26b-a4b-it(Gemini, 15 RPM, 1.5K RPD)
+```
+
+### Simple chain (classify, diagnostic, summary)
+```
+qwen/qwen3-32b            (Groq, 60 RPM, 1K RPD, 6K TPM)
+  → llama-3.1-8b-instant  (Groq, 30 RPM, 14.4K RPD)
+    → gemini-3.1-flash-lite(Gemini, 15 RPM, 500 RPD, 250K TPM)
+      → gemma-4-26b-a4b-it(Gemini, 15 RPM, 1.5K RPD)
 ```
 
 ### Simple chain (classify, diagnostic, summary)

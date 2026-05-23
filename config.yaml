@@ -14,7 +14,7 @@ llm:
   skip_fallback_model: false
 
   providers:
-    # ── Agent chain ── (сложные многошаговые: agent_loop) Groq → Gemini → Groq-fallback → Gemini-fallback
+    # ── Agent chain ── (agent_loop) all Groq first, Google last
     - name: groq-agent
       type: groq
       chain: agent
@@ -26,15 +26,6 @@ llm:
       tpd_limit: 100000
       priority: 10
 
-    - name: gemini-agent
-      type: gemini
-      chain: agent
-      api_key: "${GEMINI_API_KEY}"
-      model: gemma-4-31b-it
-      rpm_limit: 15
-      rpd_limit: 1500
-      priority: 20
-
     - name: groq-agent-fallback
       type: groq
       chain: agent
@@ -44,6 +35,15 @@ llm:
       rpd_limit: 1000
       tpm_limit: 6000
       tpd_limit: 500000
+      priority: 20
+
+    - name: gemini-agent
+      type: gemini
+      chain: agent
+      api_key: "${GEMINI_API_KEY}"
+      model: gemma-4-31b-it
+      rpm_limit: 15
+      rpd_limit: 1500
       priority: 30
 
     - name: gemini-agent-fallback
@@ -55,7 +55,7 @@ llm:
       rpd_limit: 1500
       priority: 40
 
-    # ── Simple chain ── (classify, simple responses, diagnostic) Groq → Gemini → Groq → Gemini
+    # ── Simple chain ── (classify, simple responses, diagnostic) all Groq first, Google last
     - name: groq-simple
       type: groq
       chain: simple
@@ -67,16 +67,6 @@ llm:
       tpd_limit: 500000
       priority: 10
 
-    - name: gemini-simple
-      type: gemini
-      chain: simple
-      api_key: "${GEMINI_API_KEY}"
-      model: gemini-3.1-flash-lite
-      rpm_limit: 15
-      rpd_limit: 1500
-      tpm_limit: 250000
-      priority: 20
-
     - name: groq-simple-fallback
       type: groq
       chain: simple
@@ -86,6 +76,16 @@ llm:
       rpd_limit: 14400
       tpm_limit: 6000
       tpd_limit: 500000
+      priority: 20
+
+    - name: gemini-simple
+      type: gemini
+      chain: simple
+      api_key: "${GEMINI_API_KEY}"
+      model: gemini-3.1-flash-lite
+      rpm_limit: 15
+      rpd_limit: 1500
+      tpm_limit: 250000
       priority: 30
 
     - name: gemini-simple-fallback
