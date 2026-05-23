@@ -1,18 +1,10 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
-	"image"
-	"image/jpeg"
-	_ "image/png"
-	_ "image/gif"
-	"io"
 	"log/slog"
-	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -35,13 +27,12 @@ type Handler struct {
 	buffer        *buffer.SummaryBuffer
 	usernameCache *telegram.UsernameCache
 	bot           *tgbot.Bot
-	token         string
 
 	pendingMediaCancel map[string]context.CancelFunc
 	pendingMu          sync.Mutex
 }
 
-func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, token string, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
+func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
 	return &Handler{
 		classifier:         classifier,
 		forwarder:          forwarder,
@@ -49,7 +40,6 @@ func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarde
 		buffer:             buffer,
 		usernameCache:      usernameCache,
 		bot:                bot,
-		token:              token,
 		pendingMediaCancel: make(map[string]context.CancelFunc),
 	}
 }
@@ -158,7 +148,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	result, err := h.classifyMsg(ctx, msg.Chat.ID, text, fileID)
+	result, err := h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
 	if err != nil {
 		slog.Warn("classification skipped", "reason", err, "msg_id", msg.ID)
 		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
@@ -329,99 +319,6 @@ func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, to
 	return forum.MessageThreadID, nil
 }
 
-func mimeFromPath(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".webp":
-		return "image/webp"
-	case ".gif":
-		return "image/gif"
-	default:
-		return "image/jpeg"
-	}
-}
-
-func resizeImage(data []byte) ([]byte, error) {
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	bounds := img.Bounds()
-	w, h := bounds.Dx(), bounds.Dy()
-	maxDim := 1024
-	if w <= maxDim && h <= maxDim {
-		return data, nil
-	}
-	var newW, newH int
-	if w >= h {
-		newW = maxDim
-		newH = int(float64(h) * float64(maxDim) / float64(w))
-	} else {
-		newH = maxDim
-		newW = int(float64(w) * float64(maxDim) / float64(h))
-	}
-	if newH < 1 {
-		newH = 1
-	}
-	if newW < 1 {
-		newW = 1
-	}
-	dst := image.NewRGBA(image.Rect(0, 0, newW, newH))
-	for y := 0; y < newH; y++ {
-		srcY := bounds.Min.Y + (y*h)/newH
-		for x := 0; x < newW; x++ {
-			srcX := bounds.Min.X + (x*w)/newW
-			dst.Set(x, y, img.At(srcX, srcY))
-		}
-	}
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func (h *Handler) classifyMsg(ctx context.Context, chatID int64, text, fileID string) (*classifier.ClassifyResult, error) {
-	if fileID == "" {
-		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
-	}
-
-	file, err := h.bot.GetFile(ctx, &tgbot.GetFileParams{FileID: fileID})
-	if err != nil {
-		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
-	}
-
-	url := fmt.Sprintf("https://api.telegram.org/file/bot%s/%s", h.token, file.FilePath)
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
-	}
-	defer resp.Body.Close()
-	imageData, err := io.ReadAll(resp.Body)
-	if err != nil || len(imageData) == 0 {
-		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
-	}
-
-	mime := mimeFromPath(file.FilePath)
-	resized, err := resizeImage(imageData)
-	if err == nil {
-		imageData = resized
-		mime = "image/jpeg"
-	} else {
-		slog.Debug("classify image resize failed, using original", "error", err)
-	}
-
-	return h.classifier.ClassifyWithImage(ctx, chatID, text, fileID, imageData, mime)
-}
-
 func (h *Handler) fuzzySlugMatch(ctx context.Context, chatID int64, topic string) (int, error) {
 	// Tokenize and match against existing slugs by word overlap
 	words := strings.FieldsFunc(strings.ToLower(topic), func(r rune) bool {
@@ -535,7 +432,7 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 		h.pendingMu.Unlock()
 	}()
 
-	result, err := h.classifyMsg(ctx, msg.Chat.ID, text, fileID)
+	result, err := h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
 	if err != nil {
 		slog.Warn("deferred album classification failed", "error", err)
 		return
