@@ -726,7 +726,17 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		chatID, slug, args.TargetTopic,
 	).Scan(&tgThreadID, &topicName)
 	if err != nil {
-		return fmt.Sprintf("Топик «%s» не найден. Проверь название через /topics.", args.TargetTopic), nil
+		// Fuzzy fallback: try matching by partial name or slug
+		fuzzySlug := strings.ReplaceAll(strings.ToLower(args.TargetTopic), " ", "_")
+		err = e.db.QueryRowContext(ctx,
+			`SELECT tg_thread_id, name FROM topics WHERE group_id = ? AND is_active = 1
+			 AND (LOWER(name) LIKE '%' || ? || '%' OR slug LIKE '%' || ? || '%')
+			 ORDER BY LENGTH(name) LIMIT 1`,
+			chatID, fuzzySlug, fuzzySlug,
+		).Scan(&tgThreadID, &topicName)
+		if err != nil {
+			return fmt.Sprintf("Топик «%s» не найден. Проверь название через /topics.", args.TargetTopic), nil
+		}
 	}
 
 	forwardMsgID := e.replyToMessageID

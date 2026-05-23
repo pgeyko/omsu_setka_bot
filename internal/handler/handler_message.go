@@ -218,6 +218,10 @@ func (h *Handler) prefilter(msg *models.Message) bool {
 		return true
 	}
 
+	if strings.Contains(text, "http") {
+		return true
+	}
+
 	if (len(msg.Photo) > 0 || msg.Document != nil) && text != "" {
 		return true
 	}
