@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
+	"time"
 
 	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/classifier"
@@ -24,16 +26,20 @@ type Handler struct {
 	buffer        *buffer.SummaryBuffer
 	usernameCache *telegram.UsernameCache
 	bot           *tgbot.Bot
+
+	pendingMediaCancel map[string]context.CancelFunc
+	pendingMu          sync.Mutex
 }
 
 func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
 	return &Handler{
-		classifier:    classifier,
-		forwarder:     forwarder,
-		db:            db,
-		buffer:        buffer,
-		usernameCache: usernameCache,
-		bot:           bot,
+		classifier:         classifier,
+		forwarder:          forwarder,
+		db:                 db,
+		buffer:             buffer,
+		usernameCache:      usernameCache,
+		bot:                bot,
+		pendingMediaCancel: make(map[string]context.CancelFunc),
 	}
 }
 
@@ -128,6 +134,12 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
+	// Defer classification for media groups until all photos arrive
+	if msg.MediaGroupID != "" {
+		h.deferMediaGroup(ctx, b, msg, text, fileID)
+		return
+	}
+
 	result, err := h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
 	if err != nil {
 		slog.Warn("classification skipped", "reason", err, "msg_id", msg.ID)
@@ -174,81 +186,14 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		}
 	}
 
-	// Try to forward as album if this message is part of a media group
-	var newMessageID int
-	albumSent := false
-	if msg.MediaGroupID != "" {
-		rows, err := h.db.QueryContext(ctx,
-			`SELECT message_id, file_id, caption FROM media_group_items
-			 WHERE media_group_id = ? AND chat_id = ?
-			 ORDER BY message_id`,
-			msg.MediaGroupID, msg.Chat.ID,
-		)
-		if err == nil {
-			defer rows.Close()
-			var groupItems []mediaGroupItem
-			for rows.Next() {
-				var item mediaGroupItem
-				rows.Scan(&item.MessageID, &item.FileID, &item.Caption)
-				groupItems = append(groupItems, item)
-			}
-			if len(groupItems) > 1 {
-				slog.Debug("auto-classify sending album", "count", len(groupItems), "topic", result.Topic)
-				var media []models.InputMedia
-				hashtagText := ""
-				for _, ht := range result.Hashtags {
-					ht = strings.ReplaceAll(ht, " ", "-")
-					hashtagText += " #" + ht
-				}
-				for i, item := range groupItems {
-					cap := ""
-					if i == 0 {
-						cap = item.Caption + hashtagText
-					}
-					media = append(media, &models.InputMediaPhoto{
-						Media:                 item.FileID,
-						Caption:               cap,
-						ShowCaptionAboveMedia: true,
-					})
-				}
-				res, err := h.bot.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
-					ChatID:          msg.Chat.ID,
-					MessageThreadID: targetThreadID,
-					Media:           media,
-				})
-				if err != nil {
-					slog.Error("album forward failed", "error", err)
-				} else {
-					albumSent = true
-					if len(res) > 0 {
-						newMessageID = res[0].ID
-					}
-				}
-			}
-		}
+	copied, err := h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, fromTopicName, result.Hashtags, msg.ID)
+	if err != nil {
+		slog.Error("forward failed", "error", err, "msg_id", msg.ID)
+		return
 	}
 
-	if !albumSent {
-		copied, err := h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, fromTopicName, result.Hashtags, msg.ID)
-		if err != nil {
-			slog.Error("forward failed", "error", err, "msg_id", msg.ID)
-			return
-		}
-		if copied != nil {
-			newMessageID = copied.ID
-		}
-	}
-
-	// Persist hashtags for search
-	if len(result.Hashtags) > 0 {
-		d := &db.DB{DB: h.db}
-		if err := d.AddTags(ctx, msg.Chat.ID, msg.ID, result.Hashtags); err != nil {
-			slog.Error("failed to save tags", "error", err, "msg_id", msg.ID)
-		}
-	}
-
-	if newMessageID != 0 {
-		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, newMessageID, result.Topic)
+	if copied != nil {
+		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, copied.ID, result.Topic)
 	}
 
 	h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
@@ -344,6 +289,126 @@ func (h *Handler) fuzzyLookupThreadID(ctx context.Context, chatID int64, topic s
 	}
 
 	return 0, fmt.Errorf("no fuzzy match for topic: %s", topic)
+}
+
+func (h *Handler) deferMediaGroup(ctx context.Context, b *tgbot.Bot, msg *models.Message, text, fileID string) {
+	h.pendingMu.Lock()
+	if cancel, ok := h.pendingMediaCancel[msg.MediaGroupID]; ok {
+		cancel()
+	}
+	childCtx, cancel := context.WithCancel(ctx)
+	h.pendingMediaCancel[msg.MediaGroupID] = cancel
+	h.pendingMu.Unlock()
+
+	go func() {
+		select {
+		case <-time.After(2 * time.Second):
+			h.processDeferredAlbum(childCtx, b, msg, text, fileID)
+		case <-childCtx.Done():
+			return
+		}
+	}()
+}
+
+func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *models.Message, text, fileID string) {
+	defer func() {
+		h.pendingMu.Lock()
+		delete(h.pendingMediaCancel, msg.MediaGroupID)
+		h.pendingMu.Unlock()
+	}()
+
+	result, err := h.classifier.ClassifyMessage(ctx, msg.Chat.ID, text, fileID)
+	if err != nil {
+		slog.Warn("deferred album classification failed", "error", err)
+		return
+	}
+	if result.Confidence < 0.75 || result.Topic == "" {
+		return
+	}
+
+	targetThreadID, err := h.lookupThreadID(ctx, msg.Chat.ID, result.Topic)
+	if err != nil || targetThreadID == 0 {
+		targetThreadID, err = h.fuzzyLookupThreadID(ctx, msg.Chat.ID, result.Topic)
+		if err != nil || targetThreadID == 0 {
+			slog.Warn("deferred album: target topic not found", "topic", result.Topic)
+			return
+		}
+	}
+
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT message_id, file_id, caption FROM media_group_items
+		 WHERE media_group_id = ? AND chat_id = ?
+		 ORDER BY message_id`,
+		msg.MediaGroupID, msg.Chat.ID,
+	)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var groupItems []mediaGroupItem
+	for rows.Next() {
+		var item mediaGroupItem
+		rows.Scan(&item.MessageID, &item.FileID, &item.Caption)
+		groupItems = append(groupItems, item)
+	}
+
+	if len(groupItems) == 0 {
+		return
+	}
+
+	slog.Debug("deferred album forward", "count", len(groupItems), "topic", result.Topic)
+
+	if len(groupItems) > 1 {
+		var media []models.InputMedia
+		hashtagText := ""
+		for _, ht := range result.Hashtags {
+			ht = strings.ReplaceAll(ht, " ", "-")
+			hashtagText += " #" + ht
+		}
+		for i, item := range groupItems {
+			cap := ""
+			if i == 0 {
+				cap = item.Caption + hashtagText
+			}
+			media = append(media, &models.InputMediaPhoto{
+				Media:                 item.FileID,
+				Caption:               cap,
+				ShowCaptionAboveMedia: true,
+			})
+		}
+		res, err := b.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
+			ChatID:          msg.Chat.ID,
+			MessageThreadID: targetThreadID,
+			Media:           media,
+		})
+		if err != nil {
+			slog.Error("deferred album forward failed", "error", err)
+			return
+		}
+		var newMsgID int
+		if len(res) > 0 {
+			newMsgID = res[0].ID
+		}
+		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, newMsgID, result.Topic)
+	} else {
+		copied, err := h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, "", result.Hashtags, msg.ID)
+		if err != nil {
+			slog.Error("deferred single forward failed", "error", err)
+			return
+		}
+		if copied != nil {
+			h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, copied.ID, result.Topic)
+		}
+	}
+
+	if len(result.Hashtags) > 0 {
+		d := &db.DB{DB: h.db}
+		d.AddTags(ctx, msg.Chat.ID, msg.ID, result.Hashtags)
+	}
+
+	for _, item := range groupItems {
+		h.markProcessed(ctx, item.MessageID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
+	}
 }
 
 func truncate(s string, max int) string {
