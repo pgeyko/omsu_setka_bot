@@ -26,6 +26,7 @@ func (f *Forwarder) Duplicate(ctx context.Context, fromChatID int64, fromThreadI
 
 	copied, err := f.b.CopyMessage(ctx, &tgbot.CopyMessageParams{
 		ChatID:          fromChatID,
+		FromChatID:      fmt.Sprintf("%d", fromChatID),
 		MessageID:       messageID,
 		MessageThreadID: targetThreadID,
 		ReplyMarkup: &models.InlineKeyboardMarkup{
