@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"omsu_bot/internal/buffer"
+	"omsu_bot/internal/classifier"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/telegram"
 	"omsu_bot/internal/util"
@@ -157,6 +158,12 @@ type protocolsConfig struct {
 	Protocols []protocolDef `json:"protocols"`
 }
 
+type MediaGroupItem struct {
+	MessageID int
+	FileID    string
+	Caption   string
+}
+
 type ToolExecutor struct {
 	db                  *sql.DB
 	bot                 *tgbot.Bot
@@ -166,7 +173,8 @@ type ToolExecutor struct {
 	setkaPublicURL      string
 	ProtocolsConfigPath string
 	adminChecker        AdminChecker
-	mediaGroupMessages  *sync.Map // media_group_id → []int message IDs
+	mediaGroupMessages  *sync.Map // media_group_id → []MediaGroupItem
+	classifier          *classifier.Classifier
 
 	sourceMessageID  int
 	replyToMessageID int
@@ -175,7 +183,7 @@ type ToolExecutor struct {
 	protocolsData *protocolsConfig
 }
 
-func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string, adminChecker AdminChecker, mediaGroupMessages *sync.Map) *ToolExecutor {
+func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string, adminChecker AdminChecker, mediaGroupMessages *sync.Map, classif *classifier.Classifier) *ToolExecutor {
 	return &ToolExecutor{
 		db:                 db,
 		bot:                bot,
@@ -185,6 +193,7 @@ func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *
 		setkaPublicURL:     setkaPublic,
 		adminChecker:       adminChecker,
 		mediaGroupMessages: mediaGroupMessages,
+		classifier:         classif,
 	}
 }
 
@@ -727,15 +736,14 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		return "Ошибка: бот не инициализирован.", nil
 	}
 
-	// Collect all message IDs to forward (media group support).
-	// If the replied-to message was part of a media group, forward all group messages.
-	messageIDs := []int{forwardMsgID}
+	// Collect media group items if the replied-to message was part of an album
+	var groupItems []MediaGroupItem
 	if e.mediaGroupMessages != nil {
 		e.mediaGroupMessages.Range(func(key, value interface{}) bool {
-			if ids, ok := value.([]int); ok {
-				for _, id := range ids {
-					if id == forwardMsgID {
-						messageIDs = ids
+			if items, ok := value.([]MediaGroupItem); ok {
+				for _, item := range items {
+					if item.MessageID == forwardMsgID {
+						groupItems = items
 						return false
 					}
 				}
@@ -744,33 +752,95 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		})
 	}
 
-	fromChatID := fmt.Sprintf("%d", chatID)
-	var lastLink string
-	copied := 0
-	for _, msgID := range messageIDs {
-		result, err := e.bot.CopyMessage(ctx, &tgbot.CopyMessageParams{
-			ChatID:          chatID,
-			FromChatID:      fromChatID,
-			MessageID:       msgID,
-			MessageThreadID: tgThreadID,
-		})
-		if err != nil {
-			slog.Error("failed to copy message in forward tool", "error", err, "message_id", msgID)
-		} else {
-			copied++
-			chatIDPos := chatID
-			if chatIDPos < 0 {
-				chatIDPos = -chatIDPos
-			}
-			lastLink = fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, result.ID)
+	// Generate hashtags from caption text
+	captionText := ""
+	for _, item := range groupItems {
+		if item.Caption != "" {
+			captionText = item.Caption
+			break
+		}
+	}
+	var hashtagStr string
+	if e.classifier != nil && captionText != "" {
+		hashtags, err := e.generateHashtags(ctx, chatID, captionText)
+		if err == nil && len(hashtags) > 0 {
+			hashtagStr = "\n" + hashtagsToText(hashtags)
 		}
 	}
 
-	if copied == 0 {
-		return "Не удалось переслать сообщение.", nil
+	var lastLink string
+	chatIDPos := chatID
+	if chatIDPos < 0 {
+		chatIDPos = -chatIDPos
 	}
-	if len(messageIDs) > 1 {
-		return fmt.Sprintf("Переслано %d сообщений в топик «%s». Последнее: %s", copied, topicName, lastLink), nil
+
+	if len(groupItems) > 1 {
+		// Album: send all photos as a media group with caption + hashtags on first
+		var media []models.InputMedia
+		for i, item := range groupItems {
+			cap := ""
+			if i == 0 {
+				cap = item.Caption + hashtagStr
+			}
+			media = append(media, &models.InputMediaPhoto{
+				Media:           item.FileID,
+				Caption:         cap,
+				ShowCaptionAboveMedia: true,
+			})
+		}
+		result, err := e.bot.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
+			ChatID:          chatID,
+			MessageThreadID: tgThreadID,
+			Media:           media,
+		})
+		if err != nil {
+			slog.Error("failed to send media group in forward tool", "error", err)
+			return fmt.Sprintf("Не удалось переслать альбом: %v", err), nil
+		}
+		if len(result) > 0 {
+			lastLink = fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, result[0].ID)
+		}
+		return fmt.Sprintf("Альбом из %d фото переслан в топик «%s». %s", len(groupItems), topicName, lastLink), nil
 	}
-	return fmt.Sprintf("Сообщение переслано в топик «%s». Ссылка: %s", topicName, lastLink), nil
+
+	// Single message: copy + send hashtags as follow-up
+	result, err := e.bot.CopyMessage(ctx, &tgbot.CopyMessageParams{
+		ChatID:          chatID,
+		FromChatID:      fmt.Sprintf("%d", chatID),
+		MessageID:       forwardMsgID,
+		MessageThreadID: tgThreadID,
+	})
+	if err != nil {
+		slog.Error("failed to copy message in forward tool", "error", err, "message_id", forwardMsgID)
+		return fmt.Sprintf("Не удалось переслать сообщение: %v", err), nil
+	}
+	lastLink = fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, result.ID)
+
+	if hashtagStr != "" {
+		tagText := strings.TrimSpace(strings.ReplaceAll(hashtagStr, "\n", " "))
+		e.bot.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:          chatID,
+			MessageThreadID: tgThreadID,
+			Text:            tagText,
+			ReplyParameters: &models.ReplyParameters{MessageID: result.ID},
+		})
+	}
+
+	return fmt.Sprintf("Сообщение переслано в топик «%s». %s", topicName, lastLink), nil
+}
+
+func (e *ToolExecutor) generateHashtags(ctx context.Context, chatID int64, text string) ([]string, error) {
+	result, err := e.classifier.ClassifyMessage(ctx, chatID, text, "")
+	if err != nil {
+		return nil, err
+	}
+	return result.Hashtags, nil
+}
+
+func hashtagsToText(tags []string) string {
+	var sb strings.Builder
+	for _, t := range tags {
+		sb.WriteString("#" + t + " ")
+	}
+	return strings.TrimSpace(sb.String())
 }

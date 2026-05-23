@@ -286,7 +286,7 @@ func main() {
 			apiServer.GlobalPhotoProcessing.Load,
 		)
 
-		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache, &mediaGroupMessages)
+		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache, &mediaGroupMessages, classif)
 		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache)
 		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername)
 		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
@@ -423,15 +423,23 @@ func main() {
 			// Photo processing: only when bot is explicitly mentioned (reply, @bot, alias).
 			// Auto-OCR on all photos is wasteful — ~60s per photo with fallback chain.
 			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
-				// Track message IDs for media groups (used by forward_message to copy all)
+				// Track message IDs and file IDs for media groups (used by forward_message for albums)
 				if msg.MediaGroupID != "" {
 					existing, _ := mediaGroupMessages.Load(msg.MediaGroupID)
-					var ids []int
+					var items []agent.MediaGroupItem
 					if existing != nil {
-						ids = existing.([]int)
+						items = existing.([]agent.MediaGroupItem)
 					}
-					ids = append(ids, msg.ID)
-					mediaGroupMessages.Store(msg.MediaGroupID, ids)
+					fileID := ""
+					if len(msg.Photo) > 0 {
+						fileID = msg.Photo[len(msg.Photo)-1].FileID
+					}
+					items = append(items, agent.MediaGroupItem{
+						MessageID: msg.ID,
+						FileID:    fileID,
+						Caption:   msg.Caption,
+					})
+					mediaGroupMessages.Store(msg.MediaGroupID, items)
 				}
 
 				shouldOCR := isBotMention(msg) ||
