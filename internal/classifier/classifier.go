@@ -89,7 +89,7 @@ func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text s
 				Data:     imageData,
 			}},
 		}}
-		resp, err = c.llmClient.CallGroupHistory(ctx, chatID, "classify", systemPrompt, history, nil, true)
+		resp, err = c.llmClient.CallWithSystemHistory(ctx, chatID, "classify", systemPrompt, history, true)
 	} else {
 		resp, err = c.llmClient.CallWithSystemPrompt(ctx, "classify", systemPrompt, userPrompt)
 	}

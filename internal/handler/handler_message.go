@@ -1,12 +1,18 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
+	"image"
+	"image/jpeg"
+	_ "image/png"
+	_ "image/gif"
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -321,6 +327,62 @@ func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, to
 	return forum.MessageThreadID, nil
 }
 
+func mimeFromPath(path string) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
+	case ".gif":
+		return "image/gif"
+	default:
+		return "image/jpeg"
+	}
+}
+
+func resizeImage(data []byte) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	bounds := img.Bounds()
+	w, h := bounds.Dx(), bounds.Dy()
+	maxDim := 1024
+	if w <= maxDim && h <= maxDim {
+		return data, nil
+	}
+	var newW, newH int
+	if w >= h {
+		newW = maxDim
+		newH = int(float64(h) * float64(maxDim) / float64(w))
+	} else {
+		newH = maxDim
+		newW = int(float64(w) * float64(maxDim) / float64(h))
+	}
+	if newH < 1 {
+		newH = 1
+	}
+	if newW < 1 {
+		newW = 1
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, newW, newH))
+	for y := 0; y < newH; y++ {
+		srcY := bounds.Min.Y + (y*h)/newH
+		for x := 0; x < newW; x++ {
+			srcX := bounds.Min.X + (x*w)/newW
+			dst.Set(x, y, img.At(srcX, srcY))
+		}
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: 85}); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 func (h *Handler) classifyMsg(ctx context.Context, chatID int64, text, fileID string) (*classifier.ClassifyResult, error) {
 	if fileID == "" {
 		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
@@ -346,7 +408,16 @@ func (h *Handler) classifyMsg(ctx context.Context, chatID int64, text, fileID st
 		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
 	}
 
-	return h.classifier.ClassifyWithImage(ctx, chatID, text, fileID, imageData, "image/jpeg")
+	mime := mimeFromPath(file.FilePath)
+	resized, err := resizeImage(imageData)
+	if err == nil {
+		imageData = resized
+		mime = "image/jpeg"
+	} else {
+		slog.Debug("classify image resize failed, using original", "error", err)
+	}
+
+	return h.classifier.ClassifyWithImage(ctx, chatID, text, fileID, imageData, mime)
 }
 
 func (h *Handler) fuzzySlugMatch(ctx context.Context, chatID int64, topic string) (int, error) {

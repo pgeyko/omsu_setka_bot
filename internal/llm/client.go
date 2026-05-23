@@ -158,6 +158,10 @@ func (c *Client) CallGroupWithSystem(ctx context.Context, chatID int64, reqType,
 	return c.callHistoryWithSystem(ctx, chatID, reqType, systemPrompt, history, nil, false)
 }
 
+func (c *Client) CallWithSystemHistory(ctx context.Context, chatID int64, reqType, systemPrompt string, history []AgentMessage, requiresVision bool) (*Response, error) {
+	return c.callHistoryWithSystem(ctx, chatID, reqType, systemPrompt, history, nil, requiresVision)
+}
+
 func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqType, systemContent string, history []AgentMessage, tools []Tool, requiresVision bool) (*Response, error) {
 	if c.tracker.IsLimitReached() {
 		return nil, fmt.Errorf("daily token limit reached")
