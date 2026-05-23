@@ -15,7 +15,7 @@ llm:
 
   providers:
     # ── Text chain ── (classify, agent, summary, schedule)
-    # gemini-3.1-flash-lite НЕ в text-цепи — несовместим с gemma через thought_signature
+    # flash-lite только как резерв: на первом шаге agent_loop работает без конфликта thought_signature
     - name: gemma-text
       type: gemini
       api_key: "${GEMINI_API_KEY}"
@@ -52,6 +52,17 @@ llm:
       rpm_limit: 15
       tpm_limit: 1500
       priority: 40
+
+    # flash-lite — спасает когда gemma лежит (первый шаг agent_loop, classify)
+    - name: gemini-text-fast
+      type: gemini
+      api_key: "${GEMINI_API_KEY}"
+      model: gemini-3.1-flash-lite
+      multimodal: false
+      rpm_limit: 15
+      rpd_limit: 1500
+      tpm_limit: 500000
+      priority: 50
 
     - name: deepseek-final
       type: deepseek
