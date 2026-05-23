@@ -128,25 +128,7 @@ llm:
       rpd_limit: 1500
       priority: 30
 
-    # ── Audio chain ── (STT, голосовые) whisper-turbo → whisper-v3 → flash-lite
-    - name: groq-audio
-      type: groq
-      chain: audio
-      api_key: "${GROQ_API_KEY}"
-      model: whisper-large-v3-turbo
-      rpm_limit: 20
-      rpd_limit: 2000
-      priority: 10
-
-    - name: groq-audio-fallback
-      type: groq
-      chain: audio
-      api_key: "${GROQ_API_KEY}"
-      model: whisper-large-v3
-      rpm_limit: 20
-      rpd_limit: 2000
-      priority: 20
-
+    # ── Audio chain ── (STT, голосовые) flash-lite primary, whisper fallback
     - name: gemini-audio
       type: gemini
       chain: audio
@@ -155,6 +137,24 @@ llm:
       rpm_limit: 15
       rpd_limit: 500
       tpm_limit: 500000
+      priority: 10
+
+    - name: groq-audio
+      type: groq
+      chain: audio
+      api_key: "${GROQ_API_KEY}"
+      model: whisper-large-v3-turbo
+      rpm_limit: 20
+      rpd_limit: 2000
+      priority: 20
+
+    - name: groq-audio-fallback
+      type: groq
+      chain: audio
+      api_key: "${GROQ_API_KEY}"
+      model: whisper-large-v3
+      rpm_limit: 20
+      rpd_limit: 2000
       priority: 30
 
 api:

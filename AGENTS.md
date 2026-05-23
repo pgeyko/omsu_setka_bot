@@ -139,7 +139,7 @@ If tests cannot run due to missing deps, report the exact blocker.
 - JWT via `github.com/golang-jwt/jwt/v5`.
 - Telegram via `github.com/go-telegram/bot`.
 - LLM via plain `net/http` — no SDK. Two providers: Groq (primary, OpenAI-compatible) + Gemini (fallback).
-- Four specialized chains: agent (llama-70b → gemma-31b → qwen3-32b → gemma-26b), simple (qwen3-32b → flash-lite → llama-8b → gemma-26b), vision (scout-17b → flash-lite → gemma-31b), audio (whisper-turbo → whisper-v3 → flash-lite).
+- Four specialized chains: agent (llama-70b → gemma-31b → qwen3-32b → gemma-26b), simple (qwen3-32b → flash-lite → llama-8b → gemma-26b), vision (scout-17b → flash-lite → gemma-31b), audio (flash-lite → whisper-turbo → whisper-v3).
 - All SQL must be parameterized — no string formatting for queries.
 - Persona system prompt injected as `system` role in every LLM call.
 - Rate limit: 5 LLM requests / min / user (in-memory, per user_id).

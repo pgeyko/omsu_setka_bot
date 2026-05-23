@@ -206,9 +206,9 @@ llama-4-scout-17b-16e      (Groq, 30 RPM, 1K RPD, 30K TPM)
 
 ### Audio chain (STT, голосовые)
 ```
-whisper-large-v3-turbo     (Groq, 20 RPM, 2K RPD)
-  → whisper-large-v3       (Groq, 20 RPM, 2K RPD)
-    → gemini-3.1-flash-lite (Gemini, 15 RPM, 500 RPD)
+gemini-3.1-flash-lite     (Gemini, 15 RPM, 500 RPD, 250K TPM)
+  → whisper-large-v3-turbo (Groq, 20 RPM, 2K RPD)
+    → whisper-large-v3     (Groq, 20 RPM, 2K RPD)
 ```
 
 **Маршрутизация:** `PickChain(taskType, requiresVision)` → `agent_loop`→agent, `ocr`→vision, `stt`→audio, default→simple.
