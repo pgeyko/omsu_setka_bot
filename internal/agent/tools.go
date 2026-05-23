@@ -870,8 +870,12 @@ func (e *ToolExecutor) generateHashtags(ctx context.Context, chatID int64, text 
 
 func hashtagsToText(tags []string) string {
 	var sb strings.Builder
-	for _, t := range tags {
-		sb.WriteString("#" + t + " ")
+	for i, t := range tags {
+		t = strings.ReplaceAll(t, " ", "-")
+		if i > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString("#" + t)
 	}
-	return strings.TrimSpace(sb.String())
+	return sb.String()
 }

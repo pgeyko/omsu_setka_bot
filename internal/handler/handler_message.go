@@ -175,6 +175,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	}
 
 	// Try to forward as album if this message is part of a media group
+	var newMessageID int
 	albumSent := false
 	if msg.MediaGroupID != "" {
 		rows, err := h.db.QueryContext(ctx,
@@ -196,6 +197,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 				var media []models.InputMedia
 				hashtagText := ""
 				for _, ht := range result.Hashtags {
+					ht = strings.ReplaceAll(ht, " ", "-")
 					hashtagText += " #" + ht
 				}
 				for i, item := range groupItems {
@@ -209,7 +211,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 						ShowCaptionAboveMedia: true,
 					})
 				}
-				_, err := h.bot.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
+				res, err := h.bot.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
 					ChatID:          msg.Chat.ID,
 					MessageThreadID: targetThreadID,
 					Media:           media,
@@ -218,16 +220,22 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 					slog.Error("album forward failed", "error", err)
 				} else {
 					albumSent = true
+					if len(res) > 0 {
+						newMessageID = res[0].ID
+					}
 				}
 			}
 		}
 	}
 
 	if !albumSent {
-		_, err = h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, fromTopicName, result.Hashtags, msg.ID)
+		copied, err := h.forwarder.Duplicate(ctx, msg.Chat.ID, msg.MessageThreadID, targetThreadID, msg.From.Username, fromTopicName, result.Hashtags, msg.ID)
 		if err != nil {
 			slog.Error("forward failed", "error", err, "msg_id", msg.ID)
 			return
+		}
+		if copied != nil {
+			newMessageID = copied.ID
 		}
 	}
 
@@ -239,7 +247,9 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		}
 	}
 
-	h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, result.Topic)
+	if newMessageID != 0 {
+		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, newMessageID, result.Topic)
+	}
 
 	h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
 }

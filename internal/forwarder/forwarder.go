@@ -31,13 +31,6 @@ func (f *Forwarder) Duplicate(ctx context.Context, fromChatID int64, fromThreadI
 		FromChatID:      fmt.Sprintf("%d", fromChatID),
 		MessageID:       messageID,
 		MessageThreadID: targetThreadID,
-		ReplyMarkup: &models.InlineKeyboardMarkup{
-			InlineKeyboard: [][]models.InlineKeyboardButton{
-				{
-					{Text: "📌 Перейти", URL: util.ChatLink(fromChatID, messageID)},
-				},
-			},
-		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("copy message failed: %w", err)
