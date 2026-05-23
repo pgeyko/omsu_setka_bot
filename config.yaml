@@ -27,7 +27,7 @@ llm:
     - name: gemma-text-fallback
       type: gemini
       api_key: "${GEMINI_API_KEY}"
-      model: gemma-4-26b-it
+      model: gemma-4-26b-a4b-it
       multimodal: false
       rpm_limit: 15
       tpm_limit: 1500
@@ -46,7 +46,7 @@ llm:
     - name: gemma-text-fallback-reserve
       type: gemini
       api_key: "${GEMINI_RESERVE_API_KEY}"
-      model: gemma-4-26b-it
+      model: gemma-4-26b-a4b-it
       multimodal: false
       rpm_limit: 15
       tpm_limit: 1500

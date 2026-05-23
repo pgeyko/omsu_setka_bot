@@ -22,6 +22,8 @@ COPY --from=builder /app/groupbot .
 COPY --from=builder /app/prompts prompts/
 COPY --from=builder /app/persona.md .
 COPY --from=builder /app/config.yaml .
+COPY --from=builder /app/protocols.json .
+COPY --from=builder /app/messages.yaml .
 COPY --from=frontend /app/admin/dist admin/dist
 
 RUN mkdir -p /app/data && chown -R appuser:appuser /app
