@@ -36,8 +36,9 @@ type Server struct {
 	LLMClient                *llm.Client
 	TelegramBot              BotSender
 	TelegramGroupID          int64
-	SkipFallbackModel        bool
-	SetkaBaseURL             string
+	SkipFallbackModel           bool
+	GroupRegistrationRestricted bool
+	SetkaBaseURL                string
 	SetkaAdminKey            string
 	SetkaPublicURL           string
 	WebhookSecret            string

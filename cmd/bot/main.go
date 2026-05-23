@@ -641,9 +641,21 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		}
 
 		dDB := &omsudb.DB{DB: db}
+		existingGroup, _ := dDB.GetGroup(ctx, msg.Chat.ID)
+
+		// Check if registration mode is restricted — only superadmin can add groups via API
+		var restrictedStr string
+		db.QueryRowContext(ctx, `SELECT value FROM bot_config WHERE key = 'group_registration_restricted'`).Scan(&restrictedStr)
+		if restrictedStr == "true" && existingGroup == nil {
+			b.SendMessage(ctx, &tgbot.SendMessageParams{
+				ChatID: msg.Chat.ID,
+				Text:   "❌ Регистрация групп через /init отключена. Обратитесь к суперадмину.",
+			})
+			return
+		}
+
 		var g omsudb.Group
-		existingGroup, err := dDB.GetGroup(ctx, msg.Chat.ID)
-		if err != nil {
+		if existingGroup == nil {
 			g = omsudb.Group{
 				ChatID:      msg.Chat.ID,
 				Title:       msg.Chat.Title,

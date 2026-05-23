@@ -9,9 +9,10 @@ import (
 )
 
 type configResponse struct {
-	SkipFallbackModel        bool `json:"skip_fallback_model"`
-	GlobalVoiceTranscription bool `json:"global_voice_transcription"`
-	GlobalPhotoProcessing    bool `json:"global_photo_processing"`
+	SkipFallbackModel           bool `json:"skip_fallback_model"`
+	GlobalVoiceTranscription    bool `json:"global_voice_transcription"`
+	GlobalPhotoProcessing       bool `json:"global_photo_processing"`
+	GroupRegistrationRestricted bool `json:"group_registration_restricted"`
 }
 
 // LoadConfigFromDB reads runtime config from bot_config table and syncs Server fields.
@@ -32,6 +33,9 @@ func (s *Server) LoadConfigFromDB(ctx context.Context) {
 			s.GlobalPhotoProcessing.Store(parsed)
 		}
 	}
+	if val, err := d.GetConfig(ctx, "group_registration_restricted", strconv.FormatBool(s.GroupRegistrationRestricted)); err == nil {
+		s.GroupRegistrationRestricted, _ = strconv.ParseBool(val)
+	}
 	if s.LLMClient != nil {
 		s.LLMClient.SetSkipFallbackModel(s.SkipFallbackModel)
 	}
@@ -39,9 +43,10 @@ func (s *Server) LoadConfigFromDB(ctx context.Context) {
 
 func (s *Server) handleGetConfig(c *fiber.Ctx) error {
 	return respondSuccess(c, configResponse{
-		SkipFallbackModel:        s.SkipFallbackModel,
-		GlobalVoiceTranscription: s.GlobalVoiceTranscription.Load(),
-		GlobalPhotoProcessing:    s.GlobalPhotoProcessing.Load(),
+		SkipFallbackModel:           s.SkipFallbackModel,
+		GlobalVoiceTranscription:    s.GlobalVoiceTranscription.Load(),
+		GlobalPhotoProcessing:       s.GlobalPhotoProcessing.Load(),
+		GroupRegistrationRestricted: s.GroupRegistrationRestricted,
 	})
 }
 
@@ -54,6 +59,7 @@ func (s *Server) handleUpdateConfig(c *fiber.Ctx) error {
 	s.SkipFallbackModel = req.SkipFallbackModel
 	s.GlobalVoiceTranscription.Store(req.GlobalVoiceTranscription)
 	s.GlobalPhotoProcessing.Store(req.GlobalPhotoProcessing)
+	s.GroupRegistrationRestricted = req.GroupRegistrationRestricted
 
 	if s.LLMClient != nil {
 		s.LLMClient.SetSkipFallbackModel(req.SkipFallbackModel)
@@ -64,10 +70,12 @@ func (s *Server) handleUpdateConfig(c *fiber.Ctx) error {
 	_ = d.SetConfig(c.Context(), "skip_fallback_model", strconv.FormatBool(req.SkipFallbackModel))
 	_ = d.SetConfig(c.Context(), "global_voice_transcription", strconv.FormatBool(req.GlobalVoiceTranscription))
 	_ = d.SetConfig(c.Context(), "global_photo_processing", strconv.FormatBool(req.GlobalPhotoProcessing))
+	_ = d.SetConfig(c.Context(), "group_registration_restricted", strconv.FormatBool(req.GroupRegistrationRestricted))
 
 	return respondSuccess(c, configResponse{
-		SkipFallbackModel:        s.SkipFallbackModel,
-		GlobalVoiceTranscription: s.GlobalVoiceTranscription.Load(),
-		GlobalPhotoProcessing:    s.GlobalPhotoProcessing.Load(),
+		SkipFallbackModel:           s.SkipFallbackModel,
+		GlobalVoiceTranscription:    s.GlobalVoiceTranscription.Load(),
+		GlobalPhotoProcessing:       s.GlobalPhotoProcessing.Load(),
+		GroupRegistrationRestricted: s.GroupRegistrationRestricted,
 	})
 }

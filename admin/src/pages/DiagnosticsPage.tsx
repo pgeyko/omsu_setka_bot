@@ -15,6 +15,7 @@ interface Config {
   skip_fallback_model: boolean
   global_voice_transcription: boolean
   global_photo_processing: boolean
+  group_registration_restricted: boolean
 }
 interface GroupSummary { chat_id: number; title: string }
 
@@ -62,7 +63,7 @@ export default function DiagnosticsPage() {
     onError: (err: any) => toast(`Ошибка: ${err.message}`, 'error'),
   })
 
-  const cfg = configQ.data ?? { skip_fallback_model: false, global_voice_transcription: true, global_photo_processing: true }
+  const cfg = configQ.data ?? { skip_fallback_model: false, global_voice_transcription: true, global_photo_processing: true, group_registration_restricted: false }
 
   return (
     <div>
@@ -101,6 +102,13 @@ export default function DiagnosticsPage() {
               disabled={configMut.isPending || configQ.isLoading}>
               {cfg.global_photo_processing ? <ToggleRight size={18} color="var(--accent)" /> : <ToggleLeft size={18} />}
               {' '}{cfg.global_photo_processing ? 'Обработка фото: вкл (глобально)' : 'Обработка фото: выкл (глобально)'}
+            </button>
+            {/* group_registration_restricted */}
+            <button id="toggle-registration" className="btn btn-sm" style={{ justifyContent: 'flex-start' }}
+              onClick={() => configMut.mutate({ ...cfg, group_registration_restricted: !cfg.group_registration_restricted })}
+              disabled={configMut.isPending || configQ.isLoading}>
+              {cfg.group_registration_restricted ? <ToggleRight size={18} color="var(--danger)" /> : <ToggleLeft size={18} />}
+              {' '}{cfg.group_registration_restricted ? 'Регистрация групп: только суперадмин' : 'Регистрация групп: через /init'}
             </button>
           </div>
         </div>
