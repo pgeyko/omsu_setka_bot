@@ -210,7 +210,7 @@ func main() {
 	if tgBot != nil {
 		poster = &telegramPoster{b: tgBot, chatID: cfg.Telegram.GroupID}
 	}
-	diffEngine := schedule.NewDiffEngine(database.DB, poster, llmClient)
+	diffEngine := schedule.NewDiffEngine(database.DB, poster, llmClient, schedule.NewAnnouncer(llmClient, prompts))
 	webhookHandler := handlers.NewWebhookHandler(diffEngine, cfg.Webhook.ScheduleSecret, cfg.Webhook.AnnounceThreadID)
 
 	var botSender api.BotSender
@@ -289,25 +289,11 @@ func main() {
 		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache)
 		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername)
 		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
-		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient)
+		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient, prompts)
 
 		botDisplayName := personaStore.Get().Name
 		helpHeader := botMessages.Format(botMessages.HelpHeader, map[string]string{"name": botDisplayName})
-		helpText := helpHeader + `
-
-/start — приветствие
-/help — эта справка
-/id — ID топика
-/topics — список топиков
-/init [omsu_id] — инициализировать группу (админ)
-/tag #тег — поиск сообщений по хэштегу
-/resend — переслать в топик
-/register — зарегистрировать топик (админ)
-/summary — саммари
-/settings — настройки группы (админ)
-/status — состояние
-
-` + botMessages.Format(botMessages.HelpDetail, map[string]string{"username": botUsername})
+		helpText := helpHeader + "\n\n" + botMessages.HelpCommands + "\n\n" + botMessages.Format(botMessages.HelpDetail, map[string]string{"username": botUsername})
 
 		// Fallback text for /start when LLM is unavailable — loaded from prompts/start_fallback.txt.
 		startFallback := strings.ReplaceAll(prompts.Get("start_fallback"), "{name}", botDisplayName)

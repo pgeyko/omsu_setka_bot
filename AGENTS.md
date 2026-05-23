@@ -74,7 +74,8 @@ Add `✅ Completed: YYYY-MM-DD` on the line below the stage heading.
 omsu_bot/
 ├── cmd/bot/main.go
 ├── internal/
-│   ├── bot/              # Telegram handlers (message, mention, webhook)
+│   ├── agent/            # Agent orchestrator + tool executor
+│   ├── handler/          # Telegram handlers (message, mention, webhook, settings, antispam)
 │   ├── classifier/       # LLM classification logic
 │   ├── forwarder/        # Message duplication
 │   ├── schedule/         # Diff engine + LLM announcer
@@ -82,10 +83,17 @@ omsu_bot/
 │   ├── api/              # Fiber REST admin API
 │   ├── llm/              # LLM provider chain + circuit breaker
 │   ├── db/               # SQLite + migrations
-│   └── config/           # cleanenv config
+│   ├── buffer/           # Summary message buffer
+│   ├── media/            # Photo OCR + Voice STT
+│   ├── messages/         # messages.yaml loader
+│   ├── telegram/         # Admin cache, session store, username cache
+│   ├── config/           # cleanenv config
+│   └── util/             # Date/slug helpers
 ├── prompts/              # LLM prompt templates (*.txt)
 ├── persona.md            # Seed file for bot persona (first-run)
 ├── config.yaml           # Runtime configuration
+├── messages.yaml         # Bot response messages
+├── protocols.json        # Moderation action protocols
 └── Dockerfile
 ```
 
@@ -139,14 +147,20 @@ If tests cannot run due to missing deps, report the exact blocker.
 ## SQLite Schema (core tables)
 
 ```sql
+groups (chat_id PK, title, api_token, omsu_group_id, is_active, is_vip, created_at)
+superadmins (user_id PK, note, created_at)
 bot_persona (id=1 singleton, name, system_prompt, signature, updated_at)
-topics      (id, tg_thread_id, name, slug, aliases JSON, description, hashtags JSON, is_active)
+topics (id, group_id FK, tg_thread_id, name, slug, aliases JSON, description, hashtags JSON, is_active)
 processed_messages (message_id, chat_id, thread_id, action, target_thread_id)
-llm_requests (id, type, provider, input_tokens, output_tokens, model, cost_usd, created_at)
-schedule_snapshots (id, data JSON, created_at)
-schedule_anomalies (id, snapshot_id, type, details JSON, notified, created_at)
-command_permissions (command PK, allowed_role)
+llm_requests (id, group_id FK, type, provider, input_tokens, output_tokens, model, cost_usd, created_at)
+message_buffer (chat_id, thread_id, message_id, username, text, created_at)
+message_tags (id, chat_id, message_id, tag, created_at)
+schedule_snapshots (id, group_id, data JSON, created_at)
+schedule_anomalies (id, snapshot_id FK, type, details JSON, notified, created_at)
+command_permissions (group_id, command PK, allowed_role)
 summary_requests (user_id, chat_id, requested_at)
+bot_config (key PK, value)
+revoked_tokens (jti PK, expires_at)
 ```
 
 ## Key Files

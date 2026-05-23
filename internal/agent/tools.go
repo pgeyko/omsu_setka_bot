@@ -125,6 +125,20 @@ var AvailableTools = []llm.Tool{
 			"required": []string{"protocol_name"},
 		},
 	},
+	{
+		Name:        "forward_message",
+		Description: "Переслать (скопировать) сообщение в другой топик (тему, ветку, раздел). Пользователи могут сказать: 'перешли это в топик X', 'скинь в тему Y', 'отправь в ветку Z', 'перешли в сессию', 'в топик расписание'.",
+		Parameters: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"target_topic": map[string]interface{}{
+					"type":        "string",
+					"description": "Название или slug целевого топика (например, 'сессия', 'sessiya', 'лекции', 'lab_works')",
+				},
+			},
+			"required": []string{"target_topic"},
+		},
+	},
 }
 
 type protocolAction struct {
@@ -153,6 +167,9 @@ type ToolExecutor struct {
 	ProtocolsConfigPath string
 	adminChecker        AdminChecker
 
+	sourceMessageID  int
+	replyToMessageID int
+
 	protocolsOnce sync.Once
 	protocolsData *protocolsConfig
 }
@@ -169,6 +186,11 @@ func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *
 	}
 }
 
+func (e *ToolExecutor) SetMessageContext(sourceMessageID, replyToMessageID int) {
+	e.sourceMessageID = sourceMessageID
+	e.replyToMessageID = replyToMessageID
+}
+
 func (e *ToolExecutor) Execute(ctx context.Context, chatID int64, name string, arguments string) (string, error) {
 	slog.Info("Executing tool", "name", name, "chat_id", chatID, "arguments", arguments)
 	switch name {
@@ -182,6 +204,8 @@ func (e *ToolExecutor) Execute(ctx context.Context, chatID int64, name string, a
 		return e.moderateUser(ctx, chatID, arguments)
 	case "run_protocol":
 		return e.runProtocol(ctx, chatID, arguments)
+	case "forward_message":
+		return e.forwardMessage(ctx, chatID, arguments)
 	default:
 		return "", fmt.Errorf("unknown tool name: %s", name)
 	}
@@ -668,4 +692,50 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 	}
 
 	return fmt.Sprintf("Протокол '%s' выполнен. Результаты:\n%s", args.ProtocolName, strings.Join(logMsg, "\n")), nil
+}
+
+func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSON string) (string, error) {
+	var args struct {
+		TargetTopic string `json:"target_topic"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return "", fmt.Errorf("failed to parse arguments: %w", err)
+	}
+
+	slug := util.MakeSlug(args.TargetTopic)
+	var tgThreadID int
+	var topicName string
+	err := e.db.QueryRowContext(ctx,
+		`SELECT tg_thread_id, name FROM topics WHERE group_id = ? AND (slug = ? OR name = ?) AND is_active = 1 LIMIT 1`,
+		chatID, slug, args.TargetTopic,
+	).Scan(&tgThreadID, &topicName)
+	if err != nil {
+		return fmt.Sprintf("Топик «%s» не найден. Проверь название через /topics.", args.TargetTopic), nil
+	}
+
+	forwardMsgID := e.replyToMessageID
+	if forwardMsgID == 0 {
+		forwardMsgID = e.sourceMessageID
+	}
+	if forwardMsgID == 0 {
+		return "Не удалось определить сообщение для пересылки. Ответь на сообщение, которое нужно переслать.", nil
+	}
+
+	if e.bot == nil {
+		return "Ошибка: бот не инициализирован.", nil
+	}
+
+	fromChatID := fmt.Sprintf("%d", chatID)
+	_, err = e.bot.CopyMessage(ctx, &tgbot.CopyMessageParams{
+		ChatID:          chatID,
+		FromChatID:      fromChatID,
+		MessageID:       forwardMsgID,
+		MessageThreadID: tgThreadID,
+	})
+	if err != nil {
+		slog.Error("failed to copy message in forward tool", "error", err, "message_id", forwardMsgID)
+		return fmt.Sprintf("Не удалось переслать сообщение: %v", err), nil
+	}
+
+	return fmt.Sprintf("Сообщение переслано в топик «%s».", topicName), nil
 }

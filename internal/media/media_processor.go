@@ -30,13 +30,19 @@ type MediaProcessor struct {
 	botClient *tgbot.Bot
 	token     string
 	llmClient *llm.Client
+	prompts   PromptLoader
 }
 
-func NewMediaProcessor(botClient *tgbot.Bot, token string, llmClient *llm.Client) *MediaProcessor {
+type PromptLoader interface {
+	Get(name string) string
+}
+
+func NewMediaProcessor(botClient *tgbot.Bot, token string, llmClient *llm.Client, prompts PromptLoader) *MediaProcessor {
 	return &MediaProcessor{
 		botClient: botClient,
 		token:     token,
 		llmClient: llmClient,
+		prompts:   prompts,
 	}
 }
 
@@ -70,7 +76,7 @@ func (mp *MediaProcessor) ProcessPhoto(ctx context.Context, fileID string) (stri
 	history := []llm.AgentMessage{
 		{
 			Role:    "user",
-			Content: "Распознай и запиши весь текст с этого изображения. Ответь только распознанным текстом без форматирования и без лишних пояснений. Если текста нет, напиши '[Изображение без распознаваемого текста]'.",
+			Content: mp.prompts.Get("ocr"),
 			MediaParts: []llm.MediaPart{
 				{
 					MimeType: mimeType,
@@ -108,7 +114,7 @@ func (mp *MediaProcessor) ProcessVoice(ctx context.Context, fileID string) (stri
 	history := []llm.AgentMessage{
 		{
 			Role:    "user",
-			Content: "Сделай дословную текстовую расшифровку этой аудиозаписи. Напиши только расшифрованный текст без форматирования, комментариев и метаданных. Если голоса нет или расшифровка невозможна, напиши '[Не удалось расшифровать аудио]'.",
+			Content: mp.prompts.Get("stt"),
 			MediaParts: []llm.MediaPart{
 				{
 					MimeType: mimeType,

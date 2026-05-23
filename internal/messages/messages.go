@@ -30,6 +30,7 @@ type Messages struct {
 	IDTopic             string `yaml:"id_topic"`
 	IDGeneral           string `yaml:"id_general"`
 	HelpHeader          string `yaml:"help_header"`
+	HelpCommands        string `yaml:"help_commands"`
 	HelpDetail          string `yaml:"help_detail"`
 	UnknownCommand      string `yaml:"unknown_command"`
 }
@@ -60,7 +61,8 @@ func defaultMessages() *Messages {
 		IDTopic:             "🆔 ID этого топика: {id}",
 		IDGeneral:           "📋 Это общий чат, у него нет ID топика.",
 		HelpHeader:          "🤖 <b>{name}</b> — ассистент группы",
-		HelpDetail:          "Подробнее: @{username}",
+		HelpCommands:        "/start — приветствие\n/help — эта справка\n/id — ID топика\n/topics — список топиков\n/init [omsu_id] — инициализировать группу (админ)\n/tag #тег — поиск сообщений по хэштегу\n/resend — переслать в топик\n/register — зарегистрировать топик (админ)\n/summary — саммари\n/settings — настройки группы (админ)\n/status — состояние",
+		HelpDetail:          "Подробнее и поддержка: @{username}",
 		UnknownCommand:      "Неизвестная команда. Напиши /help чтобы увидеть список.",
 	}
 }

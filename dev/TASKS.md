@@ -45,8 +45,8 @@
 - [x] `internal/llm/tracker.go` — учёт токенов, дневной лимит, алерты
 - [x] `internal/llm/prompts.go` — загрузка промптов из `prompts/*.txt`
 - [x] `prompts/classify.txt`
-- [x] `prompts/forward_intent.txt`
-- [x] `prompts/topic_command.txt`
+- [x] `prompts/forward_intent.txt` (заменён агентным подходом в Этапе 8)
+- [x] `prompts/topic_command.txt` (заменён агентным подходом в Этапе 8)
 - [x] `prompts/schedule_announce.txt`
 - [x] `cmd/bot/main.go` — инициализация всех зависимостей, graceful shutdown
 - [ ] Базовый Telegram-бот: longpolling, middleware rate-limit (5 req/min/user) — следующий этап
@@ -256,6 +256,26 @@
 - [x] setMyCommands API at startup (Telegram command menu)
 - [x] get_schedule tool appends Setka public URL
 - [x] README.md created
+
+---
+
+## Этап 14 — Агентный подход: доработки и унификация промптов
+✅ Completed: 2026-05-23
+
+- [x] Добавить инструмент `forward_message` в AgentOrchestrator/ ToolExecutor (пересылка через агента)
+- [x] Переписать `persona.md`: явные инструкции для tool calling, триггеры, словарь синонимов
+- [x] Вынести OCR/STT промты из `media_processor.go` в `prompts/ocr.txt` и `prompts/stt.txt`
+- [x] Переместить `helpText` из `main.go` в `messages.yaml` (поле `help_commands`)
+- [x] Внедрить имена протоколов из `protocols.json` в описание инструмента `run_protocol`
+- [x] Интегрировать `Announcer` (LLM-генерация объявлений) в `DiffEngine.ProcessWebhook()`
+- [x] Исправить архитектуру в `AGENTS.md` (`internal/bot/` → `internal/handler/`)
+- [x] Обновить схему БД в `AGENTS.md` (добавить мультиарендные таблицы)
+- [x] Добавить примечание о мультиарендности в `GROUPBOT_TZ.md`
+- [x] Удалить упоминания несуществующих промтов `forward_intent.txt`/`topic_command.txt`
+- [x] Удалить `internal/api/persona.md` с неверным форматом
+- [x] Вынести шаблон `systemExtra` в `prompts/agent_context.txt`
+- [x] Унифицировать стиль всех промтов (единая структура)
+- [x] Добавить защиту от prompt injection в `persona.md`
 
 ---
 

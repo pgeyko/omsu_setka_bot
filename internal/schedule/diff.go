@@ -61,9 +61,10 @@ type AnomalyRecord struct {
 }
 
 type DiffEngine struct {
-	db     *sql.DB
-	bot    TelegramPoster
-	client LLMClient
+	db        *sql.DB
+	bot       TelegramPoster
+	client    LLMClient
+	announcer *Announcer
 }
 
 type TelegramPoster interface {
@@ -74,8 +75,8 @@ type LLMClient interface {
 	Call(ctx context.Context, reqType, systemExtra, userPrompt string, requiresVision bool) (*llm.Response, error)
 }
 
-func NewDiffEngine(db *sql.DB, bot TelegramPoster, client LLMClient) *DiffEngine {
-	return &DiffEngine{db: db, bot: bot, client: client}
+func NewDiffEngine(db *sql.DB, bot TelegramPoster, client LLMClient, announcer *Announcer) *DiffEngine {
+	return &DiffEngine{db: db, bot: bot, client: client, announcer: announcer}
 }
 
 func (e *DiffEngine) ProcessWebhook(ctx context.Context, payload *WebhookPayload, announceThreadID int) error {
@@ -100,7 +101,22 @@ func (e *DiffEngine) ProcessWebhook(ctx context.Context, payload *WebhookPayload
 		}
 	}
 
-	msg := e.buildAnnouncement(anomalies)
+	var msg string
+	if e.announcer != nil {
+		generated, err := e.announcer.GenerateAnnouncement(ctx, anomalies, payload.Changes)
+		if err != nil {
+			slog.Warn("LLM announcement failed, falling back to plain format", "error", err)
+			msg = e.buildAnnouncement(anomalies)
+		} else {
+			msg = generated
+		}
+	} else {
+		msg = e.buildAnnouncement(anomalies)
+	}
+
+	if msg == "" {
+		return nil
+	}
 	if err := e.bot.PostToThread(ctx, announceThreadID, msg); err != nil {
 		slog.Error("failed to post announcement", "error", err)
 	}

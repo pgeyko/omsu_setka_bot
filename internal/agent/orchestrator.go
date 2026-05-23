@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"omsu_bot/internal/llm"
@@ -36,8 +37,14 @@ var restrictedTools = map[string]bool{
 	"manage_topic":  true,
 }
 
-// Run executes the agent loop for a given user query
 func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int, query string, username string, userID int64) (string, error) {
+	return ao.RunWithContext(ctx, chatID, threadID, query, username, userID, 0, 0)
+}
+
+// RunWithContext executes the agent loop for a given user query with full message context.
+// sourceMessageID is the ID of the message containing the mention (for forwarding).
+// replyToMessageID is the ID of the replied-to message (if the mention was a reply).
+func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, threadID int, query string, username string, userID int64, sourceMessageID int, replyToMessageID int) (string, error) {
 	// 1. Load group features
 	enabledTools := ao.loadEnabledTools(chatID)
 
@@ -53,14 +60,30 @@ func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int
 		enabledTools = filtered
 	}
 
+	// Inject available protocol names into run_protocol description
+	for i := range enabledTools {
+		if enabledTools[i].Name == "run_protocol" {
+			enabledTools[i] = injectProtocolNames(enabledTools[i])
+			break
+		}
+	}
+
 	// 2. Prepare history
-	// Build systemExtra containing today's date, the current user's username, etc.
-	systemExtra := fmt.Sprintf("Текущее время: %s\nПользователь, к которому ты обращаешься: @%s\nID текущего топика: %d\nID текущего чата: %d",
+	systemExtra := fmt.Sprintf("Текущее время: %s\nПользователь: @%s\nID топика: %d\nID чата: %d",
 		time.Now().Format("2006-01-02 15:04:05 Mon"),
 		username,
 		threadID,
 		chatID,
 	)
+	if sourceMessageID != 0 {
+		systemExtra += fmt.Sprintf("\nID текущего сообщения: %d", sourceMessageID)
+	}
+	if replyToMessageID != 0 {
+		systemExtra += fmt.Sprintf("\nID сообщения, на которое ответили (для пересылки): %d", replyToMessageID)
+	}
+
+	// Set message context on executor so forward_message can access message IDs
+	ao.executor.SetMessageContext(sourceMessageID, replyToMessageID)
 
 	// Add knowledge base content if it exists
 	kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
@@ -140,7 +163,6 @@ func (ao *AgentOrchestrator) loadEnabledTools(chatID int64) []llm.Tool {
 	featuresPath := fmt.Sprintf("data/groups/%d/features.json", chatID)
 	bytes, err := os.ReadFile(featuresPath)
 	if err != nil {
-		// File does not exist, return all available tools
 		return AvailableTools
 	}
 
@@ -157,4 +179,54 @@ func (ao *AgentOrchestrator) loadEnabledTools(chatID int64) []llm.Tool {
 		}
 	}
 	return filtered
+}
+
+var (
+	protocolsOnce   sync.Once
+	protocolsData   []string
+)
+
+func loadProtocolNames() []string {
+	protocolsOnce.Do(func() {
+		content, err := os.ReadFile("protocols.json")
+		if err != nil {
+			slog.Warn("failed to read protocols.json for tool description", "error", err)
+			return
+		}
+		var cfg struct {
+			Protocols []struct {
+				Name string `json:"name"`
+			} `json:"protocols"`
+		}
+		if err := json.Unmarshal(content, &cfg); err != nil {
+			slog.Warn("failed to parse protocols.json", "error", err)
+			return
+		}
+		for _, p := range cfg.Protocols {
+			protocolsData = append(protocolsData, p.Name)
+		}
+	})
+	return protocolsData
+}
+
+func injectProtocolNames(t llm.Tool) llm.Tool {
+	names := loadProtocolNames()
+	if len(names) == 0 {
+		return t
+	}
+	desc := t.Description
+	desc += fmt.Sprintf(" Доступные протоколы: %s", stringsJoin(names, ", "))
+	t.Description = desc
+	return t
+}
+
+func stringsJoin(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
 }
