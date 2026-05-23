@@ -176,33 +176,46 @@ X-Webhook-Signature: sha256=<hex(HMAC-SHA256(body, SCHEDULE_WEBHOOK_SECRET))>
 
 ---
 
-## LLM Provider Chain (три независимых chain)
+## LLM Provider Chains (4 специализированных цепочки)
 
-### Text chain (classify, agent_loop, summary, schedule)
+Два провайдера: **Groq** (первичный, OpenAI-совместимый) + **Gemini** (Google AI Studio, фолбек).
+Конфигурация: `config.yaml` → поле `chain` группирует провайдеры по цепочкам.
+
+### Agent chain (agent_loop — сложные многошаговые)
 ```
-gemma-4-31b-it      (15 RPM, 1500 TPM, unlimited RPD)  ← primary
-  → gemma-4-26b-it  (15 RPM, 1500 TPM, unlimited RPD)  ← fallback
-    → gemini-3.1-flash-lite (15 RPM, 500K TPM, 500 RPD) ← fallback
-      → deepseek-chat                                    ← final reserve
+llama-3.3-70b-versatile  (Groq, 30 RPM, 1K RPD, 12K TPM)
+  → gemma-4-31b-it        (Gemini, 15 RPM, 1.5K RPD)
+    → qwen/qwen3-32b      (Groq, 60 RPM, 1K RPD, 6K TPM)
+      → gemma-4-26b-a4b-it (Gemini, 15 RPM, 1.5K RPD)
+```
+
+### Simple chain (classify, diagnostic, summary)
+```
+qwen/qwen3-32b            (Groq, 60 RPM, 1K RPD, 6K TPM)
+  → gemini-3.1-flash-lite  (Gemini, 15 RPM, 500 RPD, 250K TPM)
+    → llama-3.1-8b-instant (Groq, 30 RPM, 14.4K RPD)
+      → gemma-4-26b-a4b-it (Gemini, 15 RPM, 1.5K RPD)
 ```
 
 ### Vision chain (OCR, фото)
 ```
-gemma-4-31b-it      (15 RPM, 1500 TPM)
-  → gemini-3.1-flash-lite (15 RPM, 500K TPM, 500 RPD)
+llama-4-scout-17b-16e      (Groq, 30 RPM, 1K RPD, 30K TPM)
+  → gemini-3.1-flash-lite  (Gemini, 15 RPM, 500 RPD, 250K TPM)
+    → gemma-4-31b-it        (Gemini, 15 RPM, 1.5K RPD)
 ```
 
-### Audio STT chain (голосовые)
+### Audio chain (STT, голосовые)
 ```
-gemini-3.1-flash-lite primary    (15 RPM, 500K TPM, 500 RPD)
-  → gemini-3.1-flash-lite reserve (15 RPM, 500K TPM, 500 RPD)
+whisper-large-v3-turbo     (Groq, 20 RPM, 2K RPD)
+  → whisper-large-v3       (Groq, 20 RPM, 2K RPD)
+    → gemini-3.1-flash-lite (Gemini, 15 RPM, 500 RPD)
 ```
 
-**Rate limiter:** RPM/TPM/RPD считаются скользящим окном 1 мин (кроме RPD — с начала дня).
+**Маршрутизация:** `PickChain(taskType, requiresVision)` → `agent_loop`→agent, `ocr`→vision, `stt`→audio, default→simple.
 
-**Circuit Breaker:** 3 ошибки подряд → провайдер disabled на 5 мин.
+**Retry:** agent_loop ретраится до 2 раз с задержкой 3s/6s при исчерпании всех провайдеров.
 
-**API key failover:** ошибка 400/403/500 → следующий ключ.
+**Rate limiter:** RPM/TPM/RPD/TPD скользящее окно. Circuit breaker: 3 ошибки подряд → disabled на 5 мин.
 
 ---
 
