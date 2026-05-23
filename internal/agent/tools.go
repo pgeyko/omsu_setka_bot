@@ -229,7 +229,13 @@ func (e *ToolExecutor) getSchedule(ctx context.Context, chatID int64, argsJSON s
 		return fmt.Sprintf("Ошибка получения расписания с сервера: %s", string(body)), nil
 	}
 
-	return string(wrapper.Data), nil
+	result := string(wrapper.Data)
+	// Append Setka public link if configured
+	if e.setkaPublicURL != "" {
+		link := fmt.Sprintf("%s/schedule/group/%d?date=%s", strings.TrimRight(e.setkaPublicURL, "/"), omsuGroupID, date)
+		result += fmt.Sprintf("\n\n📅 ССЫЛКА НА РАСПИСАНИЕ В SETKA (ОБЯЗАТЕЛЬНО добавь в конец своего ответа): <a href=\"%s\">Открыть расписание в Setka</a>", link)
+	}
+	return result, nil
 }
 
 func (e *ToolExecutor) generateSummary(ctx context.Context, chatID int64, argsJSON string) (string, error) {
