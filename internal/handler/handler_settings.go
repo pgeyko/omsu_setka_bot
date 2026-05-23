@@ -22,6 +22,8 @@ import (
 	"omsu_bot/internal/telegram"
 )
 
+import "sync"
+
 type SettingsHandler struct {
 	db               *sql.DB
 	sessionStore     *telegram.SessionStore
@@ -32,6 +34,14 @@ type SettingsHandler struct {
 	setkaPublicURL   string
 	globalVoice      func() bool
 	globalPhoto      func() bool
+
+	featuresCache   sync.Map
+	featuresCacheMu sync.Mutex
+}
+
+type cachedFeatures struct {
+	data      map[string]bool
+	expiresAt time.Time
 }
 
 func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCache *telegram.AdminCache, setkaBaseURL, setkaAdminKey, webhookSecret, setkaPublicURL string, globalVoice, globalPhoto func() bool) *SettingsHandler {
@@ -627,15 +637,32 @@ func defaultFeatures() map[string]bool {
 }
 
 func (h *SettingsHandler) LoadFeatures(chatID int64) map[string]bool {
+	if val, ok := h.featuresCache.Load(chatID); ok {
+		cached := val.(cachedFeatures)
+		if time.Now().Before(cached.expiresAt) {
+			return cached.data
+		}
+	}
+
+	h.featuresCacheMu.Lock()
+	defer h.featuresCacheMu.Unlock()
+
+	// Double check
+	if val, ok := h.featuresCache.Load(chatID); ok {
+		cached := val.(cachedFeatures)
+		if time.Now().Before(cached.expiresAt) {
+			return cached.data
+		}
+	}
+
 	filePath := fmt.Sprintf("data/groups/%d/features.json", chatID)
 	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return defaultFeatures()
+
+	features := make(map[string]bool)
+	if err == nil {
+		_ = json.Unmarshal(content, &features)
 	}
-	var features map[string]bool
-	if err := json.Unmarshal(content, &features); err != nil {
-		return defaultFeatures()
-	}
+
 	// fill defaults for missing features
 	defaults := defaultFeatures()
 	for k, v := range defaults {
@@ -643,6 +670,12 @@ func (h *SettingsHandler) LoadFeatures(chatID int64) map[string]bool {
 			features[k] = v
 		}
 	}
+
+	h.featuresCache.Store(chatID, cachedFeatures{
+		data:      features,
+		expiresAt: time.Now().Add(30 * time.Second),
+	})
+
 	return features
 }
 
@@ -655,5 +688,15 @@ func (h *SettingsHandler) saveFeatures(chatID int64, features map[string]bool) e
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "features.json"), bytes, 0644)
+
+	err = os.WriteFile(filepath.Join(dir, "features.json"), bytes, 0644)
+	if err == nil {
+		h.featuresCacheMu.Lock()
+		h.featuresCache.Store(chatID, cachedFeatures{
+			data:      features,
+			expiresAt: time.Now().Add(30 * time.Second),
+		})
+		h.featuresCacheMu.Unlock()
+	}
+	return err
 }

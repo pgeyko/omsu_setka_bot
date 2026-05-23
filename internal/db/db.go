@@ -25,8 +25,13 @@ func New(dbPath string) (*DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	conn.SetMaxOpenConns(1)
-	conn.SetMaxIdleConns(1)
+	if dbPath == ":memory:" {
+		conn.SetMaxOpenConns(1)
+		conn.SetMaxIdleConns(1)
+	} else {
+		conn.SetMaxOpenConns(10)
+		conn.SetMaxIdleConns(10)
+	}
 
 	if _, err := conn.Exec("PRAGMA journal_mode=WAL;"); err != nil {
 		return nil, fmt.Errorf("failed to enable WAL: %w", err)

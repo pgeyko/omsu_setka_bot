@@ -204,6 +204,10 @@ func (d *DB) Migrate() error {
 			break
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error reading table info for message_buffer: %w", err)
+	}
+
 	if !hasMessageID {
 		slog.Info("migrating message_buffer: adding message_id column")
 		if _, err := d.Exec(`ALTER TABLE message_buffer ADD COLUMN message_id INTEGER NOT NULL DEFAULT 0;`); err != nil {
@@ -219,7 +223,8 @@ func (d *DB) backupBeforeMigration() (string, error) {
 	backupPath := fmt.Sprintf("data/groupbot.bak.%d", time.Now().Unix())
 
 	// Try VACUUM INTO (SQLite 3.27.0+) for a safe online backup
-	_, err := d.Exec(fmt.Sprintf("VACUUM INTO '%s'", backupPath))
+	// Note: VACUUM INTO supports bound parameters
+	_, err := d.Exec("VACUUM INTO ?", backupPath)
 	if err == nil {
 		return backupPath, nil
 	}

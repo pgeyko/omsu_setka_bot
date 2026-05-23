@@ -13,7 +13,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -260,6 +262,30 @@ func main() {
 	})
 	apiServer.App.Post("/webhook/schedule", webhookHandler.Handle)
 
+	// Clean up old processed media groups
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			processedMediaGroups.Range(func(key, value interface{}) bool {
+				t, ok := value.(time.Time)
+				if ok && now.Sub(t) > 30*time.Minute {
+					processedMediaGroups.Delete(key)
+				}
+				return true
+			})
+			mediaGroupTimestamps.Range(func(key, value interface{}) bool {
+				t, ok := value.(time.Time)
+				if ok && now.Sub(t) > 30*time.Minute {
+					mediaGroupMessages.Delete(key)
+					mediaGroupTimestamps.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
+
 	go func() {
 		sigHup := make(chan os.Signal, 1)
 		signal.Notify(sigHup, syscall.SIGHUP)
@@ -353,7 +379,9 @@ func main() {
 
 		// New Chat Members captcha prompt
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && len(update.Message.NewChatMembers) > 0 && database.IsGroupActive(context.Background(), update.Message.Chat.ID)
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			return update.Message != nil && len(update.Message.NewChatMembers) > 0 && database.IsGroupActive(ctx, update.Message.Chat.ID)
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			antispam.HandleNewChatMembers(ctx, b, update.Message.Chat.ID, update.Message.NewChatMembers)
 		})
@@ -401,7 +429,9 @@ func main() {
 
 		// Active groups messaging
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && database.IsGroupActive(context.Background(), update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки"
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			return update.Message != nil && database.IsGroupActive(ctx, update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки"
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if antispam.CheckFloodAndLinks(ctx, b, update.Message) {
 				return
@@ -451,6 +481,7 @@ func main() {
 				Caption:   msg.Caption,
 			})
 			mediaGroupMessages.Store(msg.MediaGroupID, items)
+			mediaGroupTimestamps.Store(msg.MediaGroupID, time.Now())
 			mediaGroupMu.Unlock()
 
 			// Persist to DB so album forwarding survives restarts
@@ -484,7 +515,7 @@ func main() {
 
 				// Skip photos in already-processed media groups to avoid duplicate OCR
 				if msg.MediaGroupID != "" {
-					if _, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, true); seen {
+					if _, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, time.Now()); seen {
 						shouldOCR = false
 					}
 				}
@@ -550,7 +581,9 @@ func main() {
 			if update.Message != nil {
 				text = update.Message.Text
 			}
-			return update.Message != nil && !database.IsGroupActive(context.Background(), update.Message.Chat.ID) && text != "/start" && text != "/help" && !strings.HasPrefix(text, "/init")
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
+			return update.Message != nil && !database.IsGroupActive(ctx, update.Message.Chat.ID) && text != "/start" && text != "/help" && !strings.HasPrefix(text, "/init")
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			// Private chat / inactive group — ignore all except /start and /help (handled above)
 		})
@@ -584,8 +617,9 @@ var (
 	botUsername          string
 	providerCount        int
 	globalLLM            *llm.Client
-	processedMediaGroups sync.Map // key=media_group_id, value=true — dedup OCR per group
+	processedMediaGroups sync.Map // key=media_group_id, value=time.Time — dedup OCR per group
 	mediaGroupMessages   sync.Map // key=media_group_id, value=[]agent.MediaGroupItem
+	mediaGroupTimestamps sync.Map // key=media_group_id, value=time.Time
 	mediaGroupMu         sync.Mutex // guards Load+append+Store for mediaGroupMessages
 )
 
@@ -656,10 +690,14 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 
 		var g omsudb.Group
 		if existingGroup == nil {
+			bBytes := make([]byte, 24)
+			rand.Read(bBytes)
+			tokenStr := hex.EncodeToString(bBytes)
+
 			g = omsudb.Group{
 				ChatID:      msg.Chat.ID,
 				Title:       msg.Chat.Title,
-				APIToken:    fmt.Sprintf("init-%d-%d", msg.Chat.ID, time.Now().Unix()),
+				APIToken:    tokenStr,
 				OmsuGroupID: omsuID,
 				IsActive:    true,
 				IsVIP:       false,
@@ -939,7 +977,7 @@ func handleRollCall(ctx context.Context, b *tgbot.Bot, msg *models.Message, user
 		return
 	}
 
-	text := "📢 <b>ПЕРЕКЛИЧКА!</b>\n"
+	text := "📢 <b>ПЕРЕКЛИЧКА!</b>\n<i>(в списке только администраторы и те, кто недавно писал)</i>\n\n"
 	for i, m := range mentions {
 		if i > 0 && i%5 == 0 {
 			text += "\n"

@@ -60,7 +60,7 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 		WriteTimeout:          10 * time.Second,
 		ReadBufferSize:        4096,
 		ProxyHeader:           fiber.HeaderXForwardedFor,
-		TrustedProxies:        []string{"172.16.0.0/12", "192.168.0.0/16", "10.0.0.0/8"},
+		TrustedProxies:        []string{"127.0.0.1"}, // Only trust local proxy
 		CaseSensitive:         true,
 	})
 

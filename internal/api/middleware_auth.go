@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 	"omsu_bot/internal/db"
 )
 
@@ -49,8 +50,8 @@ func (m *AuthMiddleware) Login(c *fiber.Ctx) error {
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiry),
 			IssuedAt:  jwt.NewNumericDate(now),
-			// jti is the wall-clock nanosecond — unique enough for this use case.
-			ID: time.Now().Format("20060102150405.000000000"),
+			// Use unpredictable UUID for JTI to prevent token blacklist guessing
+			ID: uuid.NewString(),
 		},
 		Role: "admin",
 	}

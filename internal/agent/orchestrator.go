@@ -22,6 +22,14 @@ type AgentOrchestrator struct {
 	llmClient    *llm.Client
 	executor     *ToolExecutor
 	adminChecker AdminChecker
+
+	toolsCache   sync.Map
+	toolsCacheMu sync.Mutex
+}
+
+type cachedTools struct {
+	tools     []llm.Tool
+	expiresAt time.Time
 }
 
 func NewAgentOrchestrator(llmClient *llm.Client, executor *ToolExecutor, adminChecker AdminChecker) *AgentOrchestrator {
@@ -89,6 +97,10 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 	// Add knowledge base content if it exists
 	kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
 	if kbBytes, err := os.ReadFile(kbPath); err == nil && len(kbBytes) > 0 {
+		const maxKBSize = 8 * 1024 // ~2K tokens
+		if len(kbBytes) > maxKBSize {
+			kbBytes = kbBytes[:maxKBSize]
+		}
 		systemExtra += "\n\nБаза знаний группы:\n" + string(kbBytes)
 	}
 
@@ -238,53 +250,90 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 }
 
 func (ao *AgentOrchestrator) loadEnabledTools(chatID int64) []llm.Tool {
-	featuresPath := fmt.Sprintf("data/groups/%d/features.json", chatID)
-	bytes, err := os.ReadFile(featuresPath)
-	if err != nil {
-		return AvailableTools
+	if val, ok := ao.toolsCache.Load(chatID); ok {
+		cached := val.(cachedTools)
+		if time.Now().Before(cached.expiresAt) {
+			return cached.tools
+		}
 	}
 
-	var features map[string]bool
-	if err := json.Unmarshal(bytes, &features); err != nil {
-		slog.Error("failed to parse features.json", "chat_id", chatID, "error", err)
-		return AvailableTools
+	ao.toolsCacheMu.Lock()
+	defer ao.toolsCacheMu.Unlock()
+
+	// Double check
+	if val, ok := ao.toolsCache.Load(chatID); ok {
+		cached := val.(cachedTools)
+		if time.Now().Before(cached.expiresAt) {
+			return cached.tools
+		}
 	}
 
 	var filtered []llm.Tool
-	for _, t := range AvailableTools {
-		if enabled, exists := features[t.Name]; !exists || enabled {
-			filtered = append(filtered, t)
+	featuresPath := fmt.Sprintf("data/groups/%d/features.json", chatID)
+	bytes, err := os.ReadFile(featuresPath)
+	if err != nil {
+		filtered = AvailableTools
+	} else {
+		var features map[string]bool
+		if err := json.Unmarshal(bytes, &features); err != nil {
+			slog.Error("failed to parse features.json", "chat_id", chatID, "error", err)
+			filtered = AvailableTools
+		} else {
+			for _, t := range AvailableTools {
+				if enabled, exists := features[t.Name]; !exists || enabled {
+					filtered = append(filtered, t)
+				}
+			}
 		}
 	}
+
+	ao.toolsCache.Store(chatID, cachedTools{
+		tools:     filtered,
+		expiresAt: time.Now().Add(30 * time.Second),
+	})
+
 	return filtered
 }
 
 var (
-	protocolsOnce   sync.Once
-	protocolsData   []string
+	protocolsCache   []string
+	protocolsCacheMu sync.Mutex
+	protocolsCacheTs time.Time
 )
 
 func loadProtocolNames() []string {
-	protocolsOnce.Do(func() {
-		content, err := os.ReadFile("protocols.json")
-		if err != nil {
-			slog.Warn("failed to read protocols.json for tool description", "error", err)
-			return
-		}
-		var cfg struct {
-			Protocols []struct {
-				Name string `json:"name"`
-			} `json:"protocols"`
-		}
-		if err := json.Unmarshal(content, &cfg); err != nil {
-			slog.Warn("failed to parse protocols.json", "error", err)
-			return
-		}
-		for _, p := range cfg.Protocols {
-			protocolsData = append(protocolsData, p.Name)
-		}
-	})
-	return protocolsData
+	protocolsCacheMu.Lock()
+	defer protocolsCacheMu.Unlock()
+
+	// Cache for 30 seconds to allow live updates (e.g. from SIGHUP or manual edits)
+	if time.Since(protocolsCacheTs) < 30*time.Second && protocolsCache != nil {
+		return protocolsCache
+	}
+
+	content, err := os.ReadFile("protocols.json")
+	if err != nil {
+		slog.Warn("failed to read protocols.json for tool description", "error", err)
+		return protocolsCache // return stale data if any
+	}
+
+	var cfg struct {
+		Protocols []struct {
+			Name string `json:"name"`
+		} `json:"protocols"`
+	}
+	if err := json.Unmarshal(content, &cfg); err != nil {
+		slog.Warn("failed to parse protocols.json", "error", err)
+		return protocolsCache
+	}
+
+	var newProtocols []string
+	for _, p := range cfg.Protocols {
+		newProtocols = append(newProtocols, p.Name)
+	}
+
+	protocolsCache = newProtocols
+	protocolsCacheTs = time.Now()
+	return protocolsCache
 }
 
 func injectProtocolNames(t llm.Tool) llm.Tool {
