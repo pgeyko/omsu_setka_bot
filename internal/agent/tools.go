@@ -234,8 +234,8 @@ func (e *ToolExecutor) getSchedule(ctx context.Context, chatID int64, argsJSON s
 
 	var omsuGroupID int
 	err := e.db.QueryRowContext(ctx, "SELECT omsu_group_id FROM groups WHERE chat_id = ?", chatID).Scan(&omsuGroupID)
-	if err != nil {
-		return "", fmt.Errorf("failed to find omsu group id for this chat: %w", err)
+	if err != nil || omsuGroupID == 0 {
+		return "Группа не привязана к Setka. Администратор может настроить через /settings → Поиск группы в Setka.", nil
 	}
 
 	date := util.ResolveDate(args.Date, args.RelativeDay)
