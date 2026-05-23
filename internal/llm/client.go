@@ -195,6 +195,14 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 		}
 
 		for mi, model := range modelsToTry {
+			// Small delay between requests to avoid rate-limit bursts (part of retry loop)
+			if tried > 0 {
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(120 * time.Millisecond):
+				}
+			}
 			tried++
 			slog.Debug("llm request history",
 				"type", reqType,
