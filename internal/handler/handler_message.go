@@ -257,31 +257,34 @@ func (h *Handler) lookupThreadID(ctx context.Context, chatID int64, slug string)
 }
 
 func (h *Handler) fuzzyLookupThreadID(ctx context.Context, chatID int64, topic string) (int, error) {
+	// Normalize: classifier may output "важная-информация" while DB has "Важная информация"
+	topicNorm := strings.ReplaceAll(strings.ToLower(topic), "-", " ")
+
 	// Try exact name match
 	var tgThreadID int
 	err := h.db.QueryRowContext(ctx,
-		`SELECT tg_thread_id FROM topics WHERE group_id = ? AND name = ? AND is_active = 1 LIMIT 1`,
-		chatID, topic,
+		`SELECT tg_thread_id FROM topics WHERE group_id = ? AND LOWER(name) = ? AND is_active = 1 LIMIT 1`,
+		chatID, topicNorm,
 	).Scan(&tgThreadID)
 	if err == nil {
 		return tgThreadID, nil
 	}
 
-	// Try name contains match (case-insensitive)
+	// Try name contains match (case-insensitive, hyphens normalized)
 	rows, err := h.db.QueryContext(ctx,
 		`SELECT name, tg_thread_id FROM topics WHERE group_id = ? AND is_active = 1 ORDER BY name`,
 		chatID,
 	)
 	if err == nil {
 		defer rows.Close()
-		lowerTopic := strings.ToLower(topic)
 		var bestName string
 		var bestID int
 		for rows.Next() {
 			var name string
 			var id int
 			rows.Scan(&name, &id)
-			if strings.Contains(strings.ToLower(name), lowerTopic) || strings.Contains(lowerTopic, strings.ToLower(name)) {
+			nameNorm := strings.ReplaceAll(strings.ToLower(name), "-", " ")
+			if strings.Contains(nameNorm, topicNorm) || strings.Contains(topicNorm, nameNorm) {
 				if bestID == 0 || len(name) < len(bestName) {
 					bestID = id
 					bestName = name
