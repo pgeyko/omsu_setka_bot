@@ -59,11 +59,6 @@ llm:
       model: deepseek-chat
       multimodal: false
       priority: 90
-      type: deepseek
-      api_key: "${DEEPSEEK_API_KEY}"
-      model: deepseek-chat
-      multimodal: false
-      priority: 90
 
     # ── Vision chain ── (OCR, фото) — flash-lite первый, он быстрее
     - name: gemini-vision-fast
