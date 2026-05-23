@@ -6,8 +6,8 @@ inside the `omsu_bot/` subproject.
 
 ## Project Overview
 
-GroupBot is a Telegram bot for a student group. One process = one group.
-It lives in a forum supergroup (topics) and does three things:
+GroupBot is a Telegram bot for student groups (multi-tenant — one process serves
+multiple groups). It lives in forum supergroups (topics) and does three things:
 
 1. **Auto-forwards** messages to relevant topics using LLM classification.
 2. **Announces** schedule changes received via webhook from omsu_setka.

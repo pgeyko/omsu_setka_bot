@@ -69,7 +69,7 @@
 - [x] `internal/forwarder/forwarder.go` — `copyMessage` + шапка с `persona.name`
 - [x] Ответ в исходный топик со ссылкой `↗️ Продублировал в «Топик» → [ссылка]`
 - [x] `internal/handler/handler_mention.go` — обработка `@bot` команд
-- [x] LLM парсинг интента `forward_intent`
+- [x] LLM парсинг интента `forward_intent` (заменён на AgentOrchestrator в Этапе 8)
 - [x] Нечёткое совпадение топика по `name` + `aliases`
 - [x] Переспрос при нераспознанном топике
 - [x] `go build ./...`, `go vet ./...` — чисто
@@ -87,7 +87,7 @@
 - [x] Детектор аномалий: ANOMALY_BUILDING, ANOMALY_ROOM, ANOMALY_SUBJECT, ANOMALY_CANCEL
 - [x] Сохранение снапшота в `schedule_snapshots`
 - [x] Сохранение аномалий в `schedule_anomalies`
-- [x] `internal/schedule/announcer.go` — генерация объявления (без LLM fallback)
+- [x] `internal/schedule/announcer.go` — генерация объявления через LLM (в Этапе 14 интегрирован в DiffEngine с fallback на Go-форматтер)
 - [x] Пост в `announce_thread_id` с аномальными пометками ⚠️
 - [x] Регистрация бота в omsu_mirror: `POST /api/v1/admin/webhooks` при старте
 - [x] `go build ./...`, `go vet ./...` — чисто

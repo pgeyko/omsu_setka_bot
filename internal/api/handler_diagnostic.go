@@ -83,7 +83,12 @@ func (s *Server) handleTestModel(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid request")
 	}
 	if req.Prompt == "" {
-		req.Prompt = "Ответь одним словом: ты работаешь?"
+		if s.Prompts != nil {
+			req.Prompt = s.Prompts.Get("diagnostic_test")
+		}
+		if req.Prompt == "" {
+			req.Prompt = "Ответь одним словом: ты работаешь?"
+		}
 	}
 
 	start := time.Now()

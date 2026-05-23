@@ -1,5 +1,0 @@
-Текущее время: {time}
-Пользователь: @{username}
-ID топика: {thread_id}
-ID чата: {chat_id}
-{message_context}{knowledge_base}

@@ -726,7 +726,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 	}
 
 	fromChatID := fmt.Sprintf("%d", chatID)
-	_, err = e.bot.CopyMessage(ctx, &tgbot.CopyMessageParams{
+	result, err := e.bot.CopyMessage(ctx, &tgbot.CopyMessageParams{
 		ChatID:          chatID,
 		FromChatID:      fromChatID,
 		MessageID:       forwardMsgID,
@@ -737,5 +737,10 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		return fmt.Sprintf("Не удалось переслать сообщение: %v", err), nil
 	}
 
-	return fmt.Sprintf("Сообщение переслано в топик «%s».", topicName), nil
+	chatIDPos := chatID
+	if chatIDPos < 0 {
+		chatIDPos = -chatIDPos
+	}
+	link := fmt.Sprintf("https://t.me/c/%d/%d", chatIDPos, result.ID)
+	return fmt.Sprintf("Сообщение переслано в топик «%s». Ссылка на скопированное сообщение: %s", topicName, link), nil
 }
