@@ -159,9 +159,14 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		if err != nil || targetThreadID == 0 {
 			slog.Warn("target topic not found", "topic", result.Topic)
 			return
-		}
-		slog.Debug("fuzzy topic match", "topic", result.Topic, "thread_id", targetThreadID)
 	}
+	slog.Debug("fuzzy topic match", "topic", result.Topic, "thread_id", targetThreadID)
+}
+
+if targetThreadID == msg.MessageThreadID {
+	h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped_same_topic", 0)
+	return
+}
 
 	fromTopicName := ""
 	if msg.MessageThreadID != 0 {
@@ -333,6 +338,10 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 			slog.Warn("deferred album: target topic not found", "topic", result.Topic)
 			return
 		}
+	}
+
+	if targetThreadID == msg.MessageThreadID {
+		return
 	}
 
 	rows, err := h.db.QueryContext(ctx,
