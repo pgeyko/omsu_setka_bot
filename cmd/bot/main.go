@@ -417,14 +417,12 @@ func main() {
 		features := settingsHandler.LoadFeatures(msg.Chat.ID)
 		p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
 
-		voiceTranscribed := false
 		if msg.Voice != nil && apiServer.GlobalVoiceTranscription.Load() && features["enable_voice_transcription"] {
 			txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
 			if err != nil {
 				slog.Error("failed to process voice", "error", err)
 			} else if txt != "" {
 				msg.Text = txt
-				voiceTranscribed = true
 			}
 		}
 
@@ -524,7 +522,7 @@ func main() {
 
 		if isBotCommand(msg) {
 			handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
-		} else if isMentionOrAlias || voiceTranscribed {
+		} else if isMentionOrAlias {
 			mentionHandler.Handle(ctx, b, update)
 			} else {
 				h.HandleMessage(ctx, b, update)
