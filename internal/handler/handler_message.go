@@ -106,7 +106,12 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	if text == "" {
 		text = msg.Caption
 	}
-
+	// For documents without caption, use filename as text for classification
+	if msg.Document != nil && text == "" && msg.Document.FileName != "" {
+		text = msg.Document.FileName
+	} else if msg.Document != nil && msg.Document.FileName != "" {
+		text = text + " [файл: " + msg.Document.FileName + "]"
+	}
 	if h.buffer != nil && text != "" {
 		h.buffer.Push(msg.Chat.ID, msg.MessageThreadID, msg.ID, msg.From.Username, text)
 	}
@@ -208,6 +213,9 @@ func (h *Handler) prefilter(msg *models.Message) bool {
 	text := msg.Text
 	if text == "" {
 		text = msg.Caption
+	}
+	if text == "" && msg.Document != nil {
+		text = msg.Document.FileName
 	}
 
 	if text != "" && countWords(text) >= 8 {
