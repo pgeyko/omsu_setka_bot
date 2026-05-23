@@ -41,8 +41,9 @@ func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int
 	// 1. Load group features
 	enabledTools := ao.loadEnabledTools(chatID)
 
-	// Filter restricted tools for non-admin users so LLM never tries to call them
-	if ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) {
+	// Filter restricted tools for non-admin/non-owner users so LLM never tries to call them
+	isAuthorized := ao.adminChecker != nil && (ao.adminChecker.IsAdmin(ctx, chatID, userID) || ao.adminChecker.IsOwner(ctx, chatID, userID))
+	if !isAuthorized {
 		var filtered []llm.Tool
 		for _, t := range enabledTools {
 			if !restrictedTools[t.Name] {
@@ -111,7 +112,7 @@ func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int
 			var toolResult string
 			var err error
 
-			if restrictedTools[tc.Function.Name] && ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) {
+			if restrictedTools[tc.Function.Name] && ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) && !ao.adminChecker.IsOwner(ctx, chatID, userID) {
 				toolResult = fmt.Sprintf("⛔ Инструмент «%s» доступен только администраторам группы.", tc.Function.Name)
 				slog.Warn("non-admin tried to use restricted tool", "tool", tc.Function.Name, "user_id", userID, "chat_id", chatID)
 			} else {
