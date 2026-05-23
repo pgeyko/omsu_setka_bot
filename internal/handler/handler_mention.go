@@ -48,13 +48,22 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	slog.Debug("mention handler: processing", "msg_id", msg.ID, "text", text[:min(len(text), 200)], "chat", msg.Chat.ID, "thread", msg.MessageThreadID)
-
-	// 2. Run through Agent Orchestrator
 	var replyToMsgID int
 	if msg.ReplyToMessage != nil {
 		replyToMsgID = msg.ReplyToMessage.ID
 	}
+
+	slog.Debug("mention handler: processing",
+		"msg_id", msg.ID,
+		"text", text[:min(len(text), 200)],
+		"chat", msg.Chat.ID,
+		"thread", msg.MessageThreadID,
+		"media_group_id", msg.MediaGroupID,
+		"reply_to_msg_id", replyToMsgID,
+		"has_photo", len(msg.Photo) > 0,
+		"photo_count", len(msg.Photo),
+	)
+
 	response, err := h.orchestrator.RunWithContext(ctx, msg.Chat.ID, msg.MessageThreadID, text, msg.From.Username, msg.From.ID, msg.ID, replyToMsgID)
 	if err != nil {
 		slog.Error("agent orchestrator failed", "error", err)

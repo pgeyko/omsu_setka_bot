@@ -741,6 +741,14 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		return "Ошибка: бот не инициализирован.", nil
 	}
 
+	slog.Debug("forward_message start",
+		"target_topic", args.TargetTopic,
+		"forward_msg_id", forwardMsgID,
+		"source_msg_id", e.sourceMessageID,
+		"reply_to_msg_id", e.replyToMessageID,
+		"chat_id", chatID,
+	)
+
 	// Collect media group items if the replied-to message was part of an album
 	var groupItems []MediaGroupItem
 	if e.mediaGroupMessages != nil {
@@ -756,6 +764,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 			return true
 		})
 	}
+	slog.Debug("forward_message in-memory lookup", "group_items", len(groupItems))
 
 	// Fallback: query DB when in-memory map is cold (after restart)
 	if len(groupItems) == 0 {
@@ -776,6 +785,9 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 				rows.Scan(&groupID, &item.MessageID, &item.FileID, &item.Caption)
 				groupItems = append(groupItems, item)
 			}
+			slog.Debug("forward_message DB fallback", "forward_msg_id", forwardMsgID, "group_items", len(groupItems))
+		} else {
+			slog.Debug("forward_message DB query failed", "error", err)
 		}
 	}
 
@@ -800,7 +812,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 	var lastLink string
 
 	if len(groupItems) > 1 {
-		// Album: send all photos as a media group with caption + hashtags on first
+		slog.Debug("forward_message sending album", "count", len(groupItems), "first_caption", captionText[:min(len(captionText), 100)])
 		var media []models.InputMedia
 		for i, item := range groupItems {
 			cap := ""
@@ -812,6 +824,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 				Caption:         cap,
 				ShowCaptionAboveMedia: true,
 			})
+			slog.Debug("forward_message album item", "i", i, "file_id", item.FileID[:min(20, len(item.FileID))], "has_caption", cap != "")
 		}
 		result, err := e.bot.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
 			ChatID:          chatID,
@@ -825,10 +838,12 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		if len(result) > 0 {
 			lastLink = util.ChatLink(chatID, result[0].ID)
 		}
+		slog.Debug("forward_message album sent", "result_count", len(result))
 		return fmt.Sprintf("Альбом из %d фото переслан в топик «%s». %s", len(groupItems), topicName, lastLink), nil
 	}
 
-	// Single message: copy + send hashtags as follow-up
+	// Single message: copy
+	slog.Debug("forward_message single copy", "msg_id", forwardMsgID, "to_thread", tgThreadID)
 	result, err := e.bot.CopyMessage(ctx, &tgbot.CopyMessageParams{
 		ChatID:          chatID,
 		FromChatID:      fmt.Sprintf("%d", chatID),
@@ -840,16 +855,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 		return fmt.Sprintf("Не удалось переслать сообщение: %v", err), nil
 	}
 	lastLink = util.ChatLink(chatID, result.ID)
-
-	if hashtagStr != "" {
-		tagText := strings.TrimSpace(strings.ReplaceAll(hashtagStr, "\n", " "))
-		e.bot.SendMessage(ctx, &tgbot.SendMessageParams{
-			ChatID:          chatID,
-			MessageThreadID: tgThreadID,
-			Text:            tagText,
-			ReplyParameters: &models.ReplyParameters{MessageID: result.ID},
-		})
-	}
+	slog.Debug("forward_message single copy done", "result_id", result.ID)
 
 	return fmt.Sprintf("Сообщение переслано в топик «%s». %s", topicName, lastLink), nil
 }

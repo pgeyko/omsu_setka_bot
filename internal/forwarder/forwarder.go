@@ -43,19 +43,16 @@ func (f *Forwarder) Duplicate(ctx context.Context, fromChatID int64, fromThreadI
 		return nil, fmt.Errorf("copy message failed: %w", err)
 	}
 
-	var signature string
-	if f.persona.Name() != "" {
-		signature = "\n— " + f.persona.Name()
-	}
-
-	headerMsg := header + signature
-	if _, err := f.b.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:          fromChatID,
-		MessageThreadID: targetThreadID,
-		Text:            headerMsg,
-		ParseMode:       models.ParseModeHTML,
-	}); err != nil {
-		return nil, fmt.Errorf("send header failed: %w", err)
+	headerMsg := header
+	if headerMsg != "" {
+		if _, err := f.b.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:          fromChatID,
+			MessageThreadID: targetThreadID,
+			Text:            headerMsg,
+			ParseMode:       models.ParseModeHTML,
+		}); err != nil {
+			return nil, fmt.Errorf("send header failed: %w", err)
+		}
 	}
 
 	return copied, nil
