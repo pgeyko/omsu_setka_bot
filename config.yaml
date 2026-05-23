@@ -15,6 +15,7 @@ llm:
 
   providers:
     # ── Text chain ── (classify, agent, summary, schedule)
+    # gemini-3.1-flash-lite НЕ в text-цепи — несовместим с gemma через thought_signature
     - name: gemma-text
       type: gemini
       api_key: "${GEMINI_API_KEY}"
@@ -24,16 +25,6 @@ llm:
       tpm_limit: 1500
       priority: 10
 
-    - name: gemini-text-fast
-      type: gemini
-      api_key: "${GEMINI_API_KEY}"
-      model: gemini-3.1-flash-lite
-      multimodal: false
-      rpm_limit: 15
-      rpd_limit: 1500
-      tpm_limit: 500000
-      priority: 15
-
     - name: gemma-text-fallback
       type: gemini
       api_key: "${GEMINI_API_KEY}"
@@ -41,7 +32,7 @@ llm:
       multimodal: false
       rpm_limit: 15
       tpm_limit: 1500
-      priority: 30
+      priority: 20
 
     # Резервные провайдеры на резервном ключе
     - name: gemma-text-reserve
@@ -51,7 +42,7 @@ llm:
       multimodal: false
       rpm_limit: 15
       tpm_limit: 1500
-      priority: 40
+      priority: 30
 
     - name: gemma-text-fallback-reserve
       type: gemini
@@ -60,19 +51,14 @@ llm:
       multimodal: false
       rpm_limit: 15
       tpm_limit: 1500
-      priority: 45
-
-    - name: gemini-text-reserve
-      type: gemini
-      api_key: "${GEMINI_RESERVE_API_KEY}"
-      model: gemini-3.1-flash-lite
-      multimodal: false
-      rpm_limit: 15
-      rpd_limit: 500
-      tpm_limit: 500000
-      priority: 50
+      priority: 40
 
     - name: deepseek-final
+      type: deepseek
+      api_key: "${DEEPSEEK_API_KEY}"
+      model: deepseek-chat
+      multimodal: false
+      priority: 90
       type: deepseek
       api_key: "${DEEPSEEK_API_KEY}"
       model: deepseek-chat
