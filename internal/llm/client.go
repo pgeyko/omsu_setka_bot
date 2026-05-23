@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -265,7 +266,68 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 	return c.callHistoryWithSystem(ctx, chatID, reqType, systemContent, history, tools, requiresVision)
 }
 
+func (c *Client) callWhisper(ctx context.Context, provider *Provider, history []AgentMessage) (*Response, error) {
+	var audioData []byte
+	for _, msg := range history {
+		if len(msg.MediaParts) > 0 {
+			audioData = msg.MediaParts[0].Data
+			break
+		}
+	}
+	if len(audioData) == 0 {
+		return nil, fmt.Errorf("no audio data in whisper request")
+	}
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	part, _ := w.CreateFormFile("file", "audio.ogg")
+	part.Write(audioData)
+	w.WriteField("model", provider.Model)
+	w.Close()
+
+	apiURL := provider.BaseURL + "/v1/audio/transcriptions"
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, &buf)
+	if err != nil {
+		return nil, fmt.Errorf("whisper request failed: %w", err)
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+
+	httpResp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("whisper request failed: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read whisper response: %w", err)
+	}
+
+	if httpResp.StatusCode != 200 {
+		return nil, fmt.Errorf("whisper returned status %d: %s", httpResp.StatusCode, truncate(string(respBody), 500))
+	}
+
+	var result struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse whisper response: %w", err)
+	}
+
+	return &Response{
+		Content:      strings.TrimSpace(result.Text),
+		InputTokens:  0,
+		OutputTokens: 0,
+	}, nil
+}
+
 func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, systemContent string, history []AgentMessage, tools []Tool) (*Response, error) {
+	// Whisper models use audio transcription endpoint, not chat completions
+	if strings.HasPrefix(provider.Model, "whisper") {
+		return c.callWhisper(ctx, provider, history)
+	}
+
 	var apiURL string
 	var httpReq *http.Request
 	var errReq error
