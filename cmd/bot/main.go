@@ -414,6 +414,11 @@ func main() {
 				return
 			}
 
+			if strings.Contains(msg.Text, "ПЕРЕКЛИЧКА") {
+				handleRollCall(ctx, b, msg, usernameCache)
+				return
+			}
+
 		features := settingsHandler.LoadFeatures(msg.Chat.ID)
 		p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
 
@@ -877,6 +882,65 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.UnknownCommand,
 		})
 	}
+}
+
+func handleRollCall(ctx context.Context, b *tgbot.Bot, msg *models.Message, usernameCache *telegram.UsernameCache) {
+	admins, err := b.GetChatAdministrators(ctx, &tgbot.GetChatAdministratorsParams{ChatID: msg.Chat.ID})
+	if err != nil {
+		slog.Error("roll call: failed to get admins", "error", err)
+	}
+
+	seen := make(map[string]bool)
+	var mentions []string
+
+	if admins != nil {
+		for _, a := range admins {
+			var username string
+			switch {
+			case a.Owner != nil:
+				username = a.Owner.User.Username
+			case a.Administrator != nil:
+				username = a.Administrator.User.Username
+			}
+			if username != "" && !seen[username] {
+				seen[username] = true
+				mentions = append(mentions, "@"+username)
+			}
+		}
+	}
+
+	if usernameCache != nil {
+		for _, u := range usernameCache.All() {
+			if u != "" && !seen[u] {
+				seen[u] = true
+				mentions = append(mentions, "@"+u)
+			}
+		}
+	}
+
+	if len(mentions) == 0 {
+		b.SendMessage(ctx, &tgbot.SendMessageParams{
+			ChatID:          msg.Chat.ID,
+			MessageThreadID: msg.MessageThreadID,
+			Text:            "📢 ПЕРЕКЛИЧКА! Нет данных об участниках.",
+		})
+		return
+	}
+
+	text := "📢 <b>ПЕРЕКЛИЧКА!</b>\n"
+	for i, m := range mentions {
+		if i > 0 && i%5 == 0 {
+			text += "\n"
+		}
+		text += m + " "
+	}
+
+	b.SendMessage(ctx, &tgbot.SendMessageParams{
+		ChatID:          msg.Chat.ID,
+		MessageThreadID: msg.MessageThreadID,
+		Text:            strings.TrimSpace(text),
+		ParseMode:       models.ParseModeHTML,
+	})
 }
 
 func isBotCommand(msg *models.Message) bool {

@@ -33,3 +33,13 @@ func (uc *UsernameCache) Get(username string) (int64, bool) {
 	uid, ok := uc.cache[username]
 	return uid, ok
 }
+
+func (uc *UsernameCache) All() []string {
+	uc.mu.RLock()
+	defer uc.mu.RUnlock()
+	names := make([]string, 0, len(uc.cache))
+	for name := range uc.cache {
+		names = append(names, name)
+	}
+	return names
+}
