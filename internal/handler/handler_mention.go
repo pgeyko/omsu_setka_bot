@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"strings"
 
 	"omsu_bot/internal/agent"
 
@@ -59,6 +60,7 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 	}
 
 	if response != "" {
+		response = stripXMLTags(response)
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID:          msg.Chat.ID,
 			MessageThreadID: msg.MessageThreadID,
@@ -69,6 +71,42 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 			},
 		})
 	}
+}
+
+var validHTMLTags = map[string]bool{
+	"b": true, "i": true, "u": true, "s": true,
+	"code": true, "pre": true, "a": true, "tg-spoiler": true,
+}
+
+func stripXMLTags(s string) string {
+	var result strings.Builder
+	i := 0
+	for i < len(s) {
+		if s[i] == '<' {
+			close := strings.IndexByte(s[i:], '>')
+			if close == -1 {
+				result.WriteByte(s[i])
+				i++
+				continue
+			}
+			tag := s[i+1 : i+close]
+			tagName := tag
+			if strings.HasPrefix(tag, "/") {
+				tagName = tag[1:]
+			}
+			if idx := strings.IndexAny(tagName, " ="); idx != -1 {
+				tagName = tagName[:idx]
+			}
+			if validHTMLTags[tagName] {
+				result.WriteString(s[i : i+close+1])
+			}
+			i += close + 1
+		} else {
+			result.WriteByte(s[i])
+			i++
+		}
+	}
+	return result.String()
 }
 
 func (h *MentionHandler) reply(ctx context.Context, b *tgbot.Bot, chatID int64, threadID int, replyToID int, text string) {
