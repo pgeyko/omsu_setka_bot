@@ -102,6 +102,9 @@ func NewClient(agentChain, simpleChain, visionChain, audioChain *Chain, tracker 
 }
 
 func (c *Client) PickChain(taskType string, requiresVision bool) *Chain {
+	if requiresVision && c.visionChain != nil {
+		return c.visionChain
+	}
 	switch taskType {
 	case "agent_loop":
 		if c.agentChain != nil {
