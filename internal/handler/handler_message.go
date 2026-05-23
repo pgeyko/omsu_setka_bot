@@ -268,6 +268,13 @@ func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, to
 		return tgThreadID, nil
 	}
 
+	// Try slug-based match: classifier may latinize differently than our MakeSlug
+	tgThreadID, err = h.fuzzySlugMatch(ctx, msg.Chat.ID, topic)
+	if err == nil && tgThreadID != 0 {
+		slog.Debug("slug-based topic match", "topic", topic, "thread_id", tgThreadID)
+		return tgThreadID, nil
+	}
+
 	// Auto-create topic for high-confidence important content with no matching topic
 	if confidence < 0.90 {
 		return 0, fmt.Errorf("no matching topic and confidence too low (%0.2f)", confidence)
@@ -296,6 +303,50 @@ func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, to
 		"name", topicName, "thread_id", forum.MessageThreadID, "slug", slug,
 	)
 	return forum.MessageThreadID, nil
+}
+
+func (h *Handler) fuzzySlugMatch(ctx context.Context, chatID int64, topic string) (int, error) {
+	// Tokenize and match against existing slugs by word overlap
+	words := strings.FieldsFunc(strings.ToLower(topic), func(r rune) bool {
+		return r == '-' || r == '_' || r == ' '
+	})
+	if len(words) == 0 {
+		return 0, fmt.Errorf("no words in topic")
+	}
+
+	rows, err := h.db.QueryContext(ctx,
+		`SELECT slug, tg_thread_id FROM topics WHERE group_id = ? AND is_active = 1`, chatID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	type candidate struct {
+		id    int
+		slug  string
+		score int
+	}
+	var best candidate
+	for rows.Next() {
+		var slug string
+		var id int
+		rows.Scan(&slug, &id)
+		score := 0
+		slugLower := strings.ToLower(slug)
+		for _, w := range words {
+			if len(w) >= 3 && strings.Contains(slugLower, w) {
+				score++
+			}
+		}
+		if score > best.score {
+			best = candidate{id, slug, score}
+		}
+	}
+	if best.score >= 2 || (best.score == 1 && len(words) == 1 && len(words[0]) >= 5) {
+		return best.id, nil
+	}
+	return 0, fmt.Errorf("no slug match for topic: %s", topic)
 }
 
 func (h *Handler) fuzzyLookupThreadID(ctx context.Context, chatID int64, topic string) (int, error) {
