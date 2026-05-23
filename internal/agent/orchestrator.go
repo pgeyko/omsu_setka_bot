@@ -41,6 +41,17 @@ func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int
 	// 1. Load group features
 	enabledTools := ao.loadEnabledTools(chatID)
 
+	// Filter restricted tools for non-admin users so LLM never tries to call them
+	if ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) {
+		var filtered []llm.Tool
+		for _, t := range enabledTools {
+			if !restrictedTools[t.Name] {
+				filtered = append(filtered, t)
+			}
+		}
+		enabledTools = filtered
+	}
+
 	// 2. Prepare history
 	// Build systemExtra containing today's date, the current user's username, etc.
 	systemExtra := fmt.Sprintf("Текущее время: %s\nПользователь, к которому ты обращаешься: @%s\nID текущего топика: %d\nID текущего чата: %d",

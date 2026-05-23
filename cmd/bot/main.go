@@ -573,20 +573,22 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			return
 		}
 
-		omsuID, err := strconv.Atoi(args)
-		if err != nil {
-			b.SendMessage(ctx, &tgbot.SendMessageParams{
-				ChatID: msg.Chat.ID,
-				Text:   botMsgs.InitInvalidID,
-			})
-			return
+		omsuID := 0
+		if args != "" {
+			omsuID, err = strconv.Atoi(args)
+			if err != nil {
+				b.SendMessage(ctx, &tgbot.SendMessageParams{
+					ChatID: msg.Chat.ID,
+					Text:   botMsgs.InitInvalidID,
+				})
+				return
+			}
 		}
 
 		dDB := &omsudb.DB{DB: db}
 		var g omsudb.Group
 		existingGroup, err := dDB.GetGroup(ctx, msg.Chat.ID)
 		if err != nil {
-			// Insert new
 			g = omsudb.Group{
 				ChatID:      msg.Chat.ID,
 				Title:       msg.Chat.Title,
@@ -597,9 +599,10 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			}
 			err = dDB.CreateGroup(ctx, &g)
 		} else {
-			// Update existing
 			g = *existingGroup
-			g.OmsuGroupID = omsuID
+			if omsuID != 0 {
+				g.OmsuGroupID = omsuID
+			}
 			g.IsActive = true
 			if g.Title == "" || strings.HasSuffix(g.Title, "[DELETED]") {
 				g.Title = msg.Chat.Title
@@ -615,7 +618,6 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			})
 			return
 		}
-
 
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: msg.Chat.ID,
