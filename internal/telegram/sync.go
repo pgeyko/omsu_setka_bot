@@ -55,8 +55,8 @@ func RegisterWebhooksWithSetka(ctx context.Context, db *sql.DB, setkaBaseURL, se
 		return nil, fmt.Errorf("failed to marshal webhook registration body: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/v1/admin/webhooks", setkaBaseURL),
+	req, err := http.NewRequestWithContext(ctx, "PUT",
+		fmt.Sprintf("%s/api/v1/admin/webhooks/by-url", setkaBaseURL),
 		bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create http request: %w", err)

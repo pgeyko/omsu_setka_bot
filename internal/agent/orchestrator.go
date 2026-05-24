@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"omsu_bot/internal/llm"
+	"omsu_bot/internal/permissions"
 )
 
 const maxKBSize = 8 * 1024
@@ -21,11 +22,12 @@ type AdminChecker interface {
 }
 
 type AgentOrchestrator struct {
-	llmClient     *llm.Client
-	executor      *ToolExecutor
-	adminChecker  AdminChecker
-	featuresCache sync.Map // key=chatID, value=featuresCacheEntry
-	kbCache       sync.Map // key=chatID, value=kbCacheEntry
+	llmClient        *llm.Client
+	executor         *ToolExecutor
+	adminChecker     AdminChecker
+	permService      *permissions.Service
+	featuresCache    sync.Map // key=chatID, value=featuresCacheEntry
+	kbCache          sync.Map // key=chatID, value=kbCacheEntry
 }
 
 type featuresCacheEntry struct {
@@ -38,11 +40,12 @@ type kbCacheEntry struct {
 	expiresAt time.Time
 }
 
-func NewAgentOrchestrator(llmClient *llm.Client, executor *ToolExecutor, adminChecker AdminChecker) *AgentOrchestrator {
+func NewAgentOrchestrator(llmClient *llm.Client, executor *ToolExecutor, adminChecker AdminChecker, permService *permissions.Service) *AgentOrchestrator {
 	return &AgentOrchestrator{
 		llmClient:    llmClient,
 		executor:     executor,
 		adminChecker: adminChecker,
+		permService:  permService,
 	}
 }
 
@@ -63,17 +66,20 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 	// 1. Load group features
 	enabledTools := ao.loadEnabledTools(chatID)
 
-	// Filter restricted tools for non-admin/non-owner users so LLM never tries to call them
+	// Filter restricted tools based on DB command_permissions (P1#7)
 	isAuthorized := ao.adminChecker != nil && (ao.adminChecker.IsAdmin(ctx, chatID, userID) || ao.adminChecker.IsOwner(ctx, chatID, userID))
-	if !isAuthorized {
-		var filtered []llm.Tool
-		for _, t := range enabledTools {
-			if !restrictedTools[t.Name] {
-				filtered = append(filtered, t)
-			}
+	var filtered []llm.Tool
+	for _, t := range enabledTools {
+		if restrictedTools[t.Name] && !isAuthorized {
+			continue
 		}
-		enabledTools = filtered
+		// Check DB permissions: if command is admin-only and user is not admin, skip
+		if ao.permService != nil && ao.permService.IsAdminOnly(ctx, chatID, t.Name) && !isAuthorized {
+			continue
+		}
+		filtered = append(filtered, t)
 	}
+	enabledTools = filtered
 
 	// Inject available protocol names into run_protocol description
 	for i := range enabledTools {
@@ -225,7 +231,7 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 				go func(i int, tc llm.ToolCall) {
 					var tr string
 					var execErr error
-					if restrictedTools[tc.Function.Name] && ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) && !ao.adminChecker.IsOwner(ctx, chatID, userID) {
+					if !ao.canExecuteTool(ctx, chatID, userID, tc.Function.Name) {
 						tr = fmt.Sprintf("⛔ Инструмент «%s» доступен только администраторам группы.", tc.Function.Name)
 					} else {
 						tr, execErr = ao.executor.Execute(ctx, chatID, tc.Function.Name, tc.Function.Arguments)
@@ -251,7 +257,7 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 			for _, tc := range resp.ToolCalls {
 				var toolResult string
 				var execErr error
-				if restrictedTools[tc.Function.Name] && ao.adminChecker != nil && !ao.adminChecker.IsAdmin(ctx, chatID, userID) && !ao.adminChecker.IsOwner(ctx, chatID, userID) {
+				if !ao.canExecuteTool(ctx, chatID, userID, tc.Function.Name) {
 					toolResult = fmt.Sprintf("⛔ Инструмент «%s» доступен только администраторам группы.", tc.Function.Name)
 					slog.Warn("non-admin tried to use restricted tool", "tool", tc.Function.Name, "user_id", userID, "chat_id", chatID)
 				} else {
@@ -371,4 +377,22 @@ func stringsJoin(strs []string, sep string) string {
 		result += sep + strs[i]
 	}
 	return result
+}
+
+// canExecuteTool checks whether a user is allowed to execute a given tool.
+// Uses DB command_permissions table first, then falls back to hardcoded restrictedTools.
+func (ao *AgentOrchestrator) canExecuteTool(ctx context.Context, chatID int64, userID int64, toolName string) bool {
+	isAdminOrOwner := ao.adminChecker != nil && (ao.adminChecker.IsAdmin(ctx, chatID, userID) || ao.adminChecker.IsOwner(ctx, chatID, userID))
+
+	// Hardcoded restricted tools (legacy fallback)
+	if restrictedTools[toolName] && !isAdminOrOwner {
+		return false
+	}
+
+	// DB-backed permissions (P1#7)
+	if ao.permService != nil && ao.permService.IsAdminOnly(ctx, chatID, toolName) && !isAdminOrOwner {
+		return false
+	}
+
+	return true
 }

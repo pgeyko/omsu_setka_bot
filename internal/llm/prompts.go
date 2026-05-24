@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"sync"
 )
+
+var safePromptName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type PromptRegistry struct {
 	mu         sync.RWMutex
@@ -74,7 +78,21 @@ func (r *PromptRegistry) Dir() string {
 }
 
 func (r *PromptRegistry) Update(name, content string) error {
+	if !safePromptName.MatchString(name) {
+		return fmt.Errorf("invalid prompt name: %s", name)
+	}
 	path := filepath.Join(r.promptsDir, name+".txt")
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path: %w", err)
+	}
+	absDir, err := filepath.Abs(r.promptsDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve prompts dir: %w", err)
+	}
+	if !strings.HasPrefix(absPath, absDir) {
+		return fmt.Errorf("path traversal detected for prompt %s", name)
+	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("failed to write prompt %s: %w", name, err)
 	}
@@ -82,7 +100,21 @@ func (r *PromptRegistry) Update(name, content string) error {
 }
 
 func (r *PromptRegistry) Delete(name string) error {
+	if !safePromptName.MatchString(name) {
+		return fmt.Errorf("invalid prompt name: %s", name)
+	}
 	path := filepath.Join(r.promptsDir, name+".txt")
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("failed to resolve path: %w", err)
+	}
+	absDir, err := filepath.Abs(r.promptsDir)
+	if err != nil {
+		return fmt.Errorf("failed to resolve prompts dir: %w", err)
+	}
+	if !strings.HasPrefix(absPath, absDir) {
+		return fmt.Errorf("path traversal detected for prompt %s", name)
+	}
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("failed to delete prompt %s: %w", name, err)
 	}

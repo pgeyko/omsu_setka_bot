@@ -9,22 +9,22 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type rateLimiter struct {
+type RateLimiter struct {
 	mu       sync.Mutex
 	requests map[int64][]time.Time
 	limit    int
 	window   time.Duration
 }
 
-func newRateLimiter(limit int, window time.Duration) *rateLimiter {
-	return &rateLimiter{
+func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+	return &RateLimiter{
 		requests: make(map[int64][]time.Time),
 		limit:    limit,
 		window:   window,
 	}
 }
 
-func (r *rateLimiter) Allow(userID int64) bool {
+func (r *RateLimiter) Allow(userID int64) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -49,19 +49,19 @@ func (r *rateLimiter) Allow(userID int64) bool {
 	return true
 }
 
-type middleware struct {
-	rateLimit *rateLimiter
+type Middleware struct {
+	rateLimit *RateLimiter
 }
 
-func newMiddleware(limitPerMin int) *middleware {
-	return &middleware{
-		rateLimit: newRateLimiter(limitPerMin, 1*time.Minute),
+func NewMiddleware(limitPerMin int) *Middleware {
+	return &Middleware{
+		rateLimit: NewRateLimiter(limitPerMin, 1*time.Minute),
 	}
 }
 
-func (m *middleware) RateLimit(next tgbot.HandlerFunc) tgbot.HandlerFunc {
+func (m *Middleware) RateLimit(next tgbot.HandlerFunc) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
-		if update.Message != nil && !m.rateLimit.Allow(update.Message.From.ID) {
+		if update.Message != nil && update.Message.From != nil && !m.rateLimit.Allow(update.Message.From.ID) {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{
 				ChatID: update.Message.Chat.ID,
 				Text:   "⏳ Слишком много запросов. Подожди минуту.",

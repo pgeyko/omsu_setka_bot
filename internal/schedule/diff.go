@@ -21,9 +21,13 @@ type Change struct {
 }
 
 type WebhookPayload struct {
-	Type    string   `json:"type"`
-	GroupID int      `json:"group_id"`
-	Changes []Change `json:"changes"`
+	Type       string   `json:"type"`
+	GroupID    int      `json:"group_id"`
+	EntityType string   `json:"entity_type,omitempty"`
+	EntityID   int      `json:"entity_id,omitempty"`
+	EventID    string   `json:"event_id,omitempty"`
+	OccurredAt string   `json:"occurred_at,omitempty"`
+	Changes    []Change `json:"changes"`
 }
 
 type AnomalyType string
@@ -68,7 +72,7 @@ type DiffEngine struct {
 }
 
 type TelegramPoster interface {
-	PostToThread(ctx context.Context, threadID int, text string) error
+	PostToThread(ctx context.Context, chatID int64, threadID int, text string) error
 }
 
 type LLMClient interface {
@@ -79,17 +83,23 @@ func NewDiffEngine(db *sql.DB, bot TelegramPoster, client LLMClient, announcer *
 	return &DiffEngine{db: db, bot: bot, client: client, announcer: announcer}
 }
 
-func (e *DiffEngine) ProcessWebhook(ctx context.Context, payload *WebhookPayload, announceThreadID int) error {
-	anomalies := e.detectAnomalies(payload.Changes)
-	slog.Debug("anomalies detected", "count", len(anomalies))
+func (e *DiffEngine) ProcessWebhook(ctx context.Context, payload *WebhookPayload, chatID int64, announceThreadID int) error {
+	// Validate entity_type — only "group" is supported for now
+	if payload.EntityType != "" && payload.EntityType != "group" {
+		slog.Warn("unsupported entity_type in webhook, skipping", "entity_type", payload.EntityType)
+		return nil
+	}
 
-	if len(anomalies) == 0 {
-		slog.Info("no anomalies detected in webhook payload")
+	anomalies := e.detectAnomalies(payload.Changes)
+	hasNewLessons := e.hasNewLessons(payload.Changes)
+
+	if len(anomalies) == 0 && !hasNewLessons {
+		slog.Info("no anomalies or new lessons in webhook payload")
 		return nil
 	}
 
 	snapshotData, _ := json.Marshal(payload)
-	snapshotID, err := e.saveSnapshot(ctx, string(snapshotData))
+	snapshotID, err := e.saveSnapshot(ctx, chatID, payload.GroupID, string(snapshotData))
 	if err != nil {
 		return fmt.Errorf("failed to save snapshot: %w", err)
 	}
@@ -117,11 +127,20 @@ func (e *DiffEngine) ProcessWebhook(ctx context.Context, payload *WebhookPayload
 	if msg == "" {
 		return nil
 	}
-	if err := e.bot.PostToThread(ctx, announceThreadID, msg); err != nil {
+	if err := e.bot.PostToThread(ctx, chatID, announceThreadID, msg); err != nil {
 		slog.Error("failed to post announcement", "error", err)
 	}
 
 	return nil
+}
+
+func (e *DiffEngine) hasNewLessons(changes []Change) bool {
+	for _, c := range changes {
+		if c.Field == "full" && c.Old == "" && c.New != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *DiffEngine) detectAnomalies(changes []Change) []Anomaly {
@@ -233,9 +252,9 @@ func (e *DiffEngine) formatDate(dateStr string) string {
 	return fmt.Sprintf("%s %d %s", dayName, t.Day(), months[t.Month()])
 }
 
-func (e *DiffEngine) saveSnapshot(ctx context.Context, data string) (int, error) {
+func (e *DiffEngine) saveSnapshot(ctx context.Context, chatID int64, groupID int, data string) (int, error) {
 	result, err := e.db.ExecContext(ctx,
-		`INSERT INTO schedule_snapshots (data, created_at) VALUES (?, CURRENT_TIMESTAMP)`, data)
+		`INSERT INTO schedule_snapshots (group_id, data, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)`, groupID, data)
 	if err != nil {
 		return 0, err
 	}

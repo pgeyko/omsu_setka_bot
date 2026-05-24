@@ -33,6 +33,12 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 
 	msg := update.Message
 
+	userID, username, hasSender := extractSender(msg)
+	if !hasSender {
+		slog.Debug("mention handler: message without sender, skipping", "msg_id", msg.ID)
+		return
+	}
+
 	var active int
 	if err := h.db.QueryRowContext(ctx, "SELECT is_active FROM groups WHERE chat_id = ?", msg.Chat.ID).Scan(&active); err != nil || active != 1 {
 		slog.Debug("mention handler: group not active", "chat_id", msg.Chat.ID, "err", err)
@@ -64,7 +70,7 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 		"photo_count", len(msg.Photo),
 	)
 
-	response, err := h.orchestrator.RunWithContext(ctx, msg.Chat.ID, msg.MessageThreadID, text, msg.From.Username, msg.From.ID, msg.ID, replyToMsgID)
+	response, err := h.orchestrator.RunWithContext(ctx, msg.Chat.ID, msg.MessageThreadID, text, username, userID, msg.ID, replyToMsgID)
 	if err != nil {
 		slog.Error("agent orchestrator failed", "error", err)
 		h.reply(ctx, b, msg.Chat.ID, msg.MessageThreadID, msg.ID, "Не удалось обработать запрос.")

@@ -177,6 +177,14 @@ func (d *DB) Migrate() error {
 			PRIMARY KEY (media_group_id, message_id)
 		);`,
 		`CREATE INDEX IF NOT EXISTS idx_media_group_items_group ON media_group_items(media_group_id, chat_id);`,
+
+		// Webhook replay protection: deduplicate event IDs (P1#11)
+		`CREATE TABLE IF NOT EXISTS webhook_events (
+			event_id    TEXT PRIMARY KEY,
+			received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			expires_at  DATETIME NOT NULL
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_webhook_events_expires ON webhook_events(expires_at);`,
 	}
 
 	for _, q := range queries {

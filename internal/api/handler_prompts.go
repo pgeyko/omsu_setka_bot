@@ -3,9 +3,12 @@ package api
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/gofiber/fiber/v2"
 )
+
+var validPromptName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 type promptItem struct {
 	Name string `json:"name"`
@@ -38,8 +41,8 @@ func (s *Server) handleGetPrompts(c *fiber.Ctx) error {
 
 func (s *Server) handleGetPrompt(c *fiber.Ctx) error {
 	name := c.Params("name")
-	if name == "" {
-		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "prompt name is required")
+	if name == "" || !validPromptName.MatchString(name) {
+		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid prompt name")
 	}
 	content := s.Prompts.Get(name)
 	if content == "" {
@@ -50,8 +53,8 @@ func (s *Server) handleGetPrompt(c *fiber.Ctx) error {
 
 func (s *Server) handleUpdatePrompt(c *fiber.Ctx) error {
 	name := c.Params("name")
-	if name == "" {
-		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "prompt name is required")
+	if name == "" || !validPromptName.MatchString(name) {
+		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid prompt name")
 	}
 
 	var req updatePromptRequest
@@ -71,8 +74,8 @@ func (s *Server) handleUpdatePrompt(c *fiber.Ctx) error {
 
 func (s *Server) handleDeletePrompt(c *fiber.Ctx) error {
 	name := c.Params("name")
-	if name == "" {
-		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "prompt name is required")
+	if name == "" || !validPromptName.MatchString(name) {
+		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid prompt name")
 	}
 
 	if err := s.Prompts.Delete(name); err != nil {

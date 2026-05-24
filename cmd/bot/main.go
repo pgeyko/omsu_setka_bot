@@ -46,6 +46,7 @@ import (
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/media"
 	"omsu_bot/internal/messages"
+	"omsu_bot/internal/permissions"
 	"omsu_bot/internal/persona"
 	"omsu_bot/internal/schedule"
 	"omsu_bot/internal/telegram"
@@ -56,9 +57,9 @@ type telegramPoster struct {
 	chatID int64
 }
 
-func (p *telegramPoster) PostToThread(ctx context.Context, threadID int, text string) error {
+func (p *telegramPoster) PostToThread(ctx context.Context, chatID int64, threadID int, text string) error {
 	_, err := p.b.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID:          p.chatID,
+		ChatID:          chatID,
 		MessageThreadID: threadID,
 		Text:            text,
 	})
@@ -239,7 +240,7 @@ func main() {
 		poster = &telegramPoster{b: tgBot, chatID: cfg.Telegram.GroupID}
 	}
 	diffEngine := schedule.NewDiffEngine(database.DB, poster, llmClient, schedule.NewAnnouncer(llmClient, prompts))
-	webhookHandler := handlers.NewWebhookHandler(diffEngine, cfg.Webhook.ScheduleSecret, cfg.Webhook.AnnounceThreadID)
+	webhookHandler := handlers.NewWebhookHandler(diffEngine, database.DB, cfg.Webhook.ScheduleSecret, cfg.Webhook.AnnounceThreadID)
 
 	var botSender api.BotSender
 	if poster != nil {
@@ -334,8 +335,9 @@ func main() {
 			apiServer.GlobalPhotoProcessing.Load,
 		)
 
+		permService := permissions.NewService(database.DB)
 		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache, &mediaGroupMessages, classif)
-		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache)
+		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache, permService)
 		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername)
 		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
 		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient, prompts)
@@ -445,10 +447,13 @@ func main() {
 			}
 		})
 
+		// Rate-limit middleware for Telegram handlers (P1#6)
+		tgRateLimit := handlers.NewMiddleware(cfg.RateLimit.GlobalPerUserPerMin)
+
 		// Active groups messaging
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
 			return update.Message != nil && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки"
-		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+		}, tgRateLimit.RateLimit(func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			checkCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			active := database.IsGroupActive(checkCtx, update.Message.Chat.ID)
 			cancel()
@@ -460,6 +465,9 @@ func main() {
 			}
 
 			msg := update.Message
+			if msg.From == nil {
+				return
+			}
 			state := sessionStore.Get(msg.Chat.ID, msg.From.ID)
 			if state != telegram.StateNone {
 				settingsHandler.HandleAdminInput(ctx, b, update, state)
@@ -598,7 +606,7 @@ func main() {
 			} else {
 				h.HandleMessage(ctx, b, update)
 			}
-		})
+		}))
 
 		// Private / inactive groups handler
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
@@ -653,6 +661,9 @@ var (
 
 func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry, settingsHandler *handlers.SettingsHandler, botMsgs *messages.Messages, promptRegistry *llm.PromptRegistry) {
 	msg := update.Message
+	if msg == nil || msg.From == nil {
+		return
+	}
 	text := msg.Text
 
 	parts := strings.SplitN(text, " ", 2)

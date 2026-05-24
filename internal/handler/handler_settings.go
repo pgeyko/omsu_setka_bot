@@ -84,7 +84,12 @@ func (h *SettingsHandler) HandleSettingsCommand(ctx context.Context, b *tgbot.Bo
 	}
 	msg := update.Message
 	chatID := msg.Chat.ID
-	userID := msg.From.ID
+
+	userID, _, hasSender := extractSender(msg)
+	if !hasSender {
+		slog.Debug("settings: message without sender, skipping", "chat", chatID)
+		return
+	}
 
 	slog.Info("settings command", "user", userID, "chat", chatID, "type", msg.Chat.Type)
 

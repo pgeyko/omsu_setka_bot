@@ -57,7 +57,7 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
-		BodyLimit:             64 * 1024, // 64 KB default; context routes override to 512 KB
+		BodyLimit:             512 * 1024, // 512 KB — matches context route limit
 		ReadTimeout:           10 * time.Second,
 		WriteTimeout:          10 * time.Second,
 		ReadBufferSize:        4096,

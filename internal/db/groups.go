@@ -231,6 +231,17 @@ func (d *DB) UpdateGroupOmsuID(ctx context.Context, chatID int64, omsuGroupID in
 	return err
 }
 
+// GetChatIDByOmsuGroupID resolves a Telegram chat_id from a Setka omsu_group_id.
+// Used by the webhook handler to post announcements to the correct group.
+func (d *DB) GetChatIDByOmsuGroupID(ctx context.Context, omsuGroupID int) (int64, error) {
+	var chatID int64
+	err := d.QueryRowContext(ctx, "SELECT chat_id FROM groups WHERE omsu_group_id = ? AND is_active = 1", omsuGroupID).Scan(&chatID)
+	if err != nil {
+		return 0, err
+	}
+	return chatID, nil
+}
+
 // IsGroupActive checks if the group exists and is active in the database
 func (d *DB) IsGroupActive(ctx context.Context, chatID int64) bool {
 	var active int

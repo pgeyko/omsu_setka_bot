@@ -68,6 +68,12 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
+	userID, username, hasSender := extractSender(msg)
+	if !hasSender {
+		slog.Debug("message without sender, skipping", "msg_id", msg.ID, "chat", msg.Chat.ID)
+		return
+	}
+
 	var active int
 	if err := h.db.QueryRowContext(ctx, "SELECT is_active FROM groups WHERE chat_id = ?", msg.Chat.ID).Scan(&active); err != nil || active != 1 {
 		return
@@ -75,8 +81,8 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 
 	slog.Debug("tg message",
 		"msg_id", msg.ID,
-		"from", msg.From.ID,
-		"username", msg.From.Username,
+		"from", userID,
+		"username", username,
 		"text", truncate(msg.Text, 500),
 		"chat", msg.Chat.ID,
 		"thread", msg.MessageThreadID,
@@ -671,4 +677,8 @@ type mediaGroupItem struct {
 	MessageID int
 	FileID    string
 	Caption   string
+}
+
+func extractSender(msg *models.Message) (userID int64, username string, ok bool) {
+	return util.MessageSender(msg)
 }
