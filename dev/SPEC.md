@@ -8,15 +8,6 @@
 ## SQLite Schema (полная)
 
 ```sql
--- Личность бота (singleton, id всегда = 1)
-CREATE TABLE bot_persona (
-    id            INTEGER PRIMARY KEY CHECK (id = 1),
-    name          TEXT NOT NULL DEFAULT 'Помощник',
-    system_prompt TEXT NOT NULL DEFAULT '',
-    signature     TEXT NOT NULL DEFAULT '',
-    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Группы (мультиарендность)
 CREATE TABLE groups (
     chat_id       INTEGER PRIMARY KEY,
@@ -151,7 +142,7 @@ CREATE TABLE revoked_tokens (
 **Headers:**
 ```
 Content-Type: application/json
-X-Webhook-Signature: sha256=<hex(HMAC-SHA256(body, SCHEDULE_WEBHOOK_SECRET))>
+X-Webhook-Signature: <hex(HMAC-SHA256(body, SCHEDULE_WEBHOOK_SECRET))>
 ```
 
 **Payload:**
@@ -197,14 +188,6 @@ qwen/qwen3-32b            (Groq, 60 RPM, 1K RPD, 6K TPM)
       → gemma-4-26b-a4b-it(Gemini, 15 RPM, 1.5K RPD)
 ```
 
-### Simple chain (classify, diagnostic, summary)
-```
-qwen/qwen3-32b            (Groq, 60 RPM, 1K RPD, 6K TPM)
-  → gemini-3.1-flash-lite  (Gemini, 15 RPM, 500 RPD, 250K TPM)
-    → llama-3.1-8b-instant (Groq, 30 RPM, 14.4K RPD)
-      → gemma-4-26b-a4b-it (Gemini, 15 RPM, 1.5K RPD)
-```
-
 ### Vision chain (OCR, фото)
 ```
 llama-4-scout-17b-16e      (Groq, 30 RPM, 1K RPD, 30K TPM)
@@ -227,23 +210,15 @@ gemini-3.1-flash-lite     (Gemini, 15 RPM, 500 RPD, 250K TPM)
 
 ---
 
-## Persona System
+## Persona Storage
 
-**persona.md формат:**
-```markdown
-# name
-Вероника
-
-# system_prompt
-Ты — Вероника (Ника), технический ассистент студенческой группы.
-...
-```
+Бот хранит личность в памяти + файле `persona.md`, НЕ в SQLite.
 
 **Загрузка:**
 ```
-1. SELECT * FROM bot_persona WHERE id = 1
-2. Если нет записи → прочитать persona.md → INSERT
-3. Кэшировать в persona.Store
+1. При старте: файл persona.md → парсинг → кэш в memory (sync.RWMutex)
+2. PUT /api/persona → обновление в памяти (не в БД)
+3. POST /api/persona/reset → перечитывание persona.md
 ```
 
 ---
@@ -297,7 +272,7 @@ Telegram Update
 
 ### Auth
 ```
-POST /api/auth/token     Body: {"secret": "..."}     → {"token": "jwt..."}
+POST /api/auth/token     Body: {"admin_secret": "..."}     → {"token": "jwt..."}
 POST /api/auth/logout
 ```
 

@@ -19,6 +19,7 @@ type Antispam struct {
 	joinedUsers  map[string]time.Time
 	messageTimes map[string][]time.Time
 	loadFeatures func(chatID int64) map[string]bool
+	captchaStore sync.Map // key=chatID:memberID, value=correct answer
 }
 
 func NewAntispam(loaders ...func(chatID int64) map[string]bool) *Antispam {
@@ -119,12 +120,15 @@ func (a *Antispam) HandleNewChatMembers(ctx context.Context, b *tgbot.Bot, chatI
 			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 		})
 
+		captchaKey := fmt.Sprintf("%d:%d", chatID, member.ID)
+		a.captchaStore.Store(captchaKey, correct)
+
 		var keyboard [][]models.InlineKeyboardButton
 		var row []models.InlineKeyboardButton
 		for _, o := range shuffled {
 			row = append(row, models.InlineKeyboardButton{
 				Text:         strconv.Itoa(o),
-				CallbackData: fmt.Sprintf("captcha:%d:%d:%d", member.ID, correct, o),
+				CallbackData: fmt.Sprintf("captcha:%d:%d", member.ID, o),
 			})
 		}
 		keyboard = append(keyboard, row)
@@ -271,7 +275,7 @@ func (a *Antispam) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot, update
 	}
 
 	parts := strings.Split(data, ":")
-	if len(parts) != 4 {
+	if len(parts) != 3 {
 		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
 			CallbackQueryID: cb.ID,
 			Text:            "Ошибка: неверный формат капчи.",
@@ -281,10 +285,21 @@ func (a *Antispam) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot, update
 	}
 
 	targetUserID, _ := strconv.ParseInt(parts[1], 10, 64)
-	correctAnswer, _ := strconv.Atoi(parts[2])
-	chosenAnswer, _ := strconv.Atoi(parts[3])
+	chosenAnswer, _ := strconv.Atoi(parts[2])
 
 	chatID, msgID := getChatAndMsgID(cb.Message)
+
+	captchaKey := fmt.Sprintf("%d:%d", chatID, targetUserID)
+	stored, ok := a.captchaStore.LoadAndDelete(captchaKey)
+	if !ok {
+		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
+			CallbackQueryID: cb.ID,
+			Text:            "❌ Капча устарела. Попросите администратора снова.",
+			ShowAlert:       true,
+		})
+		return
+	}
+	correctAnswer := stored.(int)
 
 	if b == nil {
 		return

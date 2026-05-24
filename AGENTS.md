@@ -133,8 +133,6 @@ If tests cannot run due to missing deps, report the exact blocker.
 - Use `log/slog` (stdlib) for structured logging — not zerolog (that's setka).
 - Use `github.com/gofiber/fiber/v2` for REST API.
 - Use `modernc.org/sqlite` (pure Go, no CGO).
-- Use `github.com/jmoiron/sqlx` for SQL queries.
-- Use `golang-migrate/migrate` for migrations.
 - Config via `github.com/ilyakaznacheev/cleanenv` (env + YAML).
 - JWT via `github.com/golang-jwt/jwt/v5`.
 - Telegram via `github.com/go-telegram/bot`.
@@ -150,7 +148,6 @@ If tests cannot run due to missing deps, report the exact blocker.
 ```sql
 groups (chat_id PK, title, api_token, omsu_group_id, is_active, is_vip, created_at)
 superadmins (user_id PK, note, created_at)
-bot_persona (id=1 singleton, name, system_prompt, signature, updated_at)
 topics (id, group_id FK, tg_thread_id, name, slug, aliases JSON, description, hashtags JSON, is_active)
 processed_messages (message_id, chat_id, thread_id, action, target_thread_id)
 llm_requests (id, group_id FK, type, provider, input_tokens, output_tokens, model, cost_usd, created_at)

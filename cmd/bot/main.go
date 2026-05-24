@@ -13,13 +13,16 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -142,6 +145,11 @@ func main() {
 			TPMLimit: pcfg.TPMLimit,
 			RPDLimit: pcfg.RPDLimit,
 			TPDLimit: pcfg.TPDLimit,
+			Priority: pcfg.Priority,
+		}
+
+		if pcfg.Multimodal {
+			p.Capabilities = append(p.Capabilities, llm.CapabilityMultimodal)
 		}
 
 		switch pcfg.Chain {
@@ -150,10 +158,10 @@ func main() {
 		case "simple":
 			simpleProviders = append(simpleProviders, p)
 		case "vision":
-			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
+			p.Capabilities = append(p.Capabilities, llm.CapabilityMultimodal)
 			visionProviders = append(visionProviders, p)
 		case "audio":
-			p.Capabilities = []llm.Capability{llm.CapabilityMultimodal}
+			p.Capabilities = append(p.Capabilities, llm.CapabilityMultimodal)
 			audioProviders = append(audioProviders, p)
 		default:
 			simpleProviders = append(simpleProviders, p)
@@ -164,6 +172,17 @@ func main() {
 	simpleChain := llm.NewChain(simpleProviders)
 	visionChain := llm.NewChain(visionProviders)
 	audioChain := llm.NewChain(audioProviders)
+
+	// Sort providers within each chain by priority
+	sort.Slice(agentProviders, func(i, j int) bool { return agentProviders[i].Priority < agentProviders[j].Priority })
+	sort.Slice(simpleProviders, func(i, j int) bool { return simpleProviders[i].Priority < simpleProviders[j].Priority })
+	sort.Slice(visionProviders, func(i, j int) bool { return visionProviders[i].Priority < visionProviders[j].Priority })
+	sort.Slice(audioProviders, func(i, j int) bool { return audioProviders[i].Priority < audioProviders[j].Priority })
+
+	agentChain = llm.NewChain(agentProviders)
+	simpleChain = llm.NewChain(simpleProviders)
+	visionChain = llm.NewChain(visionProviders)
+	audioChain = llm.NewChain(audioProviders)
 
 	// Combined chain for API diagnostics (shows all providers)
 	var allProviders []*llm.Provider
@@ -264,12 +283,33 @@ func main() {
 		sigHup := make(chan os.Signal, 1)
 		signal.Notify(sigHup, syscall.SIGHUP)
 		for range sigHup {
-			slog.Info("SIGHUP received, reloading prompts")
+			slog.Info("SIGHUP received, reloading prompts and protocols")
 			if err := prompts.Reload(); err != nil {
 				slog.Error("failed to reload prompts", "error", err)
 			} else {
 				slog.Info("prompts reloaded successfully")
 			}
+			agent.ReloadProtocols()
+			slog.Info("protocols reloaded")
+		}
+	}()
+
+	go func() {
+		t := time.NewTicker(5 * time.Minute)
+		defer t.Stop()
+		for range t.C {
+			cutoff := time.Now().Add(-10 * time.Minute)
+			processedMediaGroups.Range(func(key, value interface{}) bool {
+				if value.(time.Time).Before(cutoff) {
+					processedMediaGroups.Delete(key)
+				}
+				return true
+			})
+			// Also clean mediaGroupMessages older than 30 minutes
+			mediaGroupMessages.Range(func(key, value interface{}) bool {
+				mediaGroupMessages.Delete(key)
+				return true
+			})
 		}
 	}()
 
@@ -353,8 +393,14 @@ func main() {
 
 		// New Chat Members captcha prompt
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && len(update.Message.NewChatMembers) > 0 && database.IsGroupActive(context.Background(), update.Message.Chat.ID)
+			return update.Message != nil && len(update.Message.NewChatMembers) > 0
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			checkCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			active := database.IsGroupActive(checkCtx, update.Message.Chat.ID)
+			cancel()
+			if !active {
+				return
+			}
 			antispam.HandleNewChatMembers(ctx, b, update.Message.Chat.ID, update.Message.NewChatMembers)
 		})
 
@@ -401,8 +447,14 @@ func main() {
 
 		// Active groups messaging
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && database.IsGroupActive(context.Background(), update.Message.Chat.ID) && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки"
+			return update.Message != nil && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки"
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			checkCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			active := database.IsGroupActive(checkCtx, update.Message.Chat.ID)
+			cancel()
+			if !active {
+				return
+			}
 			if antispam.CheckFloodAndLinks(ctx, b, update.Message) {
 				return
 			}
@@ -482,11 +534,15 @@ func main() {
 					}
 				}
 
-				// Skip photos in already-processed media groups to avoid duplicate OCR
-				if msg.MediaGroupID != "" {
-					if _, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, true); seen {
+			// Skip photos in already-processed media groups to avoid duplicate OCR
+			if msg.MediaGroupID != "" {
+				if stored, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, time.Now()); seen {
+					if time.Since(stored.(time.Time)) < 10*time.Minute {
 						shouldOCR = false
+					} else {
+						processedMediaGroups.Store(msg.MediaGroupID, time.Now())
 					}
+				}
 				}
 
 				if shouldOCR {
@@ -546,11 +602,17 @@ func main() {
 
 		// Private / inactive groups handler
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			text := ""
-			if update.Message != nil {
-				text = update.Message.Text
+			if update.Message == nil {
+				return false
 			}
-			return update.Message != nil && !database.IsGroupActive(context.Background(), update.Message.Chat.ID) && text != "/start" && text != "/help" && !strings.HasPrefix(text, "/init")
+			text := update.Message.Text
+			if text == "/start" || text == "/help" || strings.HasPrefix(text, "/init") {
+				return false
+			}
+			checkCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			active := database.IsGroupActive(checkCtx, update.Message.Chat.ID)
+			cancel()
+			return !active
 		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			// Private chat / inactive group — ignore all except /start and /help (handled above)
 		})
@@ -584,7 +646,7 @@ var (
 	botUsername          string
 	providerCount        int
 	globalLLM            *llm.Client
-	processedMediaGroups sync.Map // key=media_group_id, value=true — dedup OCR per group
+	processedMediaGroups sync.Map // key=media_group_id, value=time.Time — dedup OCR per group
 	mediaGroupMessages   sync.Map // key=media_group_id, value=[]agent.MediaGroupItem
 	mediaGroupMu         sync.Mutex // guards Load+append+Store for mediaGroupMessages
 )
@@ -659,7 +721,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			g = omsudb.Group{
 				ChatID:      msg.Chat.ID,
 				Title:       msg.Chat.Title,
-				APIToken:    fmt.Sprintf("init-%d-%d", msg.Chat.ID, time.Now().Unix()),
+				APIToken:    generateAPIToken(),
 				OmsuGroupID: omsuID,
 				IsActive:    true,
 				IsVIP:       false,
@@ -939,7 +1001,7 @@ func handleRollCall(ctx context.Context, b *tgbot.Bot, msg *models.Message, user
 		return
 	}
 
-	text := "📢 <b>ПЕРЕКЛИЧКА!</b>\n"
+	text := "📢 <b>ПЕРЕКЛИЧКА!</b>\n⚠️ <i>(показаны только администраторы и недавно активные участники)</i>\n"
 	for i, m := range mentions {
 		if i > 0 && i%5 == 0 {
 			text += "\n"
@@ -1023,6 +1085,14 @@ func registerWithSetka(ctx context.Context, cfg *config.Config) {
 	} else {
 		slog.Warn("omsu_setka registration returned non-2xx", "status", resp.StatusCode)
 	}
+}
+
+func generateAPIToken() string {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand.Read failed: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }
 
 func isBotMention(msg *models.Message) bool {

@@ -26,7 +26,7 @@ omsu_setka                  │  │  Fiber API  │──┼──→ Admin UI 
 ```
 
 **Принципы:**
-- Один процесс = одна группа
+- Мультиарендный — один процесс обслуживает несколько групп
 - Всё состояние в SQLite (кроме LLM circuit breaker)
 - Telegram API — long polling (не webhook)
 - HTTP-сервер (Fiber) для админки и вебхуков от setka
@@ -91,7 +91,7 @@ HandlerTypeMessageText
 omsu_setka
     │
     POST /webhook/schedule
-    Header: X-Webhook-Signature (HMAC-SHA256)
+    Header: X-Webhook-Signature (HMAC-SHA256, hex-дайджест без префикса)
     Body: {"type":"change","group_id":12345,"changes":[...]}
     │
     ▼
@@ -118,33 +118,20 @@ WebhookHandler.Handle()
 
 ### 3.1 Структура провайдеров
 
-```
-config.yaml:
-  llm.providers:
-    [0] gemma-text             ← приоритет 10
-        model: gemma-4-31b-it
-        api_key: GEMINI_API_KEY
-        multimodal: false
+Два провайдера: **Groq** (первичный, OpenAI-совместимый) + **Gemini** (Google AI Studio, фолбек).
+4 специализированные цепочки (`chain` в конфиге):
 
-    [1] gemma-text-fallback    ← приоритет 20
-        model: gemma-4-26b-it
-        api_key: GEMINI_API_KEY
-        multimodal: false
+| Цепочка | Приоритет | Назначение |
+|---|---|---|
+| `agent` | 10–40 | Agent loop (многошаговые запросы) |
+| `simple` | 10–40 | Классификация, диагностика, простые ответы |
+| `vision` | 10–30 | OCR, распознавание фото |
+| `audio` | 10–30 | STT, голосовые сообщения |
 
-    [2] gemma-text-reserve     ← приоритет 25 (резервный ключ)
-        model: gemma-4-31b-it
-        api_key: GEMINI_RESERVE_API_KEY
-        multimodal: false
+Провайдеры сортируются по полю `priority` (меньше = выше приоритет).
+Порядок в каждой цепочке: Groq → Gemini.
 
-    [3] gemini-text-reserve    ← приоритет 30 (резервный ключ)
-        model: gemini-3.1-flash-lite
-        api_key: GEMINI_RESERVE_API_KEY
-        multimodal: false
-
-    [4] deepseek-final         ← приоритет 90
-        model: deepseek-chat
-        multimodal: false
-```
+Подробная конфигурация — в `config.yaml` (не дублируется здесь во избежание расхождений).
 
 ### 3.2 Логика выбора провайдера (Client.Call)
 
@@ -192,8 +179,9 @@ type providerState struct {
 
 ### 4.1 Хранение
 
-- Основное: SQLite таблица `bot_persona` (singleton, id=1)
-- Seed: файл `persona.md` (загружается при пустой таблице)
+- Основное: память (`sync.RWMutex`) + файл `persona.md`
+- Seed: файл `persona.md` (загружается при старте, перечитывается через API reset)
+- База знаний не используется
 
 Формат persona.md:
 ```markdown
@@ -238,8 +226,6 @@ Persona system_prompt вставляется как `system` role в кажды�
 | Файл | LLM type | Назначение |
 |---|---|---|
 | `classify.txt` | `classify` | Классификация сообщения: топик + хэштеги + confidence |
-| `forward_intent.txt` | `forward_intent` | Парсинг @bot команды на пересылку |
-| `topic_command.txt` | `topic_command` | Парсинг команд создания/закрытия/переименования топиков |
 | `schedule_announce.txt` | `schedule_announce` | Генерация человеческого объявления об изменениях |
 
 ### 5.2 Управление через API
@@ -353,7 +339,7 @@ GET    /api/schedule/anomalies?limit=&offset=   — аномалии
 
 ### 7.4 Аутентификация
 
-1. `POST /api/auth/token` с `{"admin_secret": "..."}` → получаем JWT (HS256, 24h)
+1. `POST /api/auth/token` с `{"admin_secret": "..."}` → получаем JWT (HS256, 4h)
 2. Все остальные эндпоинты требуют `Authorization: Bearer <JWT>`
 
 ---
@@ -375,7 +361,9 @@ UNIQUE(message_id, chat_id)
 
 | Лимит | Где | Значение |
 |---|---|---|
-| Глобальный | `cmd/bot/main.go` → middleware | 5 запросов/мин/user |
+| Глобальный | `internal/handler/middleware.go` | 5 запросов/мин/user **(не подключён — см. `cmd/bot/main.go`)** |
+| API General | `internal/api/router.go` | 120 запросов/мин/IP |
+| API Search | `internal/api/router.go` | 30 запросов/мин/IP |
 | Саммари | `summary_requests` таблица | 1 запрос/30 мин/user |
 | LLM дневной | `Tracker.dailyTokens` | 100 000 токенов/день |
 
@@ -431,8 +419,7 @@ func verifyHMAC(body []byte, signature string) bool {
 ### 11.1 Таблицы
 
 | Таблица | Назначение |
-|---|---|
-| `bot_persona` | Личность бота (singleton) |
+|---|---|---|
 | `topics` | Топики форума |
 | `processed_messages` | Дедупликация сообщений |
 | `llm_requests` | Логи LLM-вызовов |
@@ -440,6 +427,8 @@ func verifyHMAC(body []byte, signature string) bool {
 | `schedule_anomalies` | Обнаруженные аномалии |
 | `command_permissions` | Права команд |
 | `summary_requests` | Rate-limit саммари |
+
+*Примечание: `bot_persona` не существует как SQLite-таблица — персона хранится в памяти + файле.*
 
 ---
 
@@ -539,11 +528,11 @@ omsu_bot/
 │   ├── forwarder/               ← дублирование сообщений
 │   ├── handler/                 ← Telegram handlers
 │   │   ├── handler_message.go   ← автоклассификация
-│   │   ├── handler_mention.go   ← @bot команды
+│   │   ├── handler_mention.go   ← @bot команды + agent loop
 │   │   ├── handler_webhook.go   ← вебхук от setka
-│   │   ├── handler_topic_crud.go← управление топиками
-│   │   ├── handler_summary.go   ← саммари
-│   │   └── middleware.go        ← rate-limit
+│   │   ├── handler_settings.go  ← настройки группы
+│   │   ├── antispam.go          ← капча, flood control, фильтр ссылок
+│   │   └── middleware.go        ← rate-limit (не подключён)
 │   ├── llm/                     ← LLM chain + circuit breaker
 │   │   ├── client.go            ← HTTP клиент + failover
 │   │   ├── provider.go          ← Provider + Chain

@@ -227,8 +227,7 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 				"tools_len", len(tools),
 			)
 
-			provider.Model = model
-			resp, err := c.callProviderHistory(ctx, provider, systemContent, history, tools)
+			resp, err := c.callProviderHistory(ctx, provider, model, systemContent, history, tools)
 			if err == nil {
 				resp.Provider = provider.Name
 				resp.Model = model
@@ -287,7 +286,7 @@ func (c *Client) CallGroupHistory(ctx context.Context, chatID int64, reqType, sy
 	return c.callHistoryWithSystem(ctx, chatID, reqType, systemContent, history, tools, requiresVision)
 }
 
-func (c *Client) callWhisper(ctx context.Context, provider *Provider, history []AgentMessage) (*Response, error) {
+func (c *Client) callWhisper(ctx context.Context, provider *Provider, model string, history []AgentMessage) (*Response, error) {
 	var audioData []byte
 	for _, msg := range history {
 		if len(msg.MediaParts) > 0 {
@@ -303,7 +302,7 @@ func (c *Client) callWhisper(ctx context.Context, provider *Provider, history []
 	w := multipart.NewWriter(&buf)
 	part, _ := w.CreateFormFile("file", "audio.ogg")
 	part.Write(audioData)
-	w.WriteField("model", provider.Model)
+	w.WriteField("model", model)
 	w.WriteField("language", "ru")
 	w.Close()
 
@@ -344,10 +343,10 @@ func (c *Client) callWhisper(ctx context.Context, provider *Provider, history []
 	}, nil
 }
 
-func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, systemContent string, history []AgentMessage, tools []Tool) (*Response, error) {
+func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, model string, systemContent string, history []AgentMessage, tools []Tool) (*Response, error) {
 	// Whisper models use audio transcription endpoint, not chat completions
-	if strings.HasPrefix(provider.Model, "whisper") {
-		return c.callWhisper(ctx, provider, history)
+	if strings.HasPrefix(model, "whisper") {
+		return c.callWhisper(ctx, provider, model, history)
 	}
 
 	var apiURL string
@@ -356,7 +355,7 @@ func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, sy
 
 	switch provider.Type {
 	case "gemini":
-		apiURL = provider.BaseURL + "/v1beta/models/" + provider.Model + ":generateContent?key=" + provider.APIKey
+		apiURL = provider.BaseURL + "/v1beta/models/" + model + ":generateContent?key=" + provider.APIKey
 		
 		geminiReq := map[string]interface{}{
 			"system_instruction": map[string]interface{}{
@@ -398,7 +397,7 @@ func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, sy
 		msgs = append(msgs, buildOpenAIContents(history)...)
 
 		openAIReq := map[string]interface{}{
-			"model":    provider.Model,
+			"model":    model,
 			"messages": msgs,
 		}
 

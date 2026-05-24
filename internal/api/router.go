@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -60,7 +62,7 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 		WriteTimeout:          10 * time.Second,
 		ReadBufferSize:        4096,
 		ProxyHeader:           fiber.HeaderXForwardedFor,
-		TrustedProxies:        []string{"172.16.0.0/12", "192.168.0.0/16", "10.0.0.0/8"},
+		TrustedProxies:        proxyCIDRs(),
 		CaseSensitive:         true,
 	})
 
@@ -236,4 +238,19 @@ func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowS
 
 	api.Get("/schedule/snapshots", s.handleScheduleSnapshots)
 	api.Get("/schedule/anomalies", s.handleScheduleAnomalies)
+}
+
+func proxyCIDRs() []string {
+	if v := os.Getenv("TRUSTED_PROXIES"); v != "" {
+		var cidrs []string
+		for _, c := range strings.Split(v, ",") {
+			if c = strings.TrimSpace(c); c != "" {
+				cidrs = append(cidrs, c)
+			}
+		}
+		if len(cidrs) > 0 {
+			return cidrs
+		}
+	}
+	return nil
 }

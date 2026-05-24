@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -210,6 +212,9 @@ func (d *DB) Migrate() error {
 			return fmt.Errorf("failed to add message_id to message_buffer: %w", err)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("rows iteration error during migration: %w", err)
+	}
 
 	slog.Info("database migration completed")
 	return nil
@@ -219,7 +224,8 @@ func (d *DB) backupBeforeMigration() (string, error) {
 	backupPath := fmt.Sprintf("data/groupbot.bak.%d", time.Now().Unix())
 
 	// Try VACUUM INTO (SQLite 3.27.0+) for a safe online backup
-	_, err := d.Exec(fmt.Sprintf("VACUUM INTO '%s'", backupPath))
+	safePath := filepath.Clean(backupPath)
+	_, err := d.Exec(fmt.Sprintf("VACUUM INTO '%s'", strings.ReplaceAll(safePath, "'", "''")))
 	if err == nil {
 		return backupPath, nil
 	}

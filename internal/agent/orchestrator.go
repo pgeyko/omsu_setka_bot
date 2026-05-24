@@ -13,15 +13,29 @@ import (
 	"omsu_bot/internal/llm"
 )
 
+const maxKBSize = 8 * 1024
+
 type AdminChecker interface {
 	IsAdmin(ctx context.Context, chatID int64, userID int64) bool
 	IsOwner(ctx context.Context, chatID int64, userID int64) bool
 }
 
 type AgentOrchestrator struct {
-	llmClient    *llm.Client
-	executor     *ToolExecutor
-	adminChecker AdminChecker
+	llmClient     *llm.Client
+	executor      *ToolExecutor
+	adminChecker  AdminChecker
+	featuresCache sync.Map // key=chatID, value=featuresCacheEntry
+	kbCache       sync.Map // key=chatID, value=kbCacheEntry
+}
+
+type featuresCacheEntry struct {
+	data      []llm.Tool
+	expiresAt time.Time
+}
+
+type kbCacheEntry struct {
+	data      []byte
+	expiresAt time.Time
 }
 
 func NewAgentOrchestrator(llmClient *llm.Client, executor *ToolExecutor, adminChecker AdminChecker) *AgentOrchestrator {
@@ -87,9 +101,28 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 	ao.executor.SetMessageContext(sourceMessageID, replyToMessageID)
 
 	// Add knowledge base content if it exists
-	kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
-	if kbBytes, err := os.ReadFile(kbPath); err == nil && len(kbBytes) > 0 {
-		systemExtra += "\n\nБаза знаний группы:\n" + string(kbBytes)
+	var kbBytes []byte
+	if entry, ok := ao.kbCache.Load(chatID); ok {
+		if cached := entry.(kbCacheEntry); time.Now().Before(cached.expiresAt) {
+			kbBytes = cached.data
+		}
+	}
+	if kbBytes == nil {
+		kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
+		if data, err := os.ReadFile(kbPath); err == nil && len(data) > 0 {
+			kbBytes = data
+		}
+		ao.kbCache.Store(chatID, kbCacheEntry{
+			data:      kbBytes,
+			expiresAt: time.Now().Add(30 * time.Second),
+		})
+	}
+	if len(kbBytes) > 0 {
+		kb := kbBytes
+		if len(kb) > maxKBSize {
+			kb = kb[:maxKBSize]
+		}
+		systemExtra += "\n\nБаза знаний группы:\n" + string(kb)
 	}
 
 	if len(query) > 2000 {
@@ -238,6 +271,12 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 }
 
 func (ao *AgentOrchestrator) loadEnabledTools(chatID int64) []llm.Tool {
+	if entry, ok := ao.featuresCache.Load(chatID); ok {
+		if cached := entry.(featuresCacheEntry); time.Now().Before(cached.expiresAt) {
+			return cached.data
+		}
+	}
+
 	featuresPath := fmt.Sprintf("data/groups/%d/features.json", chatID)
 	bytes, err := os.ReadFile(featuresPath)
 	if err != nil {
@@ -256,35 +295,60 @@ func (ao *AgentOrchestrator) loadEnabledTools(chatID int64) []llm.Tool {
 			filtered = append(filtered, t)
 		}
 	}
+
+	ao.featuresCache.Store(chatID, featuresCacheEntry{
+		data:      filtered,
+		expiresAt: time.Now().Add(30 * time.Second),
+	})
 	return filtered
 }
 
 var (
-	protocolsOnce   sync.Once
+	protocolsMu     sync.RWMutex
 	protocolsData   []string
+	protocolsLoaded bool
 )
 
 func loadProtocolNames() []string {
-	protocolsOnce.Do(func() {
-		content, err := os.ReadFile("protocols.json")
-		if err != nil {
-			slog.Warn("failed to read protocols.json for tool description", "error", err)
-			return
-		}
-		var cfg struct {
-			Protocols []struct {
-				Name string `json:"name"`
-			} `json:"protocols"`
-		}
-		if err := json.Unmarshal(content, &cfg); err != nil {
-			slog.Warn("failed to parse protocols.json", "error", err)
-			return
-		}
-		for _, p := range cfg.Protocols {
-			protocolsData = append(protocolsData, p.Name)
-		}
-	})
-	return protocolsData
+	protocolsMu.RLock()
+	loaded := protocolsLoaded
+	protocolsMu.RUnlock()
+	if loaded {
+		protocolsMu.RLock()
+		defer protocolsMu.RUnlock()
+		return protocolsData
+	}
+	return reloadProtocolNames()
+}
+
+func ReloadProtocols() {
+	reloadProtocolNames()
+}
+
+func reloadProtocolNames() []string {
+	content, err := os.ReadFile("protocols.json")
+	if err != nil {
+		slog.Warn("failed to read protocols.json for tool description", "error", err)
+		return nil
+	}
+	var cfg struct {
+		Protocols []struct {
+			Name string `json:"name"`
+		} `json:"protocols"`
+	}
+	if err := json.Unmarshal(content, &cfg); err != nil {
+		slog.Warn("failed to parse protocols.json", "error", err)
+		return nil
+	}
+	var names []string
+	for _, p := range cfg.Protocols {
+		names = append(names, p.Name)
+	}
+	protocolsMu.Lock()
+	protocolsData = names
+	protocolsLoaded = true
+	protocolsMu.Unlock()
+	return names
 }
 
 func injectProtocolNames(t llm.Tool) llm.Tool {

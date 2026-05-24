@@ -10,6 +10,8 @@ import (
 	"sync"
 )
 
+const maxKBSize = 8 * 1024
+
 type Persona struct {
 	Name         string   `json:"name"`
 	SystemPrompt string   `json:"system_prompt"`
@@ -148,6 +150,9 @@ func GetGroupSystemPrompt(chatID int64, defaultPersona Persona) (string, Persona
 	if kbBytes, err := os.ReadFile(kbPath); err == nil {
 		kbStr := string(kbBytes)
 		if strings.TrimSpace(kbStr) != "" {
+			if len(kbStr) > maxKBSize {
+				kbStr = kbStr[:maxKBSize]
+			}
 			systemPrompt += "\n\n=== ГРУППОВАЯ БАЗА ЗНАНИЙ ===\n" + kbStr
 		}
 	}

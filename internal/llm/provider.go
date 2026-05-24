@@ -32,6 +32,7 @@ type Provider struct {
 	Model          string   // primary model
 	FallbackModels []string // tried after primary on same key (for rate limits)
 	Capabilities   []Capability
+	Priority       int // lower = tried first when sorted
 	state          *providerState
 
 	// Rate limits

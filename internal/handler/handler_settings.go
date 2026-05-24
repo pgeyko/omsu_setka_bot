@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
@@ -32,6 +33,12 @@ type SettingsHandler struct {
 	setkaPublicURL   string
 	globalVoice      func() bool
 	globalPhoto      func() bool
+	featuresCache    sync.Map // key=chatID, value=featuresCacheEntry
+}
+
+type featuresCacheEntry struct {
+	data      map[string]bool
+	expiresAt time.Time
 }
 
 func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCache *telegram.AdminCache, setkaBaseURL, setkaAdminKey, webhookSecret, setkaPublicURL string, globalVoice, globalPhoto func() bool) *SettingsHandler {
@@ -627,14 +634,24 @@ func defaultFeatures() map[string]bool {
 }
 
 func (h *SettingsHandler) LoadFeatures(chatID int64) map[string]bool {
+	if entry, ok := h.featuresCache.Load(chatID); ok {
+		if cached := entry.(featuresCacheEntry); time.Now().Before(cached.expiresAt) {
+			return cached.data
+		}
+	}
+
 	filePath := fmt.Sprintf("data/groups/%d/features.json", chatID)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return defaultFeatures()
+		result := defaultFeatures()
+		h.featuresCache.Store(chatID, featuresCacheEntry{data: result, expiresAt: time.Now().Add(30 * time.Second)})
+		return result
 	}
 	var features map[string]bool
 	if err := json.Unmarshal(content, &features); err != nil {
-		return defaultFeatures()
+		result := defaultFeatures()
+		h.featuresCache.Store(chatID, featuresCacheEntry{data: result, expiresAt: time.Now().Add(30 * time.Second)})
+		return result
 	}
 	// fill defaults for missing features
 	defaults := defaultFeatures()
@@ -643,6 +660,7 @@ func (h *SettingsHandler) LoadFeatures(chatID int64) map[string]bool {
 			features[k] = v
 		}
 	}
+	h.featuresCache.Store(chatID, featuresCacheEntry{data: features, expiresAt: time.Now().Add(30 * time.Second)})
 	return features
 }
 

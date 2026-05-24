@@ -64,38 +64,12 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		h.usernameCache.Store(msg.From.Username, msg.From.ID)
 	}
 
+	if !h.tryMarkProcessing(ctx, msg.ID, msg.Chat.ID) {
+		return
+	}
+
 	var active int
 	if err := h.db.QueryRowContext(ctx, "SELECT is_active FROM groups WHERE chat_id = ?", msg.Chat.ID).Scan(&active); err != nil || active != 1 {
-		return
-	}
-
-	// Intercept Topic Creation and Edit
-	if msg.ForumTopicCreated != nil {
-		slug := "topic_" + fmt.Sprint(msg.MessageThreadID)
-		_, err := h.db.ExecContext(ctx,
-			`INSERT OR IGNORE INTO topics (group_id, tg_thread_id, name, slug, description, is_active) VALUES (?, ?, ?, ?, ?, 1)`,
-			msg.Chat.ID, msg.MessageThreadID, msg.ForumTopicCreated.Name, slug, "",
-		)
-		if err != nil {
-			slog.Error("failed to insert forum topic created", "error", err)
-		} else {
-			slog.Info("registered new forum topic", "chat_id", msg.Chat.ID, "thread_id", msg.MessageThreadID, "name", msg.ForumTopicCreated.Name)
-		}
-		return
-	}
-
-	if msg.ForumTopicEdited != nil {
-		if msg.ForumTopicEdited.Name != "" {
-			_, err := h.db.ExecContext(ctx,
-				`UPDATE topics SET name = ? WHERE group_id = ? AND tg_thread_id = ?`,
-				msg.ForumTopicEdited.Name, msg.Chat.ID, msg.MessageThreadID,
-			)
-			if err != nil {
-				slog.Error("failed to update forum topic edited", "error", err)
-			} else {
-				slog.Info("updated forum topic name", "chat_id", msg.Chat.ID, "thread_id", msg.MessageThreadID, "name", msg.ForumTopicEdited.Name)
-			}
-		}
 		return
 	}
 
@@ -122,19 +96,15 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		h.buffer.Push(msg.Chat.ID, msg.MessageThreadID, msg.ID, msg.From.Username, text)
 	}
 
-	if h.isProcessed(ctx, msg.ID, msg.Chat.ID) {
-		return
-	}
-
 	var activeTopicsCount int
 	err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM topics WHERE group_id = ? AND is_active = 1", msg.Chat.ID).Scan(&activeTopicsCount)
 	if err != nil || activeTopicsCount == 0 {
-		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped_no_topics", 0)
+		h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped_no_topics", 0)
 		return
 	}
 
 	if !h.prefilter(msg) {
-		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
+		h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
 		return
 	}
 
@@ -149,7 +119,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	}
 
 	if text == "" && fileID == "" {
-		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
+		h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
 		return
 	}
 
@@ -167,12 +137,12 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	}
 	if err != nil {
 		slog.Warn("classification skipped", "reason", err, "msg_id", msg.ID)
-		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
+		h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped", 0)
 		return
 	}
 
 	if result.Confidence < 0.75 || result.Topic == "" {
-		h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "low_confidence", 0)
+		h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "low_confidence", 0)
 		return
 	}
 
@@ -183,7 +153,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 	}
 
 if targetThreadID == msg.MessageThreadID {
-	h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped_same_topic", 0)
+	h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped_same_topic", 0)
 	return
 }
 
@@ -205,7 +175,7 @@ if targetThreadID == msg.MessageThreadID {
 				Text:            fmt.Sprintf("⚠️ Это сообщение уже есть в топике «%s».", result.Topic),
 				ReplyParameters: &models.ReplyParameters{MessageID: msg.ID},
 			})
-			h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "duplicate", targetThreadID)
+			h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "duplicate", targetThreadID)
 			return
 		}
 	}
@@ -220,7 +190,7 @@ if targetThreadID == msg.MessageThreadID {
 		h.forwarder.ReplyWithLink(ctx, msg.Chat.ID, msg.MessageThreadID, msg.ID, copied.ID, result.Topic)
 	}
 
-	h.markProcessed(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
+	h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
 }
 
 func (h *Handler) prefilter(msg *models.Message) bool {
@@ -251,24 +221,28 @@ func (h *Handler) prefilter(msg *models.Message) bool {
 	return false
 }
 
-func (h *Handler) isProcessed(ctx context.Context, messageID int, chatID int64) bool {
-	var count int
-	err := h.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM processed_messages WHERE message_id = ? AND chat_id = ?`,
+func (h *Handler) tryMarkProcessing(ctx context.Context, messageID int, chatID int64) bool {
+	result, err := h.db.ExecContext(ctx,
+		`INSERT OR IGNORE INTO processed_messages (message_id, chat_id, action, processed_at)
+		 VALUES (?, ?, 'pending', CURRENT_TIMESTAMP)`,
 		messageID, chatID,
-	).Scan(&count)
-	return err == nil && count > 0
+	)
+	if err != nil {
+		return false
+	}
+	rows, _ := result.RowsAffected()
+	return rows > 0
 }
 
-func (h *Handler) markProcessed(ctx context.Context, messageID int, chatID int64, threadID int, action string, targetThreadID int) {
+func (h *Handler) finishProcessing(ctx context.Context, messageID int, chatID int64, threadID int, action string, targetThreadID int) {
 	var threadIDPtr *int
 	if threadID != 0 {
 		threadIDPtr = &threadID
 	}
 	h.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO processed_messages (message_id, chat_id, thread_id, action, target_thread_id, processed_at)
-		 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		messageID, chatID, threadIDPtr, action, targetThreadID,
+		`UPDATE processed_messages SET thread_id = ?, action = ?, target_thread_id = ?, processed_at = CURRENT_TIMESTAMP
+		 WHERE message_id = ? AND chat_id = ? AND action = 'pending'`,
+		threadIDPtr, action, targetThreadID, messageID, chatID,
 	)
 }
 
@@ -668,7 +642,7 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 	}
 
 	for _, item := range groupItems {
-		h.markProcessed(ctx, item.MessageID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
+		h.finishProcessing(ctx, item.MessageID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
 	}
 }
 
