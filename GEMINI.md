@@ -1,6 +1,6 @@
 # omsu_bot — GEMINI.md
 
-This file is the Gemini-specific entrypoint for the `omsu_bot` subproject.
+This file is the Gemini-specific entrypoint for the `omsu_bot` project.
 
 Read in this order:
 1. This file (Gemini adapter)

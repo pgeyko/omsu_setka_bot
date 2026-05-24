@@ -1,7 +1,7 @@
 # Shared Agent Registry — omsu_bot
 
 `.agents/` содержит скиллы только для backend (Go) разработки.
-Frontend-скиллы здесь не нужны — бот не имеет веб-интерфейса.
+Frontend-скиллы для React-админки (`admin/`) не входят в этот набор.
 
 ## Entry Points
 

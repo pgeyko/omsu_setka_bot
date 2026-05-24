@@ -79,7 +79,7 @@ export default function SuperadminsPage() {
             <RefreshCw size={18} color="var(--accent)" /> Регистрация вебхуков в Setka
           </h3>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-            Регистрирует webhook-URL всех активных групп в omsu_mirror (Setka).
+            Регистрирует webhook-URL всех активных групп в omsu_setka.
             Запускайте после добавления новых групп или смены адреса бота.
           </p>
           <button
