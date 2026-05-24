@@ -122,27 +122,49 @@ CREATE TABLE summary_requests (
 
 -- Конфигурация времени выполнения (key-value)
 CREATE TABLE bot_config (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL DEFAULT ''
+	key   TEXT PRIMARY KEY,
+	value TEXT NOT NULL DEFAULT ''
 );
 
 -- JWT-черный список
 CREATE TABLE revoked_tokens (
-    jti        TEXT PRIMARY KEY,
-    expires_at INTEGER NOT NULL
+	jti        TEXT PRIMARY KEY,
+	expires_at INTEGER NOT NULL
+);
+
+-- Webhook replay protection (P1#11)
+CREATE TABLE webhook_events (
+	event_id    TEXT PRIMARY KEY,
+	received_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	expires_at  DATETIME NOT NULL
+);
+
+-- Media group items for album forwarding (авто-объединение альбомов)
+CREATE TABLE media_group_items (
+	media_group_id TEXT NOT NULL,
+	message_id     INTEGER NOT NULL,
+	chat_id        INTEGER NOT NULL,
+	file_id        TEXT NOT NULL DEFAULT '',
+	caption        TEXT NOT NULL DEFAULT '',
+	created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (media_group_id, message_id)
 );
 ```
 
 ---
 
-## Webhook Contract (omsu_mirror → omsu_bot)
+## Webhook Contract (omsu_setka → omsu_bot)
+
+[omsu_setka](https://github.com/pgeyko/omsu_setka) — отдельный проект. Интеграция через HTTP webhook.
 
 **Endpoint:** `POST /webhook/schedule`
 
 **Headers:**
 ```
 Content-Type: application/json
-X-Webhook-Signature: <hex(HMAC-SHA256(body, SCHEDULE_WEBHOOK_SECRET))>
+X-Webhook-Signature: <hex(HMAC-SHA256(timestamp + "." + body, SCHEDULE_WEBHOOK_SECRET))>
+X-Webhook-Timestamp: <RFC3339>
+X-Webhook-Event-ID: <hex(16 random bytes)>
 ```
 
 **Payload:**
@@ -150,6 +172,10 @@ X-Webhook-Signature: <hex(HMAC-SHA256(body, SCHEDULE_WEBHOOK_SECRET))>
 {
   "type": "change",
   "group_id": 12345,
+  "entity_type": "group",
+  "entity_id": 12345,
+  "event_id": "a1b2c3d4e5f6...",
+  "occurred_at": "2026-05-24T12:00:00Z",
   "changes": [
     {
       "date": "2025-03-18",
@@ -163,7 +189,13 @@ X-Webhook-Signature: <hex(HMAC-SHA256(body, SCHEDULE_WEBHOOK_SECRET))>
 }
 ```
 
-**Response:** `200 OK` (всегда, даже если `group_id` не совпадает с конфигом).
+**Validation:**
+- HMAC-SHA256 проверяется по схеме `timestamp + "." + body` (если `X-Webhook-Timestamp` присутствует)
+- Clock skew: не более 5 минут
+- Dedup по `event_id`: повторные события отвергаются (TTL 24ч)
+- `entity_type != "group"` → `200 skipped` (пока поддерживаются только группы)
+
+**Response:** `200 OK` / `200 {"status":"duplicate"}` / `401 Unauthorized`
 
 ---
 
@@ -229,6 +261,9 @@ gemini-3.1-flash-lite     (Gemini, 15 RPM, 500 RPD, 250K TPM)
 Telegram Update
      │
      ▼
+  Rate-limit middleware (cfg.RateLimit.GlobalPerUserPerMin, P1#6)
+     │
+     ▼
   Antispam (captcha/flood/links check)
      │
      ▼
@@ -264,11 +299,32 @@ Telegram Update
 | `moderate_user` | Мут/бан/размут | Админам (владелец immune) |
 | `run_protocol` | Протоколы (зачистка) | Админам |
 
-Ограниченные инструменты проверяют права через `AdminChecker.IsAdmin()`.
+### Enforcement (P1#7)
+
+Права проверяются в два слоя:
+1. **Hardcoded** `restrictedTools` map в `orchestrator.go` — legacy fallback
+2. **DB-backed** `permissions.Service` — читает `command_permissions` таблицу
+
+`canExecuteTool(ctx, chatID, userID, toolName)` → проверяет оба слоя.
+Фильтрация происходит на этапе загрузки инструментов для LLM (pre-filter) и при выполнении (runtime).
+Администратор/владелец группы всегда bypass.
+
+### PermissionService (`internal/permissions/service.go`)
+```go
+type Service struct { db *sql.DB }
+func (s *Service) IsAdminOnly(ctx, groupID, command) bool
+func (s *Service) AllowedRole(ctx, groupID, command) string
+```
 
 ---
 
 ## Admin REST API (Fiber, порт 8081)
+
+Конфигурация:
+- Body limit: 512 KB (глобально, соответствует контекстным роутам)
+- CORS: ограничен `CORS_ORIGIN` (в production не `*`)
+- Rate limit: 120 req/min/IP (api_general), 30 req/min/IP (api_search)
+- Таймауты: Read 10s, Write 10s
 
 ### Auth
 ```

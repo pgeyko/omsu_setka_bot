@@ -10,18 +10,18 @@
 
 ---
 
-## Этап 0 — Доработки в omsu_mirror ✅ Completed: 2026-05-20
+## Этап 0 — Доработки в omsu_setka ✅ Completed: 2026-05-20
 
-> Необходимо для работы webhook-уведомлений. Работа ведётся в `omsu_mirror/`.
+> Необходимо для работы webhook-уведомлений. Работа велась в отдельном репозитории [omsu_setka](https://github.com/pgeyko/omsu_setka).
 
-- [x] Добавить таблицу `webhook_subscribers` в `omsu_mirror/core/internal/storage/sqlite.go`
-- [x] Создать `omsu_mirror/core/internal/storage/webhook_repo.go`
-- [x] Создать `omsu_mirror/core/internal/webhook/notifier.go` (POST + HMAC-SHA256)
-- [x] Добавить `group_id` в payload `compareAndLogChanges` → `notifier.Notify()`
-- [x] Подключить `WebhookNotifier` в `omsu_mirror/core/internal/sync/syncer.go`
-- [x] Добавить Admin API: `POST/GET/DELETE /api/v1/admin/webhooks` в omsu_mirror
-- [x] Добавить `WEBHOOK_*` переменные в `omsu_mirror/core/internal/config/config.go`
-- [x] Написать тесты: `webhook_repo_test.go`, `notifier_test.go`
+- [x] Добавить таблицу `webhook_subscribers` в storage
+- [x] Создать `webhook_repo.go` (POST + HMAC-SHA256)
+- [x] Создать `notifier.go` (POST + HMAC-SHA256)
+- [x] Добавить `group_id` в payload изменений
+- [x] Подключить `WebhookNotifier` в syncer
+- [x] Добавить Admin API: `POST/GET/DELETE /api/v1/admin/webhooks`
+- [x] Добавить `WEBHOOK_*` переменные в конфиг
+- [x] Написать тесты
 
 ---
 
@@ -89,7 +89,7 @@
 - [x] Сохранение аномалий в `schedule_anomalies`
 - [x] `internal/schedule/announcer.go` — генерация объявления через LLM (в Этапе 14 интегрирован в DiffEngine с fallback на Go-форматтер)
 - [x] Пост в `announce_thread_id` с аномальными пометками ⚠️
-- [x] Регистрация бота в omsu_mirror: `POST /api/v1/admin/webhooks` при старте
+- [x] Регистрация бота в omsu_setka: `POST /api/v1/admin/webhooks` при старте
 - [x] `go build ./...`, `go vet ./...` — чисто
 
 ---
@@ -164,7 +164,7 @@
 - [x] `docker-compose.yml` — бот + volume для SQLite
 - [x] `.env.example` — финальная версия со всеми переменными
 - [x] `README.md` — инструкция по деплою для новой группы
-- [ ] Smoke-тест: проверить webhook end-to-end с omsu_mirror (ручной)
+- [ ] Smoke-тест: проверить webhook end-to-end с omsu_setka (ручной)
 - [ ] Smoke-тест: обновить persona через API (ручной)
 - [x] Git tag `v1.0.0` (по готовности)
 
@@ -278,6 +278,25 @@
 - [x] Добавить защиту от prompt injection в `persona.md`
 
 ---
+
+---
+
+## Этап 15 — Аудит 2026-05-24: безопасность и связность ✅
+✅ Completed: 2026-05-24
+
+> Исправления по результатам AUDIT_2026-05-24.md (кроме P0#1 — ротация ключей, тестовые).
+
+- [x] P0#2 Multi-tenancy вебхука: resolve chat_id из omsu_group_id
+- [x] P0#3 Idempotent регистрация: upsert по URL в Setka + PUT /webhooks/by-url
+- [x] P0#4 Entity type в payload: validate entity_type == "group"
+- [x] P0#5 nil-safe msg.From: helper util.MessageSender() во всех хендлерах
+- [x] P1#6 Telegram rate-limit: middleware подключен к active groups handler
+- [x] P1#7 command_permissions: permissions.Service + интеграция в orchestrator
+- [x] P1#9 Prompt path traversal: regex + filepath.Clean + HasPrefix
+- [x] P1#10 BodyLimit: 512 KB глобально, соответствие контекстным роутам
+- [x] P1#11 Webhook replay protection: timestamp + event_id + dedup (webhook_events table)
+- [x] P1#12 Setka admin API: PUT /webhooks/by-url + PATCH /webhooks/:id
+- [x] P2#13 Schedule diff: hasNewLessons() — новые пары тоже объявляются
 
 ## Легенда
 

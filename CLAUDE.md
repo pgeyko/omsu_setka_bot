@@ -1,6 +1,6 @@
 # omsu_bot — CLAUDE.md
 
-This file is the Claude-specific entrypoint for the `omsu_bot` subproject.
+This file is the Claude-specific entrypoint for the `omsu_bot` project.
 
 Read in this order:
 1. This file (Claude adapter)

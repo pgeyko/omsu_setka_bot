@@ -5,7 +5,7 @@ Telegram-бот для студенческой группы с ИИ-агент�
 **Возможности:**
 - Классификация сообщений и авто-пересылка в правильные топики
 - ИИ-агент с tool calling (расписание, топики, модерация, саммари)
-- Расписание занятий через webhook от omsu_mirror
+- Расписание занятий через webhook от [omsu_setka](https://github.com/pgeyko/omsu_setka)
 - Голосовые сообщения → текст (STT через Gemini)
 - Фото → текст (OCR через Gemini Vision)
 - Антиспам: капча, фильтр ссылок, флуд-контроль
@@ -52,11 +52,13 @@ docker build -t groupbot .
 docker run -d --env-file .env groupbot
 ```
 
-### Docker Compose (с omsu_mirror)
+### Docker Compose
 
 ```bash
 docker-compose up -d
 ```
+
+Для интеграции с расписанием требуется отдельно запущенный [omsu_setka](https://github.com/pgeyko/omsu_setka).
 
 ## Команды бота
 

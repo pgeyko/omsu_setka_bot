@@ -1,6 +1,6 @@
-# GitHub Secrets — omsu_setka_bot
+# GitHub Secrets — omsu_bot (GroupBot)
 
-Переменные, которые нужно добавить в `Settings → Secrets and variables → Actions` репозитория [pgeyko/omsu_setka_bot](https://github.com/pgeyko/omsu_setka_bot).
+Переменные, которые нужно добавить в `Settings → Secrets and variables → Actions` репозитория [pgeyko/omsu_bot](https://github.com/pgeyko/omsu_bot).
 
 ---
 
@@ -29,8 +29,8 @@
 | `OMSU_GROUP_ID` | — | ID группы в справочнике ОмГУ (для интеграции с omsu_setka) |
 | `DEEPSEEK_API_KEY` | — | API ключ DeepSeek (резервный LLM провайдер) |
 | `GEMINI_RESERVE_API_KEY` | — | Резервный ключ Gemini (второй аккаунт) |
-| `SETKA_BASE_URL` | — | URL omsu_mirror API. Если оба контейнера на одной Docker-сети: `http://omsu_mirror_backend:8080` |
-| `SETKA_ADMIN_KEY` | — | Admin-ключ для регистрации вебхука в omsu_mirror |
+| `SETKA_BASE_URL` | — | URL omsu_setka API. Если оба контейнера на одной Docker-сети: `http://setka_backend:8080` |
+| `SETKA_ADMIN_KEY` | — | Admin-ключ для регистрации вебхука в omsu_setka |
 | `SETKA_PUBLIC_URL` | — | Публичный URL фронтенда расписания (для ссылок в ответах бота). Например `https://setka.pgeyko.ru` |
 
 ---

@@ -2,7 +2,7 @@
 
 Read the workspace `AGENTS.md` at `../AGENTS.md` first, then follow the
 rules in this file. This file is the canonical entrypoint for agents working
-inside the `omsu_bot/` subproject.
+on the `omsu_bot` project.
 
 ## Project Overview
 
