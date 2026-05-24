@@ -1,9 +1,9 @@
 services:
-  omsu_mirror:
+  omsu_setka:
     build:
-      context: ../omsu_mirror
+      context: ../omsu_setka
       dockerfile: Dockerfile
-    container_name: omsu_mirror-dev
+    container_name: omsu_setka-dev
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -30,13 +30,13 @@ services:
     environment:
       - DB_PATH=/app/data/groupbot.db
       - CONFIG_PATH=/app/config.yaml
-      - SETKA_BASE_URL=http://omsu_mirror:8080
+      - SETKA_BASE_URL=http://omsu_setka:8080
       - SETKA_ADMIN_KEY=your-secret-admin-key
     volumes:
       - .:/app
       - groupbot_data:/app/data
     depends_on:
-      - omsu_mirror
+      - omsu_setka
 
 volumes:
   groupbot_data:

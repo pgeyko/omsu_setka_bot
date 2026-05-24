@@ -1,14 +1,23 @@
 basePath: /api
 definitions:
-  api.contextUploadRequest:
+  internal_api.configResponse:
+    properties:
+      global_photo_processing:
+        type: boolean
+      global_voice_transcription:
+        type: boolean
+      group_registration_restricted:
+        type: boolean
+      skip_fallback_model:
+        type: boolean
+    type: object
+  internal_api.contextUploadRequest:
     properties:
       content:
         type: string
     type: object
-  api.groupRequest:
+  internal_api.groupRequest:
     properties:
-      announce_thread_id:
-        type: integer
       api_token:
         type: string
       chat_id:
@@ -22,7 +31,7 @@ definitions:
       title:
         type: string
     type: object
-  api.personaUpdateRequest:
+  internal_api.personaUpdateRequest:
     properties:
       name:
         type: string
@@ -31,14 +40,68 @@ definitions:
       system_prompt:
         type: string
     type: object
-  api.superadminAddRequest:
+  internal_api.promptContent:
+    properties:
+      content:
+        type: string
+      name:
+        type: string
+    type: object
+  internal_api.promptItem:
+    properties:
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
+  internal_api.providerStatus:
+    properties:
+      error:
+        type: string
+      latency:
+        type: string
+      model:
+        type: string
+      name:
+        type: string
+      reachable:
+        type: boolean
+    type: object
+  internal_api.sendMessageRequest:
+    properties:
+      chat_id:
+        type: integer
+      text:
+        type: string
+      thread_id:
+        type: integer
+    type: object
+  internal_api.superadminAddRequest:
     properties:
       note:
         type: string
       user_id:
         type: integer
     type: object
-  api.topicCreateRequest:
+  internal_api.testModelRequest:
+    properties:
+      prompt:
+        type: string
+      provider:
+        type: string
+    type: object
+  internal_api.testModelResponse:
+    properties:
+      latency:
+        type: string
+      model:
+        type: string
+      provider:
+        type: string
+      response:
+        type: string
+    type: object
+  internal_api.topicCreateRequest:
     properties:
       aliases:
         items:
@@ -59,7 +122,7 @@ definitions:
       tg_thread_id:
         type: integer
     type: object
-  api.topicUpdateRequest:
+  internal_api.topicUpdateRequest:
     properties:
       aliases:
         items:
@@ -76,15 +139,18 @@ definitions:
       slug:
         type: string
     type: object
-  api.updatePermissionRequest:
+  internal_api.updatePermissionRequest:
     properties:
       allowed_role:
         type: string
     type: object
-  db.Group:
+  internal_api.updatePromptRequest:
     properties:
-      announce_thread_id:
-        type: integer
+      content:
+        type: string
+    type: object
+  omsu_bot_internal_db.Group:
+    properties:
       api_token:
         type: string
       chat_id:
@@ -100,7 +166,7 @@ definitions:
       title:
         type: string
     type: object
-  db.Superadmin:
+  omsu_bot_internal_db.Superadmin:
     properties:
       created_at:
         type: string
@@ -142,7 +208,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/db.Superadmin'
+              $ref: '#/definitions/omsu_bot_internal_db.Superadmin'
             type: array
       security:
       - BearerAuth: []
@@ -159,7 +225,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/api.superadminAddRequest'
+          $ref: '#/definitions/internal_api.superadminAddRequest'
       produces:
       - application/json
       responses:
@@ -193,6 +259,20 @@ paths:
       summary: Remove superadmin
       tags:
       - Admin
+  /api/auth/logout:
+    post:
+      description: Invalidate current JWT token
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Logout
+      tags:
+      - Auth
   /api/auth/token:
     post:
       consumes:
@@ -215,6 +295,68 @@ paths:
       summary: Get JWT token
       tags:
       - Auth
+  /api/bot/send:
+    post:
+      consumes:
+      - application/json
+      description: Send a message to a group chat through the bot
+      parameters:
+      - description: Message data
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api.sendMessageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Send message via bot
+      tags:
+      - Bot
+  /api/config:
+    get:
+      description: Get current runtime configuration flags
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.configResponse'
+      security:
+      - BearerAuth: []
+      summary: Get runtime config
+      tags:
+      - Config
+    put:
+      consumes:
+      - application/json
+      description: Update runtime configuration flags
+      parameters:
+      - description: Config fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_api.configResponse'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.configResponse'
+      security:
+      - BearerAuth: []
+      summary: Update runtime config
+      tags:
+      - Config
   /api/groups:
     get:
       description: Get all groups
@@ -225,7 +367,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/db.Group'
+              $ref: '#/definitions/omsu_bot_internal_db.Group'
             type: array
       security:
       - BearerAuth: []
@@ -242,14 +384,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/api.groupRequest'
+          $ref: '#/definitions/internal_api.groupRequest'
       produces:
       - application/json
       responses:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/db.Group'
+            $ref: '#/definitions/omsu_bot_internal_db.Group'
       security:
       - BearerAuth: []
       summary: Create group
@@ -289,7 +431,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/db.Group'
+            $ref: '#/definitions/omsu_bot_internal_db.Group'
       security:
       - BearerAuth: []
       summary: Get group by chat ID
@@ -310,14 +452,14 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/api.groupRequest'
+          $ref: '#/definitions/internal_api.groupRequest'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/db.Group'
+            $ref: '#/definitions/omsu_bot_internal_db.Group'
       security:
       - BearerAuth: []
       summary: Update group
@@ -413,7 +555,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/api.contextUploadRequest'
+          $ref: '#/definitions/internal_api.contextUploadRequest'
       produces:
       - application/json
       responses:
@@ -464,7 +606,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/api.contextUploadRequest'
+          $ref: '#/definitions/internal_api.contextUploadRequest'
       produces:
       - application/json
       responses:
@@ -515,7 +657,7 @@ paths:
         name: body
         required: true
         schema:
-          $ref: '#/definitions/api.contextUploadRequest'
+          $ref: '#/definitions/internal_api.contextUploadRequest'
       produces:
       - application/json
       responses:
@@ -560,7 +702,7 @@ paths:
         in: body
         name: body
         schema:
-          $ref: '#/definitions/api.updatePermissionRequest'
+          $ref: '#/definitions/internal_api.updatePermissionRequest'
       responses:
         "200":
           description: OK
@@ -597,7 +739,7 @@ paths:
         in: body
         name: body
         schema:
-          $ref: '#/definitions/api.personaUpdateRequest'
+          $ref: '#/definitions/internal_api.personaUpdateRequest'
       produces:
       - application/json
       responses:
@@ -627,6 +769,90 @@ paths:
       summary: Reset persona
       tags:
       - Persona
+  /api/prompts:
+    get:
+      description: Get all prompt template names and sizes
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.promptItem'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: List prompts
+      tags:
+      - Prompts
+  /api/prompts/{name}:
+    delete:
+      description: Delete a prompt template
+      parameters:
+      - description: Prompt name
+        in: path
+        name: name
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete prompt
+      tags:
+      - Prompts
+    get:
+      description: Get prompt template content by name
+      parameters:
+      - description: Prompt name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.promptContent'
+      security:
+      - BearerAuth: []
+      summary: Get prompt by name
+      tags:
+      - Prompts
+    put:
+      consumes:
+      - application/json
+      description: Update prompt template content
+      parameters:
+      - description: Prompt name
+        in: path
+        name: name
+        required: true
+        type: string
+      - description: Prompt content
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api.updatePromptRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.promptContent'
+      security:
+      - BearerAuth: []
+      summary: Update prompt
+      tags:
+      - Prompts
   /api/schedule/anomalies:
     get:
       description: Detected schedule anomalies with pagination
@@ -677,6 +903,23 @@ paths:
       summary: Schedule snapshots
       tags:
       - Schedule
+  /api/stats/check-providers:
+    get:
+      description: Check reachability of all LLM providers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/internal_api.providerStatus'
+            type: array
+      security:
+      - BearerAuth: []
+      summary: Check provider health
+      tags:
+      - Stats
   /api/stats/forwards:
     get:
       description: Message forward statistics
@@ -741,6 +984,29 @@ paths:
       summary: Request stats
       tags:
       - Stats
+  /api/stats/test-model:
+    post:
+      consumes:
+      - application/json
+      description: Send a test prompt to a specific LLM provider
+      parameters:
+      - description: Test prompt
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/internal_api.testModelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/internal_api.testModelResponse'
+      security:
+      - BearerAuth: []
+      summary: Test model
+      tags:
+      - Stats
   /api/stats/tokens:
     get:
       description: LLM token usage today by provider
@@ -791,7 +1057,7 @@ paths:
         in: body
         name: body
         schema:
-          $ref: '#/definitions/api.topicCreateRequest'
+          $ref: '#/definitions/internal_api.topicCreateRequest'
       produces:
       - application/json
       responses:
@@ -806,6 +1072,25 @@ paths:
       tags:
       - Topics
   /api/topics/{id}:
+    delete:
+      description: Delete a forum topic
+      parameters:
+      - description: Topic ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete topic
+      tags:
+      - Topics
     get:
       description: Get a single forum topic
       parameters:
@@ -841,7 +1126,7 @@ paths:
         in: body
         name: body
         schema:
-          $ref: '#/definitions/api.topicUpdateRequest'
+          $ref: '#/definitions/internal_api.topicUpdateRequest'
       produces:
       - application/json
       responses:
@@ -875,26 +1160,6 @@ paths:
       summary: Close topic
       tags:
       - Topics
-  /api/topics/{id}/delete:
-    delete:
-      description: Delete a forum topic
-      parameters:
-      - description: Topic ID
-        in: path
-        name: id
-        required: true
-        type: integer
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Delete topic
-      tags:
-      - Topics
   /api/topics/{id}/open:
     post:
       description: Reopen a closed forum topic
@@ -915,10 +1180,4 @@ paths:
       summary: Open topic
       tags:
       - Topics
-securityDefinitions:
-  BearerAuth:
-    description: Type "Bearer <JWT>" to authenticate
-    in: header
-    name: Authorization
-    type: apiKey
 swagger: "2.0"

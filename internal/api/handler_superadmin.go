@@ -1,7 +1,11 @@
 package api
 
 import (
+	"fmt"
+	"io"
+	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"omsu_bot/internal/db"
@@ -76,4 +80,31 @@ func (s *Server) handleRegisterWebhooks(c *fiber.Ctx) error {
 	}
 
 	return respondSuccess(c, fiber.Map{"status": "ok", "registered_groups": groupIDs})
+}
+
+func (s *Server) handleSyncTrigger(c *fiber.Ctx) error {
+	targetURL := s.SetkaBaseURL + "/api/v1/sync/trigger"
+	if targetURL == "/api/v1/sync/trigger" {
+		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "Setka base URL not configured")
+	}
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequestWithContext(c.Context(), http.MethodPost, targetURL, nil)
+	if err != nil {
+		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to create request: "+err.Error())
+	}
+	req.Header.Set("X-Admin-Key", s.SetkaAdminKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return respondError(c, fiber.StatusBadGateway, ErrInternal, "failed to reach Setka: "+err.Error())
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return respondError(c, fiber.StatusBadGateway, ErrInternal, fmt.Sprintf("Setka responded with %d: %s", resp.StatusCode, string(body)))
+	}
+
+	return respondSuccess(c, fiber.Map{"status": "sync_triggered", "response": string(body)})
 }

@@ -14,6 +14,7 @@ const promptNames: Record<string, string> = {
   forward_intent: 'Намерение пересылки',
   topic_command: 'Команды топиков',
   schedule_announce: 'Объявления расписания',
+  persona: 'Личность бота (persona.md)',
 }
 
 export default function PromptsPage() {

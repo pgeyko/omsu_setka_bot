@@ -2,14 +2,14 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
 import Layout from './components/Layout'
 import LoginPage from './pages/LoginPage'
+import GroupsPage from './pages/GroupsPage'
 import TopicsPage from './pages/TopicsPage'
 import PermissionsPage from './pages/PermissionsPage'
 import PromptsPage from './pages/PromptsPage'
 import StatsPage from './pages/StatsPage'
-import DiagnosticsPage from './pages/DiagnosticsPage'
+import SettingsPage from './pages/SettingsPage'
+import SendMessagePage from './pages/SendMessagePage'
 import SchedulePage from './pages/SchedulePage'
-import GroupsPage from './pages/GroupsPage'
-import SuperadminsPage from './pages/SuperadminsPage'
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuthStore((s) => s.token)
@@ -22,14 +22,14 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
-        <Route index element={<Navigate to="/groups" replace />} />
+        <Route index element={<Navigate to="/stats" replace />} />
         <Route path="groups" element={<GroupsPage />} />
-        <Route path="superadmins" element={<SuperadminsPage />} />
         <Route path="topics" element={<TopicsPage />} />
         <Route path="permissions" element={<PermissionsPage />} />
         <Route path="prompts" element={<PromptsPage />} />
         <Route path="stats" element={<StatsPage />} />
-        <Route path="diagnostics" element={<DiagnosticsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="send-message" element={<SendMessagePage />} />
         <Route path="schedule" element={<SchedulePage />} />
       </Route>
     </Routes>

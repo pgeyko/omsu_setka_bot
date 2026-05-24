@@ -107,7 +107,7 @@ func main() {
 	database.StartCleanup(context.Background())
 
 	personaStore := persona.NewStore(database.DB)
-	if err := personaStore.Load(context.Background(), "persona.md"); err != nil {
+	if err := personaStore.Load(context.Background(), "prompts/persona.md"); err != nil {
 		slog.Error("failed to load persona", "error", err)
 		os.Exit(1)
 	}

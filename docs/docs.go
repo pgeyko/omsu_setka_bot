@@ -62,7 +62,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/db.Superadmin"
+                                "$ref": "#/definitions/omsu_bot_internal_db.Superadmin"
                             }
                         }
                     }
@@ -92,7 +92,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.superadminAddRequest"
+                            "$ref": "#/definitions/internal_api.superadminAddRequest"
                         }
                     }
                 ],
@@ -139,6 +139,29 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/auth/logout": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Invalidate current JWT token",
+                "tags": [
+                    "Auth"
+                ],
+                "summary": "Logout",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/api/auth/token": {
             "post": {
                 "description": "Authenticate with admin_secret and receive a JWT token",
@@ -173,6 +196,107 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/bot/send": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Send a message to a group chat through the bot",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Bot"
+                ],
+                "summary": "Send message via bot",
+                "parameters": [
+                    {
+                        "description": "Message data",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.sendMessageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/config": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get current runtime configuration flags",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Get runtime config",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.configResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update runtime configuration flags",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Config"
+                ],
+                "summary": "Update runtime config",
+                "parameters": [
+                    {
+                        "description": "Config fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.configResponse"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.configResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/groups": {
             "get": {
                 "security": [
@@ -194,7 +318,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/db.Group"
+                                "$ref": "#/definitions/omsu_bot_internal_db.Group"
                             }
                         }
                     }
@@ -224,7 +348,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.groupRequest"
+                            "$ref": "#/definitions/internal_api.groupRequest"
                         }
                     }
                 ],
@@ -232,7 +356,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/db.Group"
+                            "$ref": "#/definitions/omsu_bot_internal_db.Group"
                         }
                     }
                 }
@@ -266,7 +390,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/db.Group"
+                            "$ref": "#/definitions/omsu_bot_internal_db.Group"
                         }
                     }
                 }
@@ -302,7 +426,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.groupRequest"
+                            "$ref": "#/definitions/internal_api.groupRequest"
                         }
                     }
                 ],
@@ -310,7 +434,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/db.Group"
+                            "$ref": "#/definitions/omsu_bot_internal_db.Group"
                         }
                     }
                 }
@@ -494,7 +618,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.contextUploadRequest"
+                            "$ref": "#/definitions/internal_api.contextUploadRequest"
                         }
                     }
                 ],
@@ -574,7 +698,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.contextUploadRequest"
+                            "$ref": "#/definitions/internal_api.contextUploadRequest"
                         }
                     }
                 ],
@@ -654,7 +778,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.contextUploadRequest"
+                            "$ref": "#/definitions/internal_api.contextUploadRequest"
                         }
                     }
                 ],
@@ -723,7 +847,7 @@ const docTemplate = `{
                         "name": "body",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/api.updatePermissionRequest"
+                            "$ref": "#/definitions/internal_api.updatePermissionRequest"
                         }
                     }
                 ],
@@ -786,7 +910,7 @@ const docTemplate = `{
                         "name": "body",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/api.personaUpdateRequest"
+                            "$ref": "#/definitions/internal_api.personaUpdateRequest"
                         }
                     }
                 ],
@@ -816,6 +940,141 @@ const docTemplate = `{
                     "Persona"
                 ],
                 "summary": "Reset persona",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/prompts": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get all prompt template names and sizes",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Prompts"
+                ],
+                "summary": "List prompts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.promptItem"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/prompts/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get prompt template content by name",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Prompts"
+                ],
+                "summary": "Get prompt by name",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Prompt name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.promptContent"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update prompt template content",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Prompts"
+                ],
+                "summary": "Update prompt",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Prompt name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Prompt content",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.updatePromptRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.promptContent"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a prompt template",
+                "tags": [
+                    "Prompts"
+                ],
+                "summary": "Delete prompt",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Prompt name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -902,6 +1161,34 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/stats/check-providers": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Check reachability of all LLM providers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Stats"
+                ],
+                "summary": "Check provider health",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/internal_api.providerStatus"
+                            }
                         }
                     }
                 }
@@ -1011,6 +1298,44 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/stats/test-model": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Send a test prompt to a specific LLM provider",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Stats"
+                ],
+                "summary": "Test model",
+                "parameters": [
+                    {
+                        "description": "Test prompt",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.testModelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/internal_api.testModelResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/stats/tokens": {
             "get": {
                 "security": [
@@ -1099,7 +1424,7 @@ const docTemplate = `{
                         "name": "body",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/api.topicCreateRequest"
+                            "$ref": "#/definitions/internal_api.topicCreateRequest"
                         }
                     }
                 ],
@@ -1178,8 +1503,38 @@ const docTemplate = `{
                         "name": "body",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/api.topicUpdateRequest"
+                            "$ref": "#/definitions/internal_api.topicUpdateRequest"
                         }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Delete a forum topic",
+                "tags": [
+                    "Topics"
+                ],
+                "summary": "Delete topic",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Topic ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -1205,38 +1560,6 @@ const docTemplate = `{
                     "Topics"
                 ],
                 "summary": "Close topic",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Topic ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/api/topics/{id}/delete": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Delete a forum topic",
-                "tags": [
-                    "Topics"
-                ],
-                "summary": "Delete topic",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1291,7 +1614,24 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "api.contextUploadRequest": {
+        "internal_api.configResponse": {
+            "type": "object",
+            "properties": {
+                "global_photo_processing": {
+                    "type": "boolean"
+                },
+                "global_voice_transcription": {
+                    "type": "boolean"
+                },
+                "group_registration_restricted": {
+                    "type": "boolean"
+                },
+                "skip_fallback_model": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.contextUploadRequest": {
             "type": "object",
             "properties": {
                 "content": {
@@ -1299,12 +1639,9 @@ const docTemplate = `{
                 }
             }
         },
-        "api.groupRequest": {
+        "internal_api.groupRequest": {
             "type": "object",
             "properties": {
-                "announce_thread_id": {
-                    "type": "integer"
-                },
                 "api_token": {
                     "type": "string"
                 },
@@ -1325,7 +1662,7 @@ const docTemplate = `{
                 }
             }
         },
-        "api.personaUpdateRequest": {
+        "internal_api.personaUpdateRequest": {
             "type": "object",
             "properties": {
                 "name": {
@@ -1339,7 +1676,63 @@ const docTemplate = `{
                 }
             }
         },
-        "api.superadminAddRequest": {
+        "internal_api.promptContent": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.promptItem": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.providerStatus": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "latency": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reachable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_api.sendMessageRequest": {
+            "type": "object",
+            "properties": {
+                "chat_id": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
+                },
+                "thread_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_api.superadminAddRequest": {
             "type": "object",
             "properties": {
                 "note": {
@@ -1350,7 +1743,35 @@ const docTemplate = `{
                 }
             }
         },
-        "api.topicCreateRequest": {
+        "internal_api.testModelRequest": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.testModelResponse": {
+            "type": "object",
+            "properties": {
+                "latency": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "response": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_api.topicCreateRequest": {
             "type": "object",
             "properties": {
                 "aliases": {
@@ -1382,7 +1803,7 @@ const docTemplate = `{
                 }
             }
         },
-        "api.topicUpdateRequest": {
+        "internal_api.topicUpdateRequest": {
             "type": "object",
             "properties": {
                 "aliases": {
@@ -1408,7 +1829,7 @@ const docTemplate = `{
                 }
             }
         },
-        "api.updatePermissionRequest": {
+        "internal_api.updatePermissionRequest": {
             "type": "object",
             "properties": {
                 "allowed_role": {
@@ -1416,12 +1837,17 @@ const docTemplate = `{
                 }
             }
         },
-        "db.Group": {
+        "internal_api.updatePromptRequest": {
             "type": "object",
             "properties": {
-                "announce_thread_id": {
-                    "type": "integer"
-                },
+                "content": {
+                    "type": "string"
+                }
+            }
+        },
+        "omsu_bot_internal_db.Group": {
+            "type": "object",
+            "properties": {
                 "api_token": {
                     "type": "string"
                 },
@@ -1445,7 +1871,7 @@ const docTemplate = `{
                 }
             }
         },
-        "db.Superadmin": {
+        "omsu_bot_internal_db.Superadmin": {
             "type": "object",
             "properties": {
                 "created_at": {
@@ -1458,14 +1884,6 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
-        }
-    },
-    "securityDefinitions": {
-        "BearerAuth": {
-            "description": "Type \"Bearer \u003cJWT\u003e\" to authenticate",
-            "type": "apiKey",
-            "name": "Authorization",
-            "in": "header"
         }
     }
 }`

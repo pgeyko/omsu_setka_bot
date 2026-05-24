@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Save, Users, ChevronRight, Settings, Brain, FileText, Bot, ArrowLeft } from 'lucide-react'
+import { Plus, Trash2, Save, Users, ChevronRight, Settings, Brain, FileText, ArrowLeft } from 'lucide-react'
 import { api } from '../api/client'
 import Modal from '../components/Modal'
 import { toast } from '../components/Toast'
@@ -19,7 +19,7 @@ interface Group {
 export default function GroupsPage() {
   const qc = useQueryClient()
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
-  const [activeTab, setActiveTab] = useState<'settings' | 'persona' | 'prompt' | 'knowledge'>('settings')
+  const [activeTab, setActiveTab] = useState<'settings' | 'prompt' | 'knowledge'>('settings')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
 
   const [newGroupForm, setNewGroupForm] = useState<Omit<Group, 'created_at'>>({
@@ -51,7 +51,6 @@ export default function GroupsPage() {
     enable_photo_processing: true,
   })
 
-  const [personaContent, setPersonaContent] = useState('')
   const [promptContent, setPromptContent] = useState('')
   const [knowledgeContent, setKnowledgeContent] = useState('')
 
@@ -65,12 +64,6 @@ export default function GroupsPage() {
   const featuresQ = useQuery<{ features: Record<string, boolean> }>({
     queryKey: ['groups', selectedGroupId, 'features'],
     queryFn: () => api.get<{ features: Record<string, boolean> }>(`/api/groups/${selectedGroupId}/context/features`),
-    enabled: selectedGroupId !== null,
-  })
-
-  const personaQ = useQuery<{ content: string }>({
-    queryKey: ['groups', selectedGroupId, 'persona'],
-    queryFn: () => api.get<{ content: string }>(`/api/groups/${selectedGroupId}/context/persona`),
     enabled: selectedGroupId !== null,
   })
 
@@ -104,12 +97,6 @@ export default function GroupsPage() {
       setFeaturesForm(featuresQ.data.features)
     }
   }, [featuresQ.data])
-
-  useEffect(() => {
-    if (personaQ.data) {
-      setPersonaContent(personaQ.data.content)
-    }
-  }, [personaQ.data])
 
   useEffect(() => {
     if (promptQ.data) {
@@ -174,18 +161,6 @@ export default function GroupsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['groups', selectedGroupId, 'features'] })
       toast('Модули сохранены', 'success')
-    },
-    onError: (err: any) => {
-      toast(`Ошибка: ${err.message}`, 'error')
-    }
-  })
-
-  const savePersonaMut = useMutation({
-    mutationFn: ({ chat_id, content }: { chat_id: number; content: string }) =>
-      api.put(`/api/groups/${chat_id}/context/persona`, { content }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['groups', selectedGroupId, 'persona'] })
-      toast('Файл личности сохранен', 'success')
     },
     onError: (err: any) => {
       toast(`Ошибка: ${err.message}`, 'error')
@@ -296,7 +271,6 @@ export default function GroupsPage() {
             <div style={{ display: 'flex', gap: '0.25rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '0.25rem', overflowX: 'auto' }}>
               {[
                 { id: 'settings', label: 'Настройки', icon: Settings },
-                { id: 'persona', label: 'Личность', icon: Bot },
                 { id: 'prompt', label: 'Промпт', icon: FileText },
                 { id: 'knowledge', label: 'База знаний', icon: Brain },
               ].map(tab => {
@@ -333,7 +307,7 @@ export default function GroupsPage() {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', marginTop: '0.5rem' }}>
               {activeTab === 'settings' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
                     <div>
                       <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Название группы</label>
                       <input className="input" value={metaForm.title} onChange={(e) => setMetaForm({ ...metaForm, title: e.target.value })} />
@@ -344,10 +318,10 @@ export default function GroupsPage() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '2rem', borderTop: '1px solid var(--glass-border)', borderBottom: '1px solid var(--glass-border)', padding: '1rem 0' }}>
+                  <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', borderTop: '1px solid var(--glass-border)', borderBottom: '1px solid var(--glass-border)', padding: '1rem 0' }}>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                       <input type="checkbox" checked={metaForm.is_active} onChange={(e) => setMetaForm({ ...metaForm, is_active: e.target.checked })} />
-                      <span style={{ fontSize: '0.9rem' }}>Активна (бот обрабатывает сообщения)</span>
+                      <span style={{ fontSize: '0.9rem' }}>Активна</span>
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
                       <input type="checkbox" checked={metaForm.is_vip} onChange={(e) => setMetaForm({ ...metaForm, is_vip: e.target.checked })} />
@@ -360,43 +334,39 @@ export default function GroupsPage() {
                     {featuresQ.isLoading ? (
                       <LoadingSpinner />
                     ) : (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
                         {[
                           { id: 'enable_schedule', label: 'Расписание занятий' },
                           { id: 'enable_summary', label: 'Суммаризация топиков' },
                           { id: 'enable_voice_transcription', label: 'Расшифровка аудиосообщений' },
                         ].map(f => (
-                          <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 0.75rem', background: 'var(--glass-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)' }}>
+                          <label key={f.id} className="toggle-label">
                             <input
                               type="checkbox"
                               checked={!!featuresForm[f.id]}
                               onChange={(e) => setFeaturesForm({ ...featuresForm, [f.id]: e.target.checked })}
                             />
-                            <span style={{ fontSize: '0.85rem' }}>{f.label}</span>
+                            <span>{f.label}</span>
                           </label>
                         ))}
-                        {/* Photo: three-state toggle */}
-                        <div
-                          onClick={() => {
-                            const auto = featuresForm.enable_photo_processing
-                            const mention = featuresForm.photo_on_mention
-                            if (!auto && !mention) {
-                              setFeaturesForm({ ...featuresForm, enable_photo_processing: true, photo_on_mention: false })
-                            } else if (auto && !mention) {
-                              setFeaturesForm({ ...featuresForm, enable_photo_processing: true, photo_on_mention: true })
-                            } else {
-                              setFeaturesForm({ ...featuresForm, enable_photo_processing: false, photo_on_mention: false })
-                            }
-                          }}
-                          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 0.75rem', background: 'var(--glass-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)', userSelect: 'none' }}
-                        >
-                          <span style={{ fontSize: '0.85rem' }}>
-                            Обработка фото:{' '}
-                            {!featuresForm.enable_photo_processing && !featuresForm.photo_on_mention ? '❌' :
-                             featuresForm.enable_photo_processing && !featuresForm.photo_on_mention ? '✅' :
-                             '✅ @'}
-                          </span>
-                        </div>
+                        <label className="toggle-label">
+                          <input
+                            type="checkbox"
+                            checked={!!featuresForm.enable_photo_processing}
+                            onChange={(e) => setFeaturesForm({ ...featuresForm, enable_photo_processing: e.target.checked, photo_on_mention: !e.target.checked ? false : featuresForm.photo_on_mention })}
+                          />
+                          <span>Обработка фото</span>
+                        </label>
+                        {featuresForm.enable_photo_processing && (
+                          <label className="toggle-label">
+                            <input
+                              type="checkbox"
+                              checked={!!featuresForm.photo_on_mention}
+                              onChange={(e) => setFeaturesForm({ ...featuresForm, photo_on_mention: e.target.checked })}
+                            />
+                            <span>Фото только по @упоминанию</span>
+                          </label>
+                        )}
                       </div>
                     )}
 
@@ -404,27 +374,27 @@ export default function GroupsPage() {
                     {featuresQ.isLoading ? (
                       <LoadingSpinner />
                     ) : (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' }}>
                         {[
-                          { id: 'enable_moderation', label: 'Общая модерация (активировать защиту)' },
+                          { id: 'enable_moderation', label: 'Общая модерация' },
                           { id: 'enable_captcha', label: 'Математическая капча' },
-                          { id: 'enable_link_filter', label: 'Фильтр ссылок для новых пользователей' },
-                          { id: 'enable_flood_control', label: 'Флуд-контроль (ограничение частоты)' },
+                          { id: 'enable_link_filter', label: 'Фильтр ссылок' },
+                          { id: 'enable_flood_control', label: 'Флуд-контроль' },
                         ].map(f => (
-                          <label key={f.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', padding: '0.5rem 0.75rem', background: 'var(--glass-bg)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)' }}>
+                          <label key={f.id} className="toggle-label">
                             <input
                               type="checkbox"
                               checked={!!featuresForm[f.id]}
                               onChange={(e) => setFeaturesForm({ ...featuresForm, [f.id]: e.target.checked })}
                             />
-                            <span style={{ fontSize: '0.85rem' }}>{f.label}</span>
+                            <span>{f.label}</span>
                           </label>
                         ))}
                       </div>
                     )}
                   </div>
 
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap', justifyContent: 'space-between' }}>
                     <button
                       className="btn btn-primary"
                       onClick={() => {
@@ -443,35 +413,10 @@ export default function GroupsPage() {
                         }
                       }}
                       disabled={deleteMut.isPending}
-                      style={{ marginLeft: 'auto' }}
                     >
                       <Trash2 size={16} /> Удалить группу
                     </button>
                   </div>
-                </div>
-              )}
-
-              {activeTab === 'persona' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1 }}>
-                  <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Конфигурация личности группы (`persona.md` в формате Markdown)</label>
-                  {personaQ.isLoading ? (
-                    <LoadingSpinner />
-                  ) : (
-                    <textarea
-                      className="input"
-                      style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.85rem', minHeight: '350px', whiteSpace: 'pre', overflowY: 'auto' }}
-                      value={personaContent}
-                      onChange={(e) => setPersonaContent(e.target.value)}
-                    />
-                  )}
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => savePersonaMut.mutate({ chat_id: selectedGroupId, content: personaContent })}
-                    disabled={savePersonaMut.isPending}
-                    style={{ alignSelf: 'flex-start' }}
-                  >
-                    <Save size={16} /> {savePersonaMut.isPending ? 'Сохранение...' : 'Сохранить личность'}
-                  </button>
                 </div>
               )}
 

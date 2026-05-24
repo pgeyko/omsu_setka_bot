@@ -179,9 +179,9 @@ type providerState struct {
 
 ### 4.1 Хранение
 
-- Основное: память (`sync.RWMutex`) + файл `persona.md`
-- Seed: файл `persona.md` (загружается при старте, перечитывается через API reset)
-- База знаний не используется
+- Основное: память (`sync.RWMutex`) + файл `prompts/persona.md`
+- Seed: `prompts/persona.md` (загружается при старте, перечитывается через API reset)
+- Доступен как обычный промпт через `GET/PUT /api/prompts/persona`
 
 Формат persona.md:
 ```markdown
@@ -269,6 +269,7 @@ SIGHUP также вызывает перезагрузку без переза�
 
 ```
 POST   /api/auth/token                   — JWT (admin_secret → token)
+POST   /api/auth/logout                  — инвалидация JWT
 
 GET    /api/persona                       — личность бота
 PUT    /api/persona                       — обновить личность
@@ -290,7 +291,7 @@ GET    /api/prompts/:name                 — содержимое промпт�
 PUT    /api/prompts/:name                 — обновить промпт
 DELETE /api/prompts/:name                 — удалить промпт
 
-GET    /api/config                        — настройки
+GET    /api/config                        — глобальные настройки
 PUT    /api/config                        — обновить настройки
 
 GET    /api/stats/tokens                  — токены сегодня
@@ -305,6 +306,11 @@ POST   /api/bot/send                      — отправить сообщен�
 
 GET    /api/schedule/snapshots?limit=&offset=  — снэпшоты
 GET    /api/schedule/anomalies?limit=&offset=   — аномалии
+
+POST   /api/admin/superadmins             — добавить суперадмина
+DELETE /api/admin/superadmins/:user_id    — удалить суперадмина
+POST   /api/admin/groups/register-webhooks — регистрация вебхуков
+POST   /api/admin/sync-trigger            — запустить синхронизацию setka
 ```
 
 ### 7.2 Формат ответов
@@ -521,7 +527,8 @@ omsu_bot/
 │   │   ├── handler_schedule.go
 │   │   ├── handler_diagnostic.go
 │   │   ├── handler_config.go
-│   │   └── handler_auth.go
+│   │   ├── handler_superadmin.go
+│   │   └── context_handler.go
 │   ├── classifier/              ← LLM классификация
 │   ├── config/                  ← cleanenv конфиг
 │   ├── db/                      ← SQLite + миграции
@@ -541,9 +548,8 @@ omsu_bot/
 │   ├── persona/                 ← Store + seed_parser
 │   └── schedule/                ← diff engine + announcer
 ├── admin/                       ← React SPA (admin panel)
-├── prompts/                     ← *.txt файлы промптов
+├── prompts/                     ← *.txt/*.md файлы промптов (включая persona.md)
 ├── config.yaml
-├── persona.md
 ├── Dockerfile
 └── docker-compose*.yml
 ```

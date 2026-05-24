@@ -182,6 +182,7 @@ func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowS
 	api.Post("/admin/superadmins", s.handleAddSuperadmin)
 	api.Delete("/admin/superadmins/:user_id", s.handleRemoveSuperadmin)
 	api.Post("/admin/groups/register-webhooks", s.handleRegisterWebhooks)
+	api.Post("/admin/sync-trigger", s.handleSyncTrigger)
 
 	// Context routes: persona.md / knowledge_base.txt / system_prompt.txt can be large.
 	// Allow up to 512 KB for these endpoints.

@@ -15,12 +15,14 @@ type PromptRegistry struct {
 	mu         sync.RWMutex
 	promptsDir string
 	prompts    map[string]string
+	extensions map[string]string
 }
 
 func NewPromptRegistry(promptsDir string) (*PromptRegistry, error) {
 	reg := &PromptRegistry{
 		promptsDir: promptsDir,
 		prompts:    make(map[string]string),
+		extensions: make(map[string]string),
 	}
 	if err := reg.load(); err != nil {
 		return nil, err
@@ -35,20 +37,24 @@ func (r *PromptRegistry) load() error {
 	}
 
 	pm := make(map[string]string)
+	exts := make(map[string]string)
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".txt" {
+		ext := filepath.Ext(entry.Name())
+		if entry.IsDir() || (ext != ".txt" && ext != ".md") {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(r.promptsDir, entry.Name()))
 		if err != nil {
 			return fmt.Errorf("failed to read prompt %s: %w", entry.Name(), err)
 		}
-		name := entry.Name()[:len(entry.Name())-4]
+		name := entry.Name()[:len(entry.Name())-len(ext)]
 		pm[name] = string(data)
+		exts[name] = ext
 	}
 
 	r.mu.Lock()
 	r.prompts = pm
+	r.extensions = exts
 	r.mu.Unlock()
 	return nil
 }
@@ -81,7 +87,13 @@ func (r *PromptRegistry) Update(name, content string) error {
 	if !safePromptName.MatchString(name) {
 		return fmt.Errorf("invalid prompt name: %s", name)
 	}
-	path := filepath.Join(r.promptsDir, name+".txt")
+	r.mu.RLock()
+	ext := r.extensions[name]
+	r.mu.RUnlock()
+	if ext == "" {
+		ext = ".txt"
+	}
+	path := filepath.Join(r.promptsDir, name+ext)
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path: %w", err)
@@ -103,7 +115,13 @@ func (r *PromptRegistry) Delete(name string) error {
 	if !safePromptName.MatchString(name) {
 		return fmt.Errorf("invalid prompt name: %s", name)
 	}
-	path := filepath.Join(r.promptsDir, name+".txt")
+	r.mu.RLock()
+	ext := r.extensions[name]
+	r.mu.RUnlock()
+	if ext == "" {
+		ext = ".txt"
+	}
+	path := filepath.Join(r.promptsDir, name+ext)
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return fmt.Errorf("failed to resolve path: %w", err)
@@ -120,6 +138,7 @@ func (r *PromptRegistry) Delete(name string) error {
 	}
 	r.mu.Lock()
 	delete(r.prompts, name)
+	delete(r.extensions, name)
 	r.mu.Unlock()
 	return nil
 }

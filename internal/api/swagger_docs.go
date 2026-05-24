@@ -1,3 +1,8 @@
+// @title GroupBot API
+// @version 1.0
+// @description Telegram bot for student group — Admin REST API
+// @host localhost:8081
+// @basePath /api
 package api
 
 import (
@@ -13,6 +18,14 @@ import (
 // @Success 200 {object} map[string]interface{}
 // @Router /api/auth/token [post]
 func _post_token_stub() {}
+
+// @Summary Logout
+// @Description Invalidate current JWT token
+// @Tags Auth
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{}
+// @Router /api/auth/logout [post]
+func _post_auth_logout_stub() {}
 
 // @Summary Get persona
 // @Description Get current bot persona settings
@@ -93,7 +106,7 @@ func _put_topic_stub() {}
 // @Security BearerAuth
 // @Param id path int true "Topic ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/topics/{id}/delete [delete]
+// @Router /api/topics/{id} [delete]
 func _delete_topic_stub() {}
 
 // @Summary Close topic
@@ -113,6 +126,66 @@ func _post_topic_close_stub() {}
 // @Success 200 {object} map[string]interface{}
 // @Router /api/topics/{id}/open [post]
 func _post_topic_open_stub() {}
+
+// @Summary List prompts
+// @Description Get all prompt template names and sizes
+// @Tags Prompts
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} api.promptItem
+// @Router /api/prompts [get]
+func _get_prompts_stub() {}
+
+// @Summary Get prompt by name
+// @Description Get prompt template content by name
+// @Tags Prompts
+// @Security BearerAuth
+// @Produce json
+// @Param name path string true "Prompt name"
+// @Success 200 {object} api.promptContent
+// @Router /api/prompts/{name} [get]
+func _get_prompt_stub() {}
+
+// @Summary Update prompt
+// @Description Update prompt template content
+// @Tags Prompts
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param name path string true "Prompt name"
+// @Param body body api.updatePromptRequest false "Prompt content"
+// @Success 200 {object} api.promptContent
+// @Router /api/prompts/{name} [put]
+func _put_prompt_stub() {}
+
+// @Summary Delete prompt
+// @Description Delete a prompt template
+// @Tags Prompts
+// @Security BearerAuth
+// @Param name path string true "Prompt name"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/prompts/{name} [delete]
+func _delete_prompt_stub() {}
+
+// @Summary Get runtime config
+// @Description Get current runtime configuration flags
+// @Tags Config
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {object} api.configResponse
+// @Router /api/config [get]
+func _get_config_stub() {}
+
+// @Summary Update runtime config
+// @Description Update runtime configuration flags
+// @Tags Config
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body api.configResponse true "Config fields to update"
+// @Success 200 {object} api.configResponse
+// @Router /api/config [put]
+func _put_config_stub() {}
 
 // @Summary Get permissions
 // @Description Get command permissions matrix
@@ -178,6 +251,37 @@ func _get_stats_messages_stub() {}
 // @Success 200 {object} map[string]interface{}
 // @Router /api/stats/providers [get]
 func _get_stats_providers_stub() {}
+
+// @Summary Check provider health
+// @Description Check reachability of all LLM providers
+// @Tags Stats
+// @Security BearerAuth
+// @Produce json
+// @Success 200 {array} api.providerStatus
+// @Router /api/stats/check-providers [get]
+func _get_stats_check_providers_stub() {}
+
+// @Summary Test model
+// @Description Send a test prompt to a specific LLM provider
+// @Tags Stats
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body api.testModelRequest false "Test prompt"
+// @Success 200 {object} api.testModelResponse
+// @Router /api/stats/test-model [post]
+func _post_stats_test_model_stub() {}
+
+// @Summary Send message via bot
+// @Description Send a message to a group chat through the bot
+// @Tags Bot
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param body body api.sendMessageRequest false "Message data"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/bot/send [post]
+func _post_bot_send_stub() {}
 
 // @Summary Schedule snapshots
 // @Description Schedule change snapshot history with pagination

@@ -1,19 +1,19 @@
 import { useState, useMemo } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { Bot, MessageSquare, Shield, FileText, BarChart3, Calendar, Activity, LogOut, Menu, Sun, Moon, X, Users } from 'lucide-react'
+import { Bot, MessageSquare, Shield, FileText, BarChart3, Calendar, Settings, Send, LogOut, Menu, Sun, Moon, X, Users } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 import ErrorBoundary from './ErrorBoundary'
 import Toast from './Toast'
 
 const nav = [
+  { to: '/stats', icon: BarChart3, label: 'Статистика' },
   { to: '/groups', icon: Users, label: 'Группы' },
   { to: '/topics', icon: MessageSquare, label: 'Топики' },
   { to: '/permissions', icon: Shield, label: 'Действия' },
   { to: '/prompts', icon: FileText, label: 'Промпты' },
-  { to: '/stats', icon: BarChart3, label: 'Статистика' },
-  { to: '/diagnostics', icon: Activity, label: 'Диагностика' },
+  { to: '/settings', icon: Settings, label: 'Настройки' },
+  { to: '/send-message', icon: Send, label: 'Отправить' },
   { to: '/schedule', icon: Calendar, label: 'Расписание' },
-  { to: '/superadmins', icon: Shield, label: 'Суперадмины' },
 ]
 
 function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
@@ -28,7 +28,6 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
   }
 
   const logout = async () => {
-    // Revoke the JWT server-side before clearing the client session.
     const token = useAuthStore.getState().token
     if (token) {
       try {
@@ -77,15 +76,14 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
 }
 
 const titleMap: Record<string, string> = {
-  '/': 'Личность',
+  '/stats': 'Статистика',
   '/groups': 'Группы',
   '/topics': 'Топики',
   '/permissions': 'Действия',
   '/prompts': 'Промпты',
-  '/stats': 'Статистика',
-  '/diagnostics': 'Диагностика',
+  '/settings': 'Настройки',
+  '/send-message': 'Отправить сообщение',
   '/schedule': 'Расписание',
-  '/superadmins': 'Суперадмины',
 }
 
 export default function Layout() {

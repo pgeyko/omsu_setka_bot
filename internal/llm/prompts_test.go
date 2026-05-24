@@ -44,7 +44,7 @@ func TestNewPromptRegistry_WithFiles(t *testing.T) {
 	if reg.Get("other") != "foo bar" {
 		t.Errorf("expected 'foo bar', got '%s'", reg.Get("other"))
 	}
-	if reg.Get("not_a_prompt") != "" {
-		t.Error("expected empty for non-txt file")
+	if reg.Get("not_a_prompt") != "markdown" {
+		t.Error("expected .md files to be loaded")
 	}
 }

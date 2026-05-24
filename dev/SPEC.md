@@ -244,13 +244,9 @@ gemini-3.1-flash-lite     (Gemini, 15 RPM, 500 RPD, 250K TPM)
 
 ## Persona Storage
 
-Бот хранит личность в памяти + файле `persona.md`, НЕ в SQLite.
-
-**Загрузка:**
-```
-1. При старте: файл persona.md → парсинг → кэш в memory (sync.RWMutex)
-2. PUT /api/persona → обновление в памяти (не в БД)
-3. POST /api/persona/reset → перечитывание persona.md
+Бот хранит личность в памяти + файле `prompts/persona.md`, НЕ в SQLite.
+1. При старте: файл prompts/persona.md → парсинг → кэш в memory (sync.RWMutex)
+3. POST /api/persona/reset → перечитывание prompts/persona.md
 ```
 
 ---

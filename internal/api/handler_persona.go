@@ -52,12 +52,11 @@ func (s *Server) handleUpdatePersona(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to update persona")
 	}
 
-	// Write to global persona.md file
-	err := s.Persona.SaveToFile("persona.md")
+	err := s.Persona.SaveToFile("prompts/persona.md")
 	if err != nil {
 		slog.Error("failed to save persona to file", "error", err)
 	} else {
-		s.Persona.Load(c.Context(), "persona.md")
+		s.Persona.Load(c.Context(), "prompts/persona.md")
 	}
 
 	return respondSuccess(c, personaResponse{
@@ -68,7 +67,7 @@ func (s *Server) handleUpdatePersona(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleResetPersona(c *fiber.Ctx) error {
-	if err := s.Persona.Reset(c.Context(), "persona.md"); err != nil {
+	if err := s.Persona.Reset(c.Context(), "prompts/persona.md"); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to reset persona")
 	}
 

@@ -55,10 +55,10 @@ docker run -d --env-file .env groupbot
 ### Docker Compose
 
 ```bash
-docker-compose up -d
+docker compose -f docker-compose.local.yml up -d
 ```
 
-Для интеграции с расписанием требуется отдельно запущенный [omsu_setka](https://github.com/pgeyko/omsu_setka).
+Запускает groupbot + omsu_setka. Для интеграции с расписанием требуется отдельно запущенный [omsu_setka](https://github.com/pgeyko/omsu_setka).
 
 ## Команды бота
 
@@ -109,10 +109,9 @@ omsu_bot/
 │   ├── schedule/             # Webhook расписания
 │   ├── telegram/             # Админ-кэш, синхронизация
 │   └── util/                 # Утилиты (slug, даты)
-├── prompts/                  # LLM-промпты
+├── prompts/                  # LLM-промпты (включая persona.md)
 ├── admin/                    # React SPA админка
 ├── config.yaml               # Конфигурация
-├── persona.md                # Seed-файл персоны
 ├── messages.yaml             # Тексты ответов
 ├── protocols.json            # Протоколы агента
 └── Dockerfile

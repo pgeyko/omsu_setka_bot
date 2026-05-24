@@ -30,7 +30,7 @@ func NewStore(db *sql.DB) *Store {
 
 func (s *Store) Load(ctx context.Context, seedPath string) error {
 	if seedPath == "" {
-		seedPath = "persona.md"
+		seedPath = "prompts/persona.md"
 	}
 	seed, err := ParseSeedFile(seedPath)
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *Store) SaveToFile(path string) error {
 
 func (s *Store) Reset(ctx context.Context, seedPath string) error {
 	if seedPath == "" {
-		seedPath = "persona.md"
+		seedPath = "prompts/persona.md"
 	}
 	seed, err := ParseSeedFile(seedPath)
 	if err != nil {
