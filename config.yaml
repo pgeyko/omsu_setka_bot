@@ -82,7 +82,7 @@ llm:
       chain: agent
       api_key: "${OPENROUTER_API_KEY}"
       base_url: "https://openrouter.ai/api"
-      model: deepseek/deepseek-r1:free
+      model: openrouter/free
       priority: 50
 
     - name: openrouter-agent-fallback
@@ -90,7 +90,7 @@ llm:
       chain: agent
       api_key: "${OPENROUTER_API_KEY}"
       base_url: "https://openrouter.ai/api"
-      model: deepseek/deepseek-chat-v3-0324:free
+      model: openrouter/free
       priority: 55
 
     # ── Simple chain ── (classify, simple responses, diagnostic) all Groq first, Google last
@@ -162,7 +162,7 @@ llm:
       chain: simple
       api_key: "${OPENROUTER_API_KEY}"
       base_url: "https://openrouter.ai/api"
-      model: deepseek/deepseek-chat-v3-0324:free
+      model: openrouter/free
       priority: 50
 
     - name: openrouter-simple-fallback
@@ -170,7 +170,7 @@ llm:
       chain: simple
       api_key: "${OPENROUTER_API_KEY}"
       base_url: "https://openrouter.ai/api"
-      model: meta-llama/llama-3.3-70b-instruct:free
+      model: openrouter/free
       priority: 55
 
     # ── Vision chain ── (OCR, фото) Groq → Gemini → Gemini
