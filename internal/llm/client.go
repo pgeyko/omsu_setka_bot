@@ -539,12 +539,30 @@ func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, mo
 		}
 	}
 
+	content = stripCJK(content)
+
 	return &Response{
 		Content:      content,
 		InputTokens:  inputTokens,
 		OutputTokens: outputTokens,
 		ToolCalls:    toolCalls,
 	}, nil
+}
+
+// stripCJK removes CJK (Chinese, Japanese, Korean) characters from s.
+func stripCJK(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if (r >= 0x4E00 && r <= 0x9FFF) ||
+			(r >= 0x3400 && r <= 0x4DBF) ||
+			(r >= 0x3040 && r <= 0x30FF) ||
+			(r >= 0xAC00 && r <= 0xD7AF) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func formatSchemaTypes(v interface{}, uppercase bool) interface{} {

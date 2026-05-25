@@ -168,3 +168,27 @@ func TestClient_TokenParsing(t *testing.T) {
 	}
 }
 
+func TestStripCJK(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"в 1時", "в 1"},
+		{"во 2 时", "во 2"},
+		{"в 3時", "в 3"},
+		{"чистый русский текст", "чистый русский текст"},
+		{"english text 123", "english text 123"},
+		{"смесь Chinese и русского 時", "смесь Chinese и русского"},
+		{"ハロー", ""},
+		{"안녕하세요", ""},
+		{"", ""},
+		{"  \t\n  ", ""},
+	}
+	for _, tc := range tests {
+		got := stripCJK(tc.input)
+		if got != tc.expected {
+			t.Errorf("stripCJK(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
