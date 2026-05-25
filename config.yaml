@@ -98,7 +98,7 @@ llm:
       type: groq
       chain: simple
       api_key: "${GROQ_API_KEY}"
-      model: qwen/qwen3-32b
+      model: llama-3.1-8b-instant
       rpm_limit: 120
       rpd_limit: 2000
       tpm_limit: 12000
@@ -109,7 +109,7 @@ llm:
       type: groq
       chain: simple
       api_key: "${GROQ_API_KEY_2}"
-      model: qwen/qwen3-32b
+      model: llama-3.1-8b-instant
       rpm_limit: 120
       rpd_limit: 2000
       tpm_limit: 12000
@@ -120,9 +120,9 @@ llm:
       type: groq
       chain: simple
       api_key: "${GROQ_API_KEY}"
-      model: llama-3.1-8b-instant
+      model: qwen/qwen3-32b
       rpm_limit: 60
-      rpd_limit: 28800
+      rpd_limit: 2000
       tpm_limit: 12000
       tpd_limit: 1000000
       priority: 20
@@ -131,9 +131,9 @@ llm:
       type: groq
       chain: simple
       api_key: "${GROQ_API_KEY_2}"
-      model: llama-3.1-8b-instant
+      model: qwen/qwen3-32b
       rpm_limit: 60
-      rpd_limit: 28800
+      rpd_limit: 2000
       tpm_limit: 12000
       tpd_limit: 1000000
       priority: 25
@@ -152,9 +152,10 @@ llm:
       type: gemini
       chain: simple
       api_key: "${GEMINI_API_KEY}"
-      model: gemma-4-26b-a4b-it
+      model: gemini-3.1-flash-lite
       rpm_limit: 30
       rpd_limit: 3000
+      tpm_limit: 500000
       priority: 40
 
     - name: openrouter-simple
