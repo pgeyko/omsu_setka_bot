@@ -51,8 +51,10 @@ func NewMediaProcessor(botClient *tgbot.Bot, token string, llmClient *llm.Client
 // active — the caller should continue without vision rather than treating this
 // as an error.
 func (mp *MediaProcessor) ProcessPhoto(ctx context.Context, fileID string) (string, error) {
+	slog.Debug("ProcessPhoto called", "file_id", fileID)
+
 	if !mp.llmClient.HasMultimodalProvider() {
-		slog.Debug("no multimodal provider available, skipping photo OCR", "file_id", fileID)
+		slog.Warn("no multimodal provider available, skipping photo OCR (enable debug to see provider state)", "file_id", fileID)
 		return "", nil
 	}
 
@@ -88,26 +90,31 @@ func (mp *MediaProcessor) ProcessPhoto(ctx context.Context, fileID string) (stri
 
 	resp, err := mp.llmClient.CallGroupHistory(ctx, 0, "ocr", "", history, nil, true)
 	if err != nil {
+		slog.Error("photo OCR LLM call failed", "file_id", fileID, "error", err)
 		return "", err
 	}
 	result := strings.TrimSpace(resp.Content)
 	if len(result) > 500 {
 		result = result[:500] + "…"
 	}
+	slog.Debug("photo OCR result", "file_id", fileID, "result_len", len(result))
 	return result, nil
 }
 
 // ProcessVoice downloads a Telegram voice message and transcribes it through
-// the vision chain (gemma-4-31b-it → gemini-3.1-flash-lite).
+// the audio chain (whisper → gemini).
 // Returns ("", nil) when no multimodal provider is active.
 func (mp *MediaProcessor) ProcessVoice(ctx context.Context, fileID string) (string, error) {
+	slog.Debug("ProcessVoice called", "file_id", fileID)
+
 	if !mp.llmClient.HasMultimodalProvider() {
-		slog.Debug("no multimodal provider available, skipping voice STT", "file_id", fileID)
+		slog.Warn("no multimodal provider available, skipping voice STT (enable debug to see provider state)", "file_id", fileID)
 		return "", nil
 	}
 
 	data, mimeType, err := mp.downloadFile(ctx, fileID)
 	if err != nil {
+		slog.Error("voice file download failed", "file_id", fileID, "error", err)
 		return "", err
 	}
 
@@ -128,11 +135,14 @@ func (mp *MediaProcessor) ProcessVoice(ctx context.Context, fileID string) (stri
 		},
 	}
 
-	resp, err := mp.llmClient.CallGroupHistory(ctx, 0, "stt", "", history, nil, true)
+	resp, err := mp.llmClient.CallGroupHistory(ctx, 0, "stt", "", history, nil, false)
 	if err != nil {
+		slog.Error("voice STT LLM call failed", "file_id", fileID, "error", err)
 		return "", err
 	}
-	return strings.TrimSpace(resp.Content), nil
+	result := strings.TrimSpace(resp.Content)
+	slog.Debug("voice STT result", "file_id", fileID, "result_len", len(result))
+	return result, nil
 }
 
 // resizeIfNeeded decodes the image and resizes it proportionally so that the

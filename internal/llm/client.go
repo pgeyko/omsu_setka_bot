@@ -696,6 +696,15 @@ func buildOpenAIContents(history []AgentMessage) []interface{} {
 								"url": fmt.Sprintf("data:%s;base64,%s", media.MimeType, base64Str),
 							},
 						})
+					} else if strings.HasPrefix(media.MimeType, "audio/") {
+						base64Str := base64.StdEncoding.EncodeToString(media.Data)
+						contentParts = append(contentParts, map[string]interface{}{
+							"type": "input_audio",
+							"input_audio": map[string]interface{}{
+								"data":   base64Str,
+								"format": strings.TrimPrefix(media.MimeType, "audio/"),
+							},
+						})
 					}
 				}
 				m["content"] = contentParts
@@ -742,6 +751,20 @@ func (c *Client) HasMultimodalProvider() bool {
 			if p.IsActive() && p.HasCapability(CapabilityMultimodal) {
 				return true
 			}
+		}
+	}
+	// Log all providers for diagnostics
+	for _, chain := range []*Chain{c.visionChain, c.audioChain} {
+		if chain == nil {
+			slog.Debug("multimodal chain is nil")
+			continue
+		}
+		for _, p := range chain.Providers() {
+			slog.Debug("multimodal provider state",
+				"name", p.Name,
+				"active", p.IsActive(),
+				"has_multimodal", p.HasCapability(CapabilityMultimodal),
+			)
 		}
 	}
 	return false

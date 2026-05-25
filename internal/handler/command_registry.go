@@ -18,7 +18,7 @@ func NewCommandRegistry() *CommandRegistry {
 			"id_general":             "📋 Это общий чат, у него нет ID топика.",
 			"resend_usage":           "Укажи топик: /resend [название или slug]",
 			"resend_no_reply":        "Ответь на сообщение, которое хочешь переслать.",
-			"resend_ok":              "↗️ Продублировал в «{topic}»",
+			"resend_ok":              "↗️ Продублировала в «{topic}»",
 			"register_usage":         "Укажи название: /register [название топика]",
 			"register_general":       "❌ Это общий чат. Напиши /register в нужном топике.",
 			"register_exists":        "⚠️ Этот топик уже зарегистрирован.",
