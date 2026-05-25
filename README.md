@@ -19,7 +19,7 @@ Telegram-бот для студенческой группы с ИИ-агент�
 
 - Go 1.23+
 - Node.js 24 (для сборки админки)
-- Токены: Gemini API, DeepSeek API (опционально), Telegram Bot
+- Токены: Groq API (основной), Gemini API (фолбек), OpenRouter API (last-resort free tier), Telegram Bot
 
 ### Переменные окружения
 
@@ -119,18 +119,42 @@ omsu_bot/
 
 ## LLM Provider Chain
 
-### Text Chain (classify, agent, summary)
+Три провайдера: **Groq** (первичный, OpenAI-совместимый) → **Gemini** (Google AI Studio, фолбек) → **OpenRouter** (free tier, last resort).
+Конфигурация: `config.yaml` → поле `chain` группирует провайдеры по цепочкам.
+
+### Agent chain (agent_loop — многошаговые запросы)
 ```
-gemma-4-31b-it       (15 RPM, 1500 TPM)
- → gemma-4-26b-it    (15 RPM, 1500 TPM)
-  → gemini-3.1-flash-lite (15 RPM, 500 RPD)
-   → deepseek-chat
+llama-3.3-70b-versatile  (Groq, 120 RPM, 2K RPD, 12K TPM)
+  → qwen/qwen3-32b       (Groq, 120 RPM, 2K RPD, 12K TPM)
+    → gemma-4-31b-it      (Gemini, 30 RPM, 3K RPD)
+      → gemma-4-26b-a4b-it(Gemini, 30 RPM, 3K RPD)
+        → openai/gpt-oss-120b:free (OpenRouter, catch-all)
+          → openrouter/free        (OpenRouter, catch-all)
 ```
 
-### Vision + Audio STT Chain
+### Simple chain (classify, diagnostic, summary)
 ```
-gemma-4-31b-it       (15 RPM, 1500 TPM)
- → gemini-3.1-flash-lite (15 RPM, 500 RPD)
+llama-3.1-8b-instant      (Groq, 120 RPM, 2K RPD, 12K TPM)
+  → qwen/qwen3-32b        (Groq, 60 RPM, 2K RPD, 12K TPM)
+    → gemini-3.1-flash-lite (Gemini, 30 RPM, 3K RPD, 500K TPM)
+      → gemini-3.1-flash-lite (Gemini, 30 RPM, 3K RPD, 500K TPM, fallback)
+        → openai/gpt-oss-20b:free (OpenRouter, catch-all)
+          → openrouter/free        (OpenRouter, catch-all)
+```
+
+### Vision chain (OCR, фото)
+```
+llama-4-scout-17b-16e      (Groq, 120 RPM, 2K RPD, 30K TPM)
+  → gemini-3.1-flash-lite  (Gemini, 30 RPM, 3K RPD, 500K TPM)
+    → gemma-4-31b-it        (Gemini, 30 RPM, 3K RPD)
+      → gemma-4-26b-a4b-it  (Gemini, 30 RPM, 3K RPD)
+```
+
+### Audio chain (STT, голосовые)
+```
+gemini-3.1-flash-lite     (Gemini, 30 RPM, 3K RPD, 500K TPM)
+  → whisper-large-v3-turbo (Groq, 40 RPM, 4K RPD)
+    → whisper-large-v3     (Groq, 40 RPM, 4K RPD)
 ```
 
 ## CI/CD

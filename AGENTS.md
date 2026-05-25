@@ -136,11 +136,11 @@ If tests cannot run due to missing deps, report the exact blocker.
 - Config via `github.com/ilyakaznacheev/cleanenv` (env + YAML).
 - JWT via `github.com/golang-jwt/jwt/v5`.
 - Telegram via `github.com/go-telegram/bot`.
-- LLM via plain `net/http` — no SDK. Two providers: Groq (primary, OpenAI-compatible) + Gemini (fallback).
-- Four specialized chains: agent (llama-70b → qwen3-32b → gemma-31b → gemma-26b), simple (qwen3-32b → llama-8b → flash-lite → gemma-26b), vision (scout-17b → flash-lite → gemma-31b), audio (flash-lite → whisper-turbo → whisper-v3).
+- LLM via plain `net/http` — no SDK. Three providers: Groq (primary, OpenAI-compatible) + Gemini (fallback) + OpenRouter (last-resort free tier).
+- Four specialized chains: agent (llama-3.3-70b → qwen3-32b → gemma-31b → gemma-26b → openai/gpt-oss-120b:free → openrouter/free), simple (llama-3.1-8b-instant → qwen3-32b → gemini-3.1-flash-lite → gpt-oss-20b:free → openrouter/free), vision (scout-17b → flash-lite → gemma-31b → gemma-26b), audio (flash-lite → whisper-turbo → whisper-v3).
 - All SQL must be parameterized — no string formatting for queries.
 - Persona system prompt injected as `system` role in every LLM call.
-- Rate limit: 5 LLM requests / min / user (in-memory, per user_id).
+- Rate limit: 10 LLM requests / min / user (in-memory, per user_id).
 - HMAC-SHA256 on webhook endpoint (`X-Webhook-Signature` header).
 
 ## SQLite Schema (core tables)

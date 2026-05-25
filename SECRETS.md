@@ -30,7 +30,7 @@
 | `OMSU_GROUP_ID` | — | ID группы в справочнике ОмГУ (для интеграции с omsu_setka) |
 | `DEEPSEEK_API_KEY` | — | API ключ DeepSeek (резервный LLM провайдер) |
 | `GROQ_API_KEY_2` | — | Резервный ключ Groq (второй аккаунт) — когда primary выбирает TPD/TPM |
-| `OPENROUTER_API_KEY` | — | Ключ OpenRouter — last-resort fallback (deepseek-r1, deepseek-v3, llama-3.3-70b free tier) |
+| `OPENROUTER_API_KEY` | — | Ключ OpenRouter — last-resort fallback (gpt-oss-120b:free / gpt-oss-20b:free / openrouter/free catch-all) |
 | `GEMINI_RESERVE_API_KEY` | — | Резервный ключ Gemini (второй аккаунт) |
 | `SETKA_BASE_URL` | — | URL omsu_setka API. Если оба контейнера на одной Docker-сети: `http://setka_backend:8080` |
 | `SETKA_ADMIN_KEY` | — | Admin-ключ для регистрации вебхука в omsu_setka |

@@ -118,18 +118,18 @@ WebhookHandler.Handle()
 
 ### 3.1 Структура провайдеров
 
-Два провайдера: **Groq** (первичный, OpenAI-совместимый) + **Gemini** (Google AI Studio, фолбек).
+Три провайдера: **Groq** (первичный, OpenAI-совместимый) → **Gemini** (Google AI Studio, фолбек) → **OpenRouter** (free tier, last resort).
 4 специализированные цепочки (`chain` в конфиге):
 
 | Цепочка | Приоритет | Назначение |
 |---|---|---|
-| `agent` | 10–40 | Agent loop (многошаговые запросы) |
-| `simple` | 10–40 | Классификация, диагностика, простые ответы |
-| `vision` | 10–30 | OCR, распознавание фото |
-| `audio` | 10–30 | STT, голосовые сообщения |
+| `agent` | 10–55 | Agent loop (многошаговые запросы) |
+| `simple` | 10–55 | Классификация, диагностика, простые ответы |
+| `vision` | 10–40 | OCR, распознавание фото |
+| `audio` | 10–40 | STT, голосовые сообщения |
 
 Провайдеры сортируются по полю `priority` (меньше = выше приоритет).
-Порядок в каждой цепочке: Groq → Gemini.
+Порядок в каждой цепочке: Groq → Gemini → OpenRouter.
 
 Подробная конфигурация — в `config.yaml` (не дублируется здесь во избежание расхождений).
 
@@ -169,9 +169,9 @@ type providerState struct {
 ### 3.4 Форматы API
 
 | Тип провайдера | URL | Формат запроса | Формат ответа |
-|---|---|---|---|
+|---|---|---|---|---|
 | `gemini` | `/v1beta/models/{model}:generateContent?key={key}` | `{contents: [{parts: [{text}]}]}` | `candidates[].content.parts[].text` |
-| `deepseek` / `openai` | `/v1/chat/completions` | `{model, messages: [{role, content}]}` | `choices[].message.content` |
+| `groq` / `openai` | `/v1/chat/completions` | `{model, messages: [{role, content}]}` | `choices[].message.content` |
 
 ---
 
@@ -301,6 +301,7 @@ GET    /api/stats/messages                — сообщения
 GET    /api/stats/providers               — провайдеры
 GET    /api/stats/check-providers         — проверка доступности
 POST   /api/stats/test-model              — тест LLM модели
+POST   /api/stats/test-all-models         — тест всех LLM провайдеров
 
 POST   /api/bot/send                      — отправить сообщение в группу
 
@@ -366,12 +367,12 @@ UNIQUE(message_id, chat_id)
 ## 9. Rate Limiting
 
 | Лимит | Где | Значение |
-|---|---|---|
-| Глобальный | `internal/handler/middleware.go` | 5 запросов/мин/user **(не подключён — см. `cmd/bot/main.go`)** |
+|---|---|---|---|
+| Глобальный | `internal/handler/middleware.go` | 10 запросов/мин/user **(не подключён — см. `cmd/bot/main.go`)** |
 | API General | `internal/api/router.go` | 120 запросов/мин/IP |
 | API Search | `internal/api/router.go` | 30 запросов/мин/IP |
-| Саммари | `summary_requests` таблица | 1 запрос/30 мин/user |
-| LLM дневной | `Tracker.dailyTokens` | 100 000 токенов/день |
+| Саммари | `summary_requests` таблица | 1 запрос/60 мин/user |
+| LLM дневной | `Tracker.dailyTokens` | 200 000 токенов/день |
 
 При 80% дневного лимита — алерт в лог.
 При 100% — автоклассификация отключается (ручные команды работают).

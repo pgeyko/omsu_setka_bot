@@ -201,37 +201,42 @@ X-Webhook-Event-ID: <hex(16 random bytes)>
 
 ## LLM Provider Chains (4 специализированных цепочки)
 
-Два провайдера: **Groq** (первичный, OpenAI-совместимый) + **Gemini** (Google AI Studio, фолбек).
-Конфигурация: `config.yaml` → поле `chain` группирует провайдеры по цепочкам.
+Три провайдера: **Groq** (первичный, OpenAI-совместимый) → **Gemini** (Google AI Studio, фолбек) → **OpenRouter** (free tier, last resort).
+Конфигурация: `config.yaml` → поле `chain` группирует провайдеры по цепочкам. Каждый провайдер имеет key2 дубль (второй Groq API key) для round-robin при исчерпании TPM/TPD.
 
-### Agent chain (agent_loop — сложные многошаговые)
+### Agent chain (agent_loop — многошаговые запросы)
 ```
-llama-3.3-70b-versatile  (Groq, 30 RPM, 1K RPD, 12K TPM)
-  → qwen/qwen3-32b       (Groq, 60 RPM, 1K RPD, 6K TPM)
-    → gemma-4-31b-it      (Gemini, 15 RPM, 1.5K RPD)
-      → gemma-4-26b-a4b-it(Gemini, 15 RPM, 1.5K RPD)
+llama-3.3-70b-versatile     (Groq x2 key, 120 RPM, 2K RPD, 12K TPM)
+  → qwen/qwen3-32b          (Groq x2 key, 120 RPM, 2K RPD, 12K TPM)
+    → gemma-4-31b-it         (Gemini, 30 RPM, 3K RPD)
+      → gemma-4-26b-a4b-it   (Gemini, 30 RPM, 3K RPD)
+        → openai/gpt-oss-120b:free (OpenRouter, catch-all)
+          → openrouter/free         (OpenRouter, catch-all)
 ```
 
 ### Simple chain (classify, diagnostic, summary)
 ```
-qwen/qwen3-32b            (Groq, 60 RPM, 1K RPD, 6K TPM)
-  → llama-3.1-8b-instant  (Groq, 30 RPM, 14.4K RPD)
-    → gemini-3.1-flash-lite(Gemini, 15 RPM, 500 RPD, 250K TPM)
-      → gemma-4-26b-a4b-it(Gemini, 15 RPM, 1.5K RPD)
+llama-3.1-8b-instant       (Groq x2 key, 120 RPM, 2K RPD, 12K TPM)
+  → qwen/qwen3-32b         (Groq x2 key, 60 RPM, 2K RPD, 12K TPM)
+    → gemini-3.1-flash-lite (Gemini, 30 RPM, 3K RPD, 500K TPM)
+      → gemini-3.1-flash-lite (Gemini, 30 RPM, 3K RPD, 500K TPM, fallback)
+        → openai/gpt-oss-20b:free (OpenRouter, catch-all)
+          → openrouter/free         (OpenRouter, catch-all)
 ```
 
 ### Vision chain (OCR, фото)
 ```
-llama-4-scout-17b-16e      (Groq, 30 RPM, 1K RPD, 30K TPM)
-  → gemini-3.1-flash-lite  (Gemini, 15 RPM, 500 RPD, 250K TPM)
-    → gemma-4-31b-it        (Gemini, 15 RPM, 1.5K RPD)
+llama-4-scout-17b-16e      (Groq x2 key, 120 RPM, 2K RPD, 30K TPM)
+  → gemini-3.1-flash-lite  (Gemini, 30 RPM, 3K RPD, 500K TPM)
+    → gemma-4-31b-it        (Gemini, 30 RPM, 3K RPD)
+      → gemma-4-26b-a4b-it  (Gemini, 30 RPM, 3K RPD)
 ```
 
 ### Audio chain (STT, голосовые)
 ```
-gemini-3.1-flash-lite     (Gemini, 15 RPM, 500 RPD, 250K TPM)
-  → whisper-large-v3-turbo (Groq, 20 RPM, 2K RPD)
-    → whisper-large-v3     (Groq, 20 RPM, 2K RPD)
+gemini-3.1-flash-lite     (Gemini, 30 RPM, 3K RPD, 500K TPM)
+  → whisper-large-v3-turbo (Groq x2 key, 40 RPM, 4K RPD)
+    → whisper-large-v3     (Groq x2 key, 40 RPM, 4K RPD)
 ```
 
 **Маршрутизация:** `PickChain(taskType, requiresVision)` → `agent_loop`→agent, `ocr`→vision, `stt`→audio, default→simple.
@@ -383,7 +388,8 @@ GET /api/stats/requests
 GET /api/stats/forwards
 GET /api/stats/messages
 GET /api/stats/providers
-POST /api/stats/test-model  Body: {"provider": "...", "prompt": "..."}
+POST /api/stats/test-model         Body: {"provider": "...", "prompt": "..."}
+POST /api/stats/test-all-models    — тест всех LLM провайдеров (группировка по типу)
 ```
 
 ### Schedule
