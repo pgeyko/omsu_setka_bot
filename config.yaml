@@ -82,7 +82,7 @@ llm:
       chain: agent
       api_key: "${OPENROUTER_API_KEY}"
       base_url: "https://openrouter.ai/api"
-      model: openrouter/free
+      model: openai/gpt-oss-120b:free
       priority: 50
 
     - name: openrouter-agent-fallback
@@ -162,7 +162,7 @@ llm:
       chain: simple
       api_key: "${OPENROUTER_API_KEY}"
       base_url: "https://openrouter.ai/api"
-      model: openrouter/free
+      model: openai/gpt-oss-20b:free
       priority: 50
 
     - name: openrouter-simple-fallback
