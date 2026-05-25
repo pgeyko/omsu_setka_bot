@@ -103,7 +103,7 @@ func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text s
 	var result ClassifyResult
 	if err := json.Unmarshal([]byte(llm.ExtractJSON(resp.Content)), &result); err != nil {
 		// Retry once with explicit JSON instruction
-		retryPrompt := userPrompt + "\n\nОТВЕТЬ ТОЛЬКО JSON. Никакого текста, только фигурные скобки."
+		retryPrompt := userPrompt + "\n\nОТВЕТЬ ТОЛЬКО JSON. Никакого текста, ни <think>-тегов, только фигурные скобки."
 		resp2, err2 := c.llmClient.CallWithSystemPrompt(ctx, "classify", systemPrompt, retryPrompt)
 		if err2 != nil {
 			return nil, fmt.Errorf("classification failed after retry: %w", err2)

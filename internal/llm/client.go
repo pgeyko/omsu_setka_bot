@@ -549,8 +549,16 @@ func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, mo
 	}, nil
 }
 
-// stripCJK removes CJK (Chinese, Japanese, Korean) characters from s.
+// stripCJK removes CJK (Chinese, Japanese, Korean) characters from s
+// and strips <think>...</think> reasoning tags.
 func stripCJK(s string) string {
+	// Strip <think>...</think> tags (qwen3, deepseek reasoning models)
+	if idx := strings.Index(s, "<think>"); idx != -1 {
+		end := strings.Index(s[idx:], "</think>")
+		if end != -1 {
+			s = s[:idx] + s[idx+end+8:]
+		}
+	}
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, r := range s {
