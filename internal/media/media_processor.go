@@ -135,7 +135,7 @@ func (mp *MediaProcessor) ProcessVoice(ctx context.Context, fileID string) (stri
 		},
 	}
 
-	resp, err := mp.llmClient.CallGroupHistory(ctx, 0, "stt", "", history, nil, false)
+	resp, err := mp.llmClient.CallWithSystemHistory(ctx, 0, "stt", "Распознай голосовое сообщение. Верни только дословный текст. Не используй инструменты и не добавляй пояснений.", history, false)
 	if err != nil {
 		slog.Error("voice STT LLM call failed", "file_id", fileID, "error", err)
 		return "", err
