@@ -353,9 +353,10 @@ func main() {
 			if database.IsGroupActive(ctx, update.Message.Chat.ID) {
 				if globalLLM != nil {
 					greetingPrompt := strings.ReplaceAll(prompts.Get("greeting"), "{name}", botDisplayName)
-					resp, err := globalLLM.Call(ctx, "diagnostic", "", greetingPrompt, false)
-					if err == nil {
-						b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, MessageThreadID: update.Message.MessageThreadID, Text: resp.Content, ParseMode: models.ParseModeHTML})
+				resp, err := globalLLM.Call(ctx, "diagnostic", "", greetingPrompt, false)
+				if err == nil {
+					resp.Content = util.StripMarkdown(resp.Content)
+					b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, MessageThreadID: update.Message.MessageThreadID, Text: resp.Content, ParseMode: models.ParseModeHTML})
 						return
 					}
 				}
@@ -844,6 +845,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			statusPrompt := strings.ReplaceAll(promptRegistry.Get("status_report"), "{stats}", statsStr)
 			resp, err := globalLLM.Call(ctx, "diagnostic", "", statusPrompt, false)
 			if err == nil {
+				resp.Content = util.StripMarkdown(resp.Content)
 				b.SendMessage(ctx, &tgbot.SendMessageParams{
 					ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,
 					Text: resp.Content, ParseMode: models.ParseModeHTML,

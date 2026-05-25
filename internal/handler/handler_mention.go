@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"omsu_bot/internal/agent"
+	"omsu_bot/internal/util"
 
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -79,6 +80,7 @@ func (h *MentionHandler) Handle(ctx context.Context, b *tgbot.Bot, update *model
 
 	if response != "" {
 		response = stripXMLTags(response)
+		response = util.StripMarkdown(response)
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID:          msg.Chat.ID,
 			MessageThreadID: msg.MessageThreadID,

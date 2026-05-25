@@ -640,7 +640,7 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 				_, err = e.bot.SendMessage(ctx, &tgbot.SendMessageParams{
 					ChatID:          chatID,
 					MessageThreadID: threadID,
-					Text:            action.Text,
+					Text:            util.StripMarkdown(action.Text),
 					ParseMode:       models.ParseModeHTML,
 				})
 			}

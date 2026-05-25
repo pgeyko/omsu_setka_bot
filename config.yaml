@@ -26,6 +26,17 @@ llm:
       tpd_limit: 200000
       priority: 10
 
+    - name: groq-agent-key2
+      type: groq
+      chain: agent
+      api_key: "${GROQ_API_KEY_2}"
+      model: llama-3.3-70b-versatile
+      rpm_limit: 60
+      rpd_limit: 2000
+      tpm_limit: 24000
+      tpd_limit: 200000
+      priority: 15
+
     - name: groq-agent-fallback
       type: groq
       chain: agent
@@ -36,6 +47,17 @@ llm:
       tpm_limit: 12000
       tpd_limit: 1000000
       priority: 20
+
+    - name: groq-agent-fallback-key2
+      type: groq
+      chain: agent
+      api_key: "${GROQ_API_KEY_2}"
+      model: qwen/qwen3-32b
+      rpm_limit: 120
+      rpd_limit: 2000
+      tpm_limit: 12000
+      tpd_limit: 1000000
+      priority: 25
 
     - name: gemini-agent
       type: gemini
@@ -67,6 +89,17 @@ llm:
       tpd_limit: 1000000
       priority: 10
 
+    - name: groq-simple-key2
+      type: groq
+      chain: simple
+      api_key: "${GROQ_API_KEY_2}"
+      model: qwen/qwen3-32b
+      rpm_limit: 120
+      rpd_limit: 2000
+      tpm_limit: 12000
+      tpd_limit: 1000000
+      priority: 15
+
     - name: groq-simple-fallback
       type: groq
       chain: simple
@@ -77,6 +110,17 @@ llm:
       tpm_limit: 12000
       tpd_limit: 1000000
       priority: 20
+
+    - name: groq-simple-fallback-key2
+      type: groq
+      chain: simple
+      api_key: "${GROQ_API_KEY_2}"
+      model: llama-3.1-8b-instant
+      rpm_limit: 60
+      rpd_limit: 28800
+      tpm_limit: 12000
+      tpd_limit: 1000000
+      priority: 25
 
     - name: gemini-simple
       type: gemini
@@ -108,6 +152,17 @@ llm:
       tpm_limit: 60000
       tpd_limit: 1000000
       priority: 10
+
+    - name: groq-vision-key2
+      type: groq
+      chain: vision
+      api_key: "${GROQ_API_KEY_2}"
+      model: meta-llama/llama-4-scout-17b-16e-instruct
+      rpm_limit: 60
+      rpd_limit: 2000
+      tpm_limit: 60000
+      tpd_limit: 1000000
+      priority: 15
 
     - name: gemini-vision
       type: gemini
@@ -148,6 +203,15 @@ llm:
       rpd_limit: 4000
       priority: 20
 
+    - name: groq-audio-key2
+      type: groq
+      chain: audio
+      api_key: "${GROQ_API_KEY_2}"
+      model: whisper-large-v3-turbo
+      rpm_limit: 40
+      rpd_limit: 4000
+      priority: 25
+
     - name: groq-audio-fallback
       type: groq
       chain: audio
@@ -156,6 +220,15 @@ llm:
       rpm_limit: 40
       rpd_limit: 4000
       priority: 30
+
+    - name: groq-audio-fallback-key2
+      type: groq
+      chain: audio
+      api_key: "${GROQ_API_KEY_2}"
+      model: whisper-large-v3
+      rpm_limit: 40
+      rpd_limit: 4000
+      priority: 35
 
 api:
   listen: ":8081"
