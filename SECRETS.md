@@ -13,6 +13,7 @@
 | `SSH_PRIVATE_KEY` | Приватный SSH-ключ (без пароля) | `-----BEGIN OPENSSH PRIVATE KEY-----\n...` |
 | `BOT_TOKEN` | Токен Telegram бота от @BotFather | `8181690472:AAHjXuO...` |
 | `GROUP_ID` | ID супергруппы (с минусом) | `-1003990812833` |
+| `GROQ_API_KEY` | API ключ Groq (primary) | `gsk_your_groq_key` |
 | `GEMINI_API_KEY` | API ключ Gemini | `AIzaSyChTGHR3...` |
 | `ADMIN_SECRET` | Секрет для получения JWT | `my-secret-admin-key` |
 | `JWT_SECRET` | Секрет подписи JWT (любая строка) | `my-jwt-signing-secret` |
@@ -28,6 +29,7 @@
 | `DEPLOY_PATH` | `~/omsu_setka_bot` | Путь к проекту на сервере |
 | `OMSU_GROUP_ID` | — | ID группы в справочнике ОмГУ (для интеграции с omsu_setka) |
 | `DEEPSEEK_API_KEY` | — | API ключ DeepSeek (резервный LLM провайдер) |
+| `GROQ_API_KEY_2` | — | Резервный ключ Groq (второй аккаунт) — когда primary выбирает TPD/TPM |
 | `GEMINI_RESERVE_API_KEY` | — | Резервный ключ Gemini (второй аккаунт) |
 | `SETKA_BASE_URL` | — | URL omsu_setka API. Если оба контейнера на одной Docker-сети: `http://setka_backend:8080` |
 | `SETKA_ADMIN_KEY` | — | Admin-ключ для регистрации вебхука в omsu_setka |
