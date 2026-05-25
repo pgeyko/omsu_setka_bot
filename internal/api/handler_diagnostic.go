@@ -1,9 +1,13 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -104,6 +108,185 @@ func (s *Server) handleTestModel(c *fiber.Ctx) error {
 		Model:    resp.Model,
 		Response: resp.Content,
 		Latency:  latency.Round(time.Millisecond).String(),
+	})
+}
+
+func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
+	if s.Chain == nil {
+		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "LLM chain not available")
+	}
+
+	type testResult struct {
+		Success  bool   `json:"success"`
+		Latency  string `json:"latency,omitempty"`
+		Response string `json:"response,omitempty"`
+		Error    string `json:"error,omitempty"`
+	}
+
+	type modelResult struct {
+		Name     string      `json:"name"`
+		Type     string      `json:"type"`
+		Model    string      `json:"model"`
+		Priority int         `json:"priority"`
+		Active   bool        `json:"active"`
+		Test     *testResult `json:"test,omitempty"`
+	}
+
+	byType := make(map[string][]modelResult)
+	total, ok := 0, 0
+
+	testPrompt := "Ответь одним словом: ты работаешь?"
+
+	for _, provider := range s.Chain.Providers() {
+		total++
+		active := provider.IsActive()
+		result := modelResult{
+			Name:     provider.Name,
+			Type:     provider.Type,
+			Model:    provider.Model,
+			Priority: provider.Priority,
+			Active:   active,
+		}
+
+		if strings.HasPrefix(provider.Model, "whisper") {
+			result.Test = &testResult{Success: true}
+			ok++
+			byType[provider.Type] = append(byType[provider.Type], result)
+			continue
+		}
+
+		start := time.Now()
+		httpClient := &http.Client{Timeout: 15 * time.Second}
+		tr := &testResult{}
+		ctx := c.Context()
+
+		switch provider.Type {
+		case "gemini":
+			apiURL := provider.BaseURL + "/v1beta/models/" + provider.Model + ":generateContent?key=" + provider.APIKey
+			body := map[string]interface{}{
+				"contents": []map[string]interface{}{
+					{"parts": []map[string]string{{"text": testPrompt}}},
+				},
+			}
+			b, err := json.Marshal(body)
+			if err != nil {
+				tr.Success = false
+				tr.Error = fmt.Sprintf("marshal: %v", err)
+				break
+			}
+			resp, err := httpClient.Post(apiURL, "application/json", bytes.NewReader(b))
+			if err != nil {
+				tr.Success = false
+				tr.Error = err.Error()
+				break
+			}
+			content, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			if resp.StatusCode >= 400 {
+				tr.Success = false
+				tr.Error = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(content))
+				break
+			}
+
+			var geminiResp struct {
+				Candidates []struct {
+					Content struct {
+						Parts []struct {
+							Text string `json:"text"`
+						} `json:"parts"`
+					} `json:"content"`
+				} `json:"candidates"`
+			}
+			if jsonErr := json.Unmarshal(content, &geminiResp); jsonErr != nil {
+				tr.Success = false
+				tr.Error = fmt.Sprintf("parse: %v — %s", jsonErr, string(content))
+				break
+			}
+			if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
+				tr.Success = true
+				tr.Response = geminiResp.Candidates[0].Content.Parts[0].Text
+				ok++
+			} else {
+				tr.Success = false
+				tr.Error = fmt.Sprintf("empty response: %s", string(content))
+			}
+
+		default:
+			apiURL := provider.BaseURL + "/v1/chat/completions"
+			body := map[string]interface{}{
+				"model": provider.Model,
+				"messages": []map[string]string{
+					{"role": "user", "content": testPrompt},
+				},
+				"max_tokens": 50,
+			}
+			b, err := json.Marshal(body)
+			if err != nil {
+				tr.Success = false
+				tr.Error = fmt.Sprintf("marshal: %v", err)
+				break
+			}
+			req, reqErr := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+			if reqErr != nil {
+				tr.Success = false
+				tr.Error = reqErr.Error()
+				break
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				tr.Success = false
+				tr.Error = err.Error()
+				break
+			}
+			content, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			if resp.StatusCode >= 400 {
+				tr.Success = false
+				tr.Error = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(content))
+				break
+			}
+
+			var openAIResp struct {
+				Choices []struct {
+					Message struct {
+						Content string `json:"content"`
+					} `json:"message"`
+				} `json:"choices"`
+			}
+			if jsonErr := json.Unmarshal(content, &openAIResp); jsonErr != nil {
+				tr.Success = false
+				tr.Error = fmt.Sprintf("parse: %v — %s", jsonErr, string(content))
+				break
+			}
+			if len(openAIResp.Choices) > 0 {
+				tr.Success = true
+				tr.Response = openAIResp.Choices[0].Message.Content
+				ok++
+			} else {
+				tr.Success = false
+				tr.Error = fmt.Sprintf("empty choices: %s", string(content))
+			}
+		}
+
+		tr.Latency = time.Since(start).Round(time.Millisecond).String()
+		result.Test = tr
+		byType[provider.Type] = append(byType[provider.Type], result)
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	return respondSuccess(c, fiber.Map{
+		"results": byType,
+		"summary": fiber.Map{
+			"total":  total,
+			"ok":     ok,
+			"failed": total - ok,
+		},
 	})
 }
 

@@ -227,6 +227,7 @@ func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowS
 	api.Get("/stats/messages", s.handleStatsMessages)
 	api.Get("/stats/providers", s.handleStatsProviders)
 	api.Get("/stats/check-providers", s.handleCheckProviders)
+	api.Post("/stats/test-all-models", s.handleTestAllModels)
 	api.Post("/stats/test-model", limiter.New(limiter.Config{
 		Max: rateLimitSearch, Expiration: window,
 		KeyGenerator: func(c *fiber.Ctx) string { return c.IP() },
