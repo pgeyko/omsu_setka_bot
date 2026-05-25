@@ -7,6 +7,8 @@ import (
 	"image/jpeg"
 	"image/png"
 	"testing"
+
+	"omsu_bot/internal/util"
 )
 
 // createTestJPEG creates a synthetic JPEG of the given dimensions.
@@ -145,9 +147,9 @@ func TestGetMimeTypeByPath(t *testing.T) {
 		{"noext", "application/octet-stream"},
 	}
 	for _, tc := range cases {
-		got := getMimeTypeByPath(tc.path)
+		got := util.MimeTypeByPath(tc.path)
 		if got != tc.expected {
-			t.Errorf("getMimeTypeByPath(%q) = %q, want %q", tc.path, got, tc.expected)
+			t.Errorf("MimeTypeByPath(%q) = %q, want %q", tc.path, got, tc.expected)
 		}
 	}
 }

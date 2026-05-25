@@ -229,6 +229,7 @@ func defaultFeatures() map[string]bool {
 		"enable_flood_control":        true,
 		"enable_voice_transcription": true,
 		"enable_photo_processing":    true,
+		"photo_on_mention":          false,
 	}
 }
 

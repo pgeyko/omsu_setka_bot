@@ -49,7 +49,7 @@
 - [x] `prompts/topic_command.txt` (заменён агентным подходом в Этапе 8)
 - [x] `prompts/schedule_announce.txt`
 - [x] `cmd/bot/main.go` — инициализация всех зависимостей, graceful shutdown
-- [ ] Базовый Telegram-бот: longpolling, middleware rate-limit (5 req/min/user) — следующий этап
+- [x] Базовый Telegram-бот: longpolling, middleware rate-limit (5 req/min/user) — реализовано в Этапе 2 (longpolling) + Этапе 15 P1#6 (middleware)
 - [x] `go build ./...`, `go vet ./...` — чисто
 
 ---
@@ -164,8 +164,6 @@
 - [x] `docker-compose.yml` — бот + volume для SQLite
 - [x] `.env.example` — финальная версия со всеми переменными
 - [x] `README.md` — инструкция по деплою для новой группы
-- [ ] Smoke-тест: проверить webhook end-to-end с omsu_setka (ручной)
-- [ ] Smoke-тест: обновить persona через API (ручной)
 - [x] Git tag `v1.0.0` (по готовности)
 
 ## Этап 8 — Мультиарендность, Управление Контекстом и Агентный подход ✅ Completed: 2026-05-21

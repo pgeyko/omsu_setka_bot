@@ -17,7 +17,7 @@ Telegram-бот для студенческой группы с ИИ-агент�
 
 ### Требования
 
-- Go 1.23+
+- Go 1.25+
 - Node.js 24 (для сборки админки)
 - Токены: Groq API (основной), Gemini API (фолбек), OpenRouter API (last-resort free tier), Telegram Bot
 

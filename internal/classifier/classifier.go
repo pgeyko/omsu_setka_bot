@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"omsu_bot/internal/llm"
+	"omsu_bot/internal/util"
 )
 
 type ClassifyResult struct {
@@ -109,7 +110,7 @@ func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text s
 			return nil, fmt.Errorf("classification failed after retry: %w", err2)
 		}
 		if err := json.Unmarshal([]byte(llm.ExtractJSON(resp2.Content)), &result); err != nil {
-			return nil, fmt.Errorf("failed to parse classification: %w (content: %s)", err, truncateR(resp2.Content, 200))
+			return nil, fmt.Errorf("failed to parse classification: %w (content: %s)", err, util.Truncate(resp2.Content, 200))
 		}
 	}
 
@@ -131,13 +132,6 @@ func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text s
 	}
 
 	return &result, nil
-}
-
-func truncateR(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
 }
 
 func (c *Classifier) fillPrompt(template string, topics []TopicInfo, text string) string {

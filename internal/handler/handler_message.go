@@ -12,10 +12,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/classifier"
@@ -83,7 +85,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		"msg_id", msg.ID,
 		"from", userID,
 		"username", username,
-		"text", truncate(msg.Text, 500),
+		"text", util.Truncate(msg.Text, 500),
 		"chat", msg.Chat.ID,
 		"thread", msg.MessageThreadID,
 	)
@@ -292,7 +294,7 @@ func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, to
 
 	// Convert classifier output to a proper name: "важная-информация" → "Важная информация"
 	topicName := strings.ReplaceAll(topic, "-", " ")
-	topicName = strings.Title(strings.ToLower(topicName))
+	topicName = cases.Title(language.Russian).String(topicName)
 
 	forum, err := h.bot.CreateForumTopic(ctx, &tgbot.CreateForumTopicParams{
 		ChatID: msg.Chat.ID,
@@ -313,22 +315,6 @@ func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, to
 		"name", topicName, "thread_id", forum.MessageThreadID, "slug", slug,
 	)
 	return forum.MessageThreadID, nil
-}
-
-func mimeFromPath(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".webp":
-		return "image/webp"
-	case ".gif":
-		return "image/gif"
-	default:
-		return "image/jpeg"
-	}
 }
 
 func resizeImage(data []byte) ([]byte, error) {
@@ -396,7 +382,7 @@ func (h *Handler) classifyPhoto(ctx context.Context, chatID int64, text, fileID 
 		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
 	}
 
-	mime := mimeFromPath(file.FilePath)
+	mime := util.MimeTypeByPath(file.FilePath)
 	resized, err := resizeImage(imageData)
 	if err == nil {
 		imageData = resized
@@ -650,13 +636,6 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 	for _, item := range groupItems {
 		h.finishProcessing(ctx, item.MessageID, msg.Chat.ID, msg.MessageThreadID, "forwarded", targetThreadID)
 	}
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
 }
 
 func countWords(s string) int {

@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"log/slog"
 	"os"
 
 	"github.com/ilyakaznacheev/cleanenv"
@@ -93,7 +93,8 @@ func Load(configPath string) *Config {
 	cfg := &Config{}
 
 	if err := cleanenv.ReadConfig(configPath, cfg); err != nil {
-		log.Fatalf("Failed to read config file: %v", err)
+		slog.Error("Failed to read config file", "path", configPath, "error", err)
+		os.Exit(1)
 	}
 
 	for i := range cfg.LLM.Providers {

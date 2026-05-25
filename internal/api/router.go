@@ -74,7 +74,8 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 	}))
 	// Guard against accidentally allowing all origins in production.
 	if corsOrigin == "*" && appEnv == "production" {
-		panic("CORS_ORIGIN must not be '*' in production")
+		slog.Error("CORS_ORIGIN must not be '*' in production")
+		os.Exit(1)
 	}
 	app.Use(etag.New())
 

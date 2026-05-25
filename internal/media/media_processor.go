@@ -11,11 +11,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"omsu_bot/internal/llm"
+	"omsu_bot/internal/util"
 
 	tgbot "github.com/go-telegram/bot"
 )
@@ -238,24 +238,8 @@ func (mp *MediaProcessor) downloadFile(ctx context.Context, fileID string) ([]by
 		return nil, "", err
 	}
 
-	mimeType := getMimeTypeByPath(file.FilePath)
+	mimeType := util.MimeTypeByPath(file.FilePath)
 	return data, mimeType, nil
 }
 
-func getMimeTypeByPath(path string) string {
-	ext := strings.ToLower(filepath.Ext(path))
-	switch ext {
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".png":
-		return "image/png"
-	case ".webp":
-		return "image/webp"
-	case ".gif":
-		return "image/gif"
-	case ".ogg", ".oga":
-		return "audio/ogg"
-	default:
-		return "application/octet-stream"
-	}
-}
+

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"omsu_bot/internal/persona"
+	"omsu_bot/internal/util"
 )
 
 type Message struct {
@@ -222,7 +223,7 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 				"provider", provider.Name,
 				"model", model,
 				"requires_vision", requiresVision,
-				"system_prompt", truncate(systemContent, 500),
+				"system_prompt", util.Truncate(systemContent, 500),
 				"history_len", len(history),
 				"tools_len", len(tools),
 			)
@@ -326,7 +327,7 @@ func (c *Client) callWhisper(ctx context.Context, provider *Provider, model stri
 	}
 
 	if httpResp.StatusCode != 200 {
-		return nil, fmt.Errorf("whisper returned status %d: %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return nil, fmt.Errorf("whisper returned status %d: %s", httpResp.StatusCode, util.Truncate(string(respBody), 500))
 	}
 
 	var result struct {
@@ -441,7 +442,7 @@ func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, mo
 	}
 
 	if httpResp.StatusCode != 200 {
-		return nil, fmt.Errorf("llm returned status %d: %s", httpResp.StatusCode, truncate(string(respBody), 500))
+		return nil, fmt.Errorf("llm returned status %d: %s", httpResp.StatusCode, util.Truncate(string(respBody), 500))
 	}
 
 	var inputTokens, outputTokens int
@@ -828,13 +829,6 @@ func trimToBalanced(s string) string {
 		}
 	}
 	return s
-}
-
-func truncate(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max] + "..."
 }
 
 func historyTokens(history []AgentMessage) int {
