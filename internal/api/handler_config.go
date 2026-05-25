@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -67,10 +68,18 @@ func (s *Server) handleUpdateConfig(c *fiber.Ctx) error {
 
 	// Persist to DB so config survives restarts.
 	d := &db.DB{DB: s.DB}
-	_ = d.SetConfig(c.Context(), "skip_fallback_model", strconv.FormatBool(req.SkipFallbackModel))
-	_ = d.SetConfig(c.Context(), "global_voice_transcription", strconv.FormatBool(req.GlobalVoiceTranscription))
-	_ = d.SetConfig(c.Context(), "global_photo_processing", strconv.FormatBool(req.GlobalPhotoProcessing))
-	_ = d.SetConfig(c.Context(), "group_registration_restricted", strconv.FormatBool(req.GroupRegistrationRestricted))
+	if err := d.SetConfig(c.Context(), "skip_fallback_model", strconv.FormatBool(req.SkipFallbackModel)); err != nil {
+		slog.Warn("persist skip_fallback_model", "error", err)
+	}
+	if err := d.SetConfig(c.Context(), "global_voice_transcription", strconv.FormatBool(req.GlobalVoiceTranscription)); err != nil {
+		slog.Warn("persist global_voice_transcription", "error", err)
+	}
+	if err := d.SetConfig(c.Context(), "global_photo_processing", strconv.FormatBool(req.GlobalPhotoProcessing)); err != nil {
+		slog.Warn("persist global_photo_processing", "error", err)
+	}
+	if err := d.SetConfig(c.Context(), "group_registration_restricted", strconv.FormatBool(req.GroupRegistrationRestricted)); err != nil {
+		slog.Warn("persist group_registration_restricted", "error", err)
+	}
 
 	return respondSuccess(c, configResponse{
 		SkipFallbackModel:           s.SkipFallbackModel,

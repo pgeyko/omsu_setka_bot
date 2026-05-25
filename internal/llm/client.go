@@ -17,6 +17,13 @@ import (
 	"omsu_bot/internal/util"
 )
 
+const (
+	interModelDelay      = 120 * time.Millisecond
+	logTruncateLen       = 500
+	contentTruncateLen   = 500
+	errorTruncateLen     = 500
+)
+
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -214,7 +221,7 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 				select {
 				case <-ctx.Done():
 					return nil, ctx.Err()
-				case <-time.After(120 * time.Millisecond):
+				case <-time.After(interModelDelay):
 				}
 			}
 			tried++
@@ -223,7 +230,7 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 				"provider", provider.Name,
 				"model", model,
 				"requires_vision", requiresVision,
-				"system_prompt", util.Truncate(systemContent, 500),
+				"system_prompt", util.Truncate(systemContent, logTruncateLen),
 				"history_len", len(history),
 				"tools_len", len(tools),
 			)
@@ -301,11 +308,22 @@ func (c *Client) callWhisper(ctx context.Context, provider *Provider, model stri
 
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
-	part, _ := w.CreateFormFile("file", "audio.ogg")
-	part.Write(audioData)
-	w.WriteField("model", model)
-	w.WriteField("language", "ru")
-	w.Close()
+	part, err := w.CreateFormFile("file", "audio.ogg")
+	if err != nil {
+		slog.Warn("whisper create form file", "error", err)
+	}
+	if _, err := part.Write(audioData); err != nil {
+		slog.Warn("whisper write audio", "error", err)
+	}
+	if err := w.WriteField("model", model); err != nil {
+		slog.Warn("whisper write field model", "error", err)
+	}
+	if err := w.WriteField("language", "ru"); err != nil {
+		slog.Warn("whisper write field language", "error", err)
+	}
+	if err := w.Close(); err != nil {
+		slog.Warn("whisper close multipart", "error", err)
+	}
 
 	apiURL := provider.BaseURL + "/v1/audio/transcriptions"
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, &buf)
@@ -326,8 +344,8 @@ func (c *Client) callWhisper(ctx context.Context, provider *Provider, model stri
 		return nil, fmt.Errorf("failed to read whisper response: %w", err)
 	}
 
-	if httpResp.StatusCode != 200 {
-		return nil, fmt.Errorf("whisper returned status %d: %s", httpResp.StatusCode, util.Truncate(string(respBody), 500))
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("whisper returned status %d: %s", httpResp.StatusCode, util.Truncate(string(respBody), errorTruncateLen))
 	}
 
 	var result struct {
@@ -345,84 +363,18 @@ func (c *Client) callWhisper(ctx context.Context, provider *Provider, model stri
 }
 
 func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, model string, systemContent string, history []AgentMessage, tools []Tool) (*Response, error) {
-	// Whisper models use audio transcription endpoint, not chat completions
 	if strings.HasPrefix(model, "whisper") {
 		return c.callWhisper(ctx, provider, model, history)
 	}
 
-	var apiURL string
 	var httpReq *http.Request
 	var errReq error
 
 	switch provider.Type {
 	case "gemini":
-		apiURL = provider.BaseURL + "/v1beta/models/" + model + ":generateContent?key=" + provider.APIKey
-		
-		geminiReq := map[string]interface{}{
-			"system_instruction": map[string]interface{}{
-				"parts": []map[string]string{{"text": systemContent}},
-			},
-			"contents": buildGeminiContents(history),
-		}
-
-		if len(tools) > 0 {
-			var decls []interface{}
-			for _, t := range tools {
-				decls = append(decls, map[string]interface{}{
-					"name":        t.Name,
-					"description": t.Description,
-					"parameters":  formatSchemaTypes(t.Parameters, true),
-				})
-			}
-			geminiReq["tools"] = []interface{}{
-				map[string]interface{}{
-					"function_declarations": decls,
-				},
-			}
-		}
-
-		var b []byte
-		b, errReq = json.Marshal(geminiReq)
-		if errReq == nil {
-			httpReq, errReq = http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
-		}
-
-	default: // openai / deepseek
-		apiURL = provider.BaseURL + "/v1/chat/completions"
-		
-		var msgs []interface{}
-		msgs = append(msgs, map[string]interface{}{
-			"role":    "system",
-			"content": systemContent,
-		})
-		msgs = append(msgs, buildOpenAIContents(history)...)
-
-		openAIReq := map[string]interface{}{
-			"model":    model,
-			"messages": msgs,
-		}
-
-		if len(tools) > 0 {
-			var openAITools []interface{}
-			for _, t := range tools {
-				openAITools = append(openAITools, map[string]interface{}{
-					"type": "function",
-					"function": map[string]interface{}{
-						"name":        t.Name,
-						"description": t.Description,
-						"parameters":  formatSchemaTypes(t.Parameters, false),
-					},
-				})
-			}
-			openAIReq["tools"] = openAITools
-		}
-
-		var b []byte
-		b, errReq = json.Marshal(openAIReq)
-		if errReq == nil {
-			httpReq, errReq = http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
-			httpReq.Header.Set("Authorization", "Bearer "+provider.APIKey)
-		}
+		httpReq, errReq = c.buildGeminiRequest(ctx, provider, model, systemContent, history, tools)
+	default:
+		httpReq, errReq = c.buildOpenAIRequest(ctx, provider, model, systemContent, history, tools)
 	}
 
 	if errReq != nil {
@@ -441,113 +393,22 @@ func (c *Client) callProviderHistory(ctx context.Context, provider *Provider, mo
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	if httpResp.StatusCode != 200 {
-		return nil, fmt.Errorf("llm returned status %d: %s", httpResp.StatusCode, util.Truncate(string(respBody), 500))
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("llm returned status %d: %s", httpResp.StatusCode, util.Truncate(string(respBody), errorTruncateLen))
 	}
 
-	var inputTokens, outputTokens int
-	var toolCalls []ToolCall
-	content := ""
-
+	var resp *Response
 	switch provider.Type {
 	case "gemini":
-		var geminiResp struct {
-			Candidates []struct {
-				Content struct {
-					Role  string `json:"role"`
-					Parts []struct {
-						Text         string `json:"text"`
-						FunctionCall *struct {
-							Name             string                 `json:"name"`
-							Args             map[string]interface{} `json:"args"`
-							ThoughtSignature string                 `json:"thought_signature"`
-						} `json:"functionCall"`
-					} `json:"parts"`
-				} `json:"content"`
-			} `json:"candidates"`
-			UsageMetadata struct {
-				PromptTokenCount     int `json:"promptTokenCount"`
-				CandidatesTokenCount int `json:"candidatesTokenCount"`
-			} `json:"usageMetadata"`
-		}
-		if err := json.Unmarshal(respBody, &geminiResp); err == nil {
-			if len(geminiResp.Candidates) > 0 {
-				candidate := geminiResp.Candidates[0]
-				for _, part := range candidate.Content.Parts {
-					if part.FunctionCall != nil {
-						argsBytes, _ := json.Marshal(part.FunctionCall.Args)
-						toolCalls = append(toolCalls, ToolCall{
-							ID:   fmt.Sprintf("call_%d", time.Now().UnixNano()),
-							Type: "function",
-							Function: FunctionCall{
-								Name:      part.FunctionCall.Name,
-								Arguments: string(argsBytes),
-							},
-							ThoughtSignature: part.FunctionCall.ThoughtSignature,
-						})
-					}
-					if part.Text != "" {
-						content = part.Text
-					}
-				}
-			}
-			inputTokens = geminiResp.UsageMetadata.PromptTokenCount
-			outputTokens = geminiResp.UsageMetadata.CandidatesTokenCount
-		} else {
-			return nil, fmt.Errorf("failed to unmarshal gemini response: %w", err)
-		}
+		resp, err = parseGeminiResponse(respBody)
 	default:
-		var openAIResp struct {
-			Choices []struct {
-				Message struct {
-					Content   string `json:"content"`
-					ToolCalls []struct {
-						ID       string `json:"id"`
-						Type     string `json:"type"`
-						Function struct {
-							Name      string `json:"name"`
-							Arguments string `json:"arguments"`
-						} `json:"function"`
-					} `json:"tool_calls"`
-				} `json:"message"`
-			} `json:"choices"`
-			Usage struct {
-				PromptTokens     int `json:"prompt_tokens"`
-				CompletionTokens int `json:"completion_tokens"`
-			} `json:"usage"`
-		}
-		if err := json.Unmarshal(respBody, &openAIResp); err == nil {
-			if len(openAIResp.Choices) > 0 {
-				choice := openAIResp.Choices[0]
-				content = choice.Message.Content
-				if len(choice.Message.ToolCalls) > 0 {
-					for _, tc := range choice.Message.ToolCalls {
-						toolCalls = append(toolCalls, ToolCall{
-							ID:   tc.ID,
-							Type: tc.Type,
-							Function: FunctionCall{
-								Name:      tc.Function.Name,
-								Arguments: tc.Function.Arguments,
-							},
-						})
-					}
-				}
-			}
-			inputTokens = openAIResp.Usage.PromptTokens
-			outputTokens = openAIResp.Usage.CompletionTokens
-		} else {
-			return nil, fmt.Errorf("failed to unmarshal openai response: %w", err)
-		}
+		resp, err = parseOpenAIResponse(respBody)
 	}
-
-	content = stripCJK(content)
-
-	return &Response{
-		Content:      content,
-		InputTokens:  inputTokens,
-		OutputTokens: outputTokens,
-		ToolCalls:    toolCalls,
-	}, nil
+	if err != nil {
+		return nil, err
+	}
+	resp.Content = stripCJK(resp.Content)
+	return resp, nil
 }
 
 // stripCJK removes CJK (Chinese, Japanese, Korean) characters from s
@@ -572,6 +433,179 @@ func stripCJK(s string) string {
 		b.WriteRune(r)
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func (c *Client) buildGeminiRequest(ctx context.Context, provider *Provider, model, systemContent string, history []AgentMessage, tools []Tool) (*http.Request, error) {
+	apiURL := provider.BaseURL + "/v1beta/models/" + model + ":generateContent?key=" + provider.APIKey
+
+	geminiReq := map[string]interface{}{
+		"system_instruction": map[string]interface{}{
+			"parts": []map[string]string{{"text": systemContent}},
+		},
+		"contents": buildGeminiContents(history),
+	}
+
+	if len(tools) > 0 {
+		var decls []interface{}
+		for _, t := range tools {
+			decls = append(decls, map[string]interface{}{
+				"name":        t.Name,
+				"description": t.Description,
+				"parameters":  formatSchemaTypes(t.Parameters, true),
+			})
+		}
+		geminiReq["tools"] = []interface{}{
+			map[string]interface{}{
+				"function_declarations": decls,
+			},
+		}
+	}
+
+	b, err := json.Marshal(geminiReq)
+	if err != nil {
+		return nil, fmt.Errorf("gemini marshal: %w", err)
+	}
+	return http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+}
+
+func (c *Client) buildOpenAIRequest(ctx context.Context, provider *Provider, model, systemContent string, history []AgentMessage, tools []Tool) (*http.Request, error) {
+	apiURL := provider.BaseURL + "/v1/chat/completions"
+
+	var msgs []interface{}
+	msgs = append(msgs, map[string]interface{}{
+		"role":    "system",
+		"content": systemContent,
+	})
+	msgs = append(msgs, buildOpenAIContents(history)...)
+
+	openAIReq := map[string]interface{}{
+		"model":    model,
+		"messages": msgs,
+	}
+
+	if len(tools) > 0 {
+		var openAITools []interface{}
+		for _, t := range tools {
+			openAITools = append(openAITools, map[string]interface{}{
+				"type": "function",
+				"function": map[string]interface{}{
+					"name":        t.Name,
+					"description": t.Description,
+					"parameters":  formatSchemaTypes(t.Parameters, false),
+				},
+			})
+		}
+		openAIReq["tools"] = openAITools
+	}
+
+	b, err := json.Marshal(openAIReq)
+	if err != nil {
+		return nil, fmt.Errorf("openai marshal: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+	return req, nil
+}
+
+func parseGeminiResponse(respBody []byte) (*Response, error) {
+	var geminiResp struct {
+		Candidates []struct {
+			Content struct {
+				Role  string `json:"role"`
+				Parts []struct {
+					Text         string `json:"text"`
+					FunctionCall *struct {
+						Name             string                 `json:"name"`
+						Args             map[string]interface{} `json:"args"`
+						ThoughtSignature string                 `json:"thought_signature"`
+					} `json:"functionCall"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+		UsageMetadata struct {
+			PromptTokenCount     int `json:"promptTokenCount"`
+			CandidatesTokenCount int `json:"candidatesTokenCount"`
+		} `json:"usageMetadata"`
+	}
+	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal gemini response: %w", err)
+	}
+
+	resp := &Response{}
+	if len(geminiResp.Candidates) > 0 {
+		candidate := geminiResp.Candidates[0]
+		for _, part := range candidate.Content.Parts {
+			if part.FunctionCall != nil {
+				argsBytes, err := json.Marshal(part.FunctionCall.Args)
+				if err != nil {
+					slog.Warn("gemini marshal function call args", "error", err)
+				}
+				resp.ToolCalls = append(resp.ToolCalls, ToolCall{
+					ID:   fmt.Sprintf("call_%d", time.Now().UnixNano()),
+					Type: "function",
+					Function: FunctionCall{
+						Name:      part.FunctionCall.Name,
+						Arguments: string(argsBytes),
+					},
+					ThoughtSignature: part.FunctionCall.ThoughtSignature,
+				})
+			}
+			if part.Text != "" {
+				resp.Content = part.Text
+			}
+		}
+	}
+	resp.InputTokens = geminiResp.UsageMetadata.PromptTokenCount
+	resp.OutputTokens = geminiResp.UsageMetadata.CandidatesTokenCount
+	return resp, nil
+}
+
+func parseOpenAIResponse(respBody []byte) (*Response, error) {
+	var openAIResp struct {
+		Choices []struct {
+			Message struct {
+				Content   string `json:"content"`
+				ToolCalls []struct {
+					ID       string `json:"id"`
+					Type     string `json:"type"`
+					Function struct {
+						Name      string `json:"name"`
+						Arguments string `json:"arguments"`
+					} `json:"function"`
+				} `json:"tool_calls"`
+			} `json:"message"`
+		} `json:"choices"`
+		Usage struct {
+			PromptTokens     int `json:"prompt_tokens"`
+			CompletionTokens int `json:"completion_tokens"`
+		} `json:"usage"`
+	}
+	if err := json.Unmarshal(respBody, &openAIResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal openai response: %w", err)
+	}
+
+	resp := &Response{}
+	if len(openAIResp.Choices) > 0 {
+		choice := openAIResp.Choices[0]
+		resp.Content = choice.Message.Content
+		for _, tc := range choice.Message.ToolCalls {
+			resp.ToolCalls = append(resp.ToolCalls, ToolCall{
+				ID:   tc.ID,
+				Type: tc.Type,
+				Function: FunctionCall{
+					Name:      tc.Function.Name,
+					Arguments: tc.Function.Arguments,
+				},
+			})
+		}
+	}
+	resp.InputTokens = openAIResp.Usage.PromptTokens
+	resp.OutputTokens = openAIResp.Usage.CompletionTokens
+	return resp, nil
 }
 
 func formatSchemaTypes(v interface{}, uppercase bool) interface{} {

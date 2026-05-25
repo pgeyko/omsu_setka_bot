@@ -13,4 +13,4 @@ RUN go vet ./... && go test ./... -count=1
 
 EXPOSE 8081
 
-CMD ["go", "run", "./cmd/bot/main.go"]
+CMD ["go", "run", "./cmd/bot/"]

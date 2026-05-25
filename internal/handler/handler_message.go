@@ -256,7 +256,9 @@ func (h *Handler) finishProcessing(ctx context.Context, messageID int, chatID in
 
 func (h *Handler) getTopicName(ctx context.Context, chatID int64, threadID int) string {
 	var name string
-	h.db.QueryRowContext(ctx, `SELECT name FROM topics WHERE group_id = ? AND tg_thread_id = ?`, chatID, threadID).Scan(&name)
+	if err := h.db.QueryRowContext(ctx, `SELECT name FROM topics WHERE group_id = ? AND tg_thread_id = ?`, chatID, threadID).Scan(&name); err != nil {
+		slog.Warn("getTopicName query", "error", err)
+	}
 	return name
 }
 

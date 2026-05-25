@@ -183,9 +183,15 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 	case "status":
 		uptime := time.Since(botStartTime).Round(time.Second)
 		var msgCount, fwdCount, llmToday int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ?`, msg.Chat.ID).Scan(&msgCount)
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ? AND action = 'forwarded'`, msg.Chat.ID).Scan(&fwdCount)
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_requests WHERE group_id = ? AND date(created_at) = date('now')`, msg.Chat.ID).Scan(&llmToday)
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ?`, msg.Chat.ID).Scan(&msgCount); err != nil {
+			slog.Warn("status msg count query", "error", err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ? AND action = 'forwarded'`, msg.Chat.ID).Scan(&fwdCount); err != nil {
+			slog.Warn("status fwd count query", "error", err)
+		}
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_requests WHERE group_id = ? AND date(created_at) = date('now')`, msg.Chat.ID).Scan(&llmToday); err != nil {
+			slog.Warn("status llm today query", "error", err)
+		}
 
 		statsStr := fmt.Sprintf("Аптайм: %s\nОбработано сообщений: %d\nПереслано: %d\nLLM запросов сегодня: %d\nПровайдеров: %d\nБот: @%s",
 			uptime, msgCount, fwdCount, llmToday, providerCount, botUsername)
@@ -217,7 +223,9 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			return
 		}
 		var existing int
-		db.QueryRowContext(ctx, `SELECT COUNT(*) FROM topics WHERE group_id = ? AND tg_thread_id = ?`, msg.Chat.ID, msg.MessageThreadID).Scan(&existing)
+		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM topics WHERE group_id = ? AND tg_thread_id = ?`, msg.Chat.ID, msg.MessageThreadID).Scan(&existing); err != nil {
+			slog.Warn("register check query", "error", err)
+		}
 		if existing > 0 {
 			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: botMsgs.RegisterExists})
 			return
@@ -244,7 +252,10 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		for rows.Next() {
 			var name, slug string
 			var active int
-			rows.Scan(&name, &slug, &active)
+			if err := rows.Scan(&name, &slug, &active); err != nil {
+				slog.Warn("topics row scan", "error", err)
+				continue
+			}
 			if active == 1 {
 				list += fmt.Sprintf("• %s (%s)\n", name, slug)
 			} else {

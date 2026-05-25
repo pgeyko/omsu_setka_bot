@@ -10,6 +10,10 @@ type Capability string
 
 const (
 	CapabilityMultimodal Capability = "multimodal"
+
+	circuitBreakerCooldown = 5 * time.Minute
+	rateLimitWindow        = 1 * time.Minute
+	dayBoundary            = 24 * time.Hour
 )
 
 type providerState struct {
@@ -63,7 +67,7 @@ func (p *Provider) IsActive() bool {
 	if !p.state.disabled {
 		return !p.isRateLimitedLocked()
 	}
-	if time.Since(p.state.disabledAt) >= 5*time.Minute {
+	if time.Since(p.state.disabledAt) >= circuitBreakerCooldown {
 		p.state.disabled = false
 		p.state.failures = 0
 		return !p.isRateLimitedLocked()
@@ -73,8 +77,8 @@ func (p *Provider) IsActive() bool {
 
 func (p *Provider) isRateLimitedLocked() bool {
 	now := time.Now()
-	cutoff := now.Add(-1 * time.Minute)
-	dayCutoff := now.Truncate(24 * time.Hour)
+	cutoff := now.Add(-rateLimitWindow)
+	dayCutoff := now.Truncate(dayBoundary)
 
 	// Prune old entries and count
 	var minuteCount int

@@ -228,7 +228,9 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 		})
 	case action == "kb:clear":
 		filePath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
-		_ = os.Remove(filePath)
+		if err := os.Remove(filePath); err != nil {
+			slog.Warn("kb clear remove file", "error", err, "chat_id", chatID)
+		}
 		h.sessionStore.Clear(chatID, userID)
 		h.editMessage(ctx, b, chatID, messageID, "🗑️ <b>База знаний очищена.</b>", [][]models.InlineKeyboardButton{
 			{{Text: "⬅️ Назад", CallbackData: "settings:menu:kb"}},
@@ -286,7 +288,9 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 			features["enable_photo_processing"] = false // → off
 			features["photo_on_mention"] = false
 		}
-		_ = h.saveFeatures(chatID, features)
+		if err := h.saveFeatures(chatID, features); err != nil {
+			slog.Warn("save features (photo)", "error", err, "chat_id", chatID)
+		}
 		h.showToolsScreen(ctx, b, chatID, messageID)
 
 	case strings.HasPrefix(action, "toggle:"):
@@ -297,7 +301,9 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 		} else {
 			features["enable_"+feature] = false
 		}
-		_ = h.saveFeatures(chatID, features)
+		if err := h.saveFeatures(chatID, features); err != nil {
+			slog.Warn("save features (toggle)", "error", err, "chat_id", chatID)
+		}
 		h.showToolsScreen(ctx, b, chatID, messageID)
 	case action == "planned:deadline_digest":
 		b.AnswerCallbackQuery(ctx, &tgbot.AnswerCallbackQueryParams{
@@ -360,7 +366,9 @@ func (h *SettingsHandler) showPersonaScreen(ctx context.Context, b *tgbot.Bot, c
 func (h *SettingsHandler) showSetkaScreen(ctx context.Context, b *tgbot.Bot, chatID int64, messageID int) {
 	var omsuGroupID int
 	var title string
-	_ = h.db.QueryRowContext(ctx, "SELECT title, COALESCE(omsu_group_id, 0) FROM groups WHERE chat_id = ?", chatID).Scan(&title, &omsuGroupID)
+	if err := h.db.QueryRowContext(ctx, "SELECT title, COALESCE(omsu_group_id, 0) FROM groups WHERE chat_id = ?", chatID).Scan(&title, &omsuGroupID); err != nil {
+		slog.Warn("showSetkaScreen query", "error", err, "chat_id", chatID)
+	}
 
 	setkaStr := "отсутствует"
 	if omsuGroupID > 0 {

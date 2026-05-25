@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -94,8 +95,12 @@ func (m *AuthMiddleware) Logout(c *fiber.Ctx) error {
 	// Blacklist the jti until it would have expired anyway.
 	if m.db != nil {
 		d := &db.DB{DB: m.db}
-		_ = d.RevokeToken(c.Context(), claims.ID, claims.ExpiresAt.Unix())
-		_ = d.PruneRevokedTokens(c.Context())
+		if err := d.RevokeToken(c.Context(), claims.ID, claims.ExpiresAt.Unix()); err != nil {
+			slog.Warn("revoke token", "error", err)
+		}
+		if err := d.PruneRevokedTokens(c.Context()); err != nil {
+			slog.Warn("prune revoked tokens", "error", err)
+		}
 	}
 
 	return respondSuccess(c, fiber.Map{"status": "ok"})
