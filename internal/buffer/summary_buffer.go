@@ -51,11 +51,23 @@ func NewSummaryBuffer(db *sql.DB, capacity int) *SummaryBuffer {
 
 func (b *SummaryBuffer) dbWriter() {
 	for w := range b.dbWrites {
-		_, err := b.db.Exec(`
-			INSERT INTO message_buffer (chat_id, thread_id, message_id, username, text, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			w.ChatID, w.ThreadID, w.MessageID, w.Username, w.Text, w.Timestamp,
-		)
+		var err error
+		for retry := 0; retry < 3; retry++ {
+			_, err = b.db.Exec(`
+				INSERT INTO message_buffer (chat_id, thread_id, message_id, username, text, created_at)
+				VALUES (?, ?, ?, ?, ?, ?)`,
+				w.ChatID, w.ThreadID, w.MessageID, w.Username, w.Text, w.Timestamp,
+			)
+			if err == nil {
+				break
+			}
+			if strings.Contains(err.Error(), "SQLITE_BUSY") || strings.Contains(err.Error(), "database is locked") {
+				slog.Warn("buffer db write busy, retrying", "retry", retry+1)
+				time.Sleep(time.Duration(retry+1) * 200 * time.Millisecond)
+				continue
+			}
+			break
+		}
 		if err != nil {
 			slog.Error("failed to save message to buffer db", "error", err)
 		}
