@@ -108,7 +108,7 @@ func TestRunProtocol_DeleteMessagesAndCloseTopic(t *testing.T) {
 	}
 
 	// 5. Execute run_protocol
-	args := `{"protocol_name": "зачистка", "thread_id": 1}`
+	args := `{"protocol_name": "зачистка", "thread_id": "1"}`
 	res, err := executor.Execute(ctx, chatID, "run_protocol", args)
 	if err != nil {
 		t.Fatalf("failed to execute run_protocol: %v", err)

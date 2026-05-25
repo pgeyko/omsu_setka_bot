@@ -98,7 +98,7 @@ var AvailableTools = []llm.Tool{
 					"description": "Имя пользователя в Telegram (например, '@username' или 'username')",
 				},
 				"duration_minutes": map[string]interface{}{
-					"type":        "integer",
+					"type":        "string",
 					"description": "Длительность ограничения в минутах (по умолчанию 10 минут)",
 				},
 			},
@@ -116,7 +116,7 @@ var AvailableTools = []llm.Tool{
 					"description": "Имя запускаемого протокола (например, 'зачистка', 'зачисти_30')",
 				},
 				"thread_id": map[string]interface{}{
-					"type":        "integer",
+					"type":        "string",
 					"description": "ID топика (thread_id) в Telegram, к которому применяется протокол. Для General (основного) топика это 0 или 1.",
 				},
 				"username": map[string]interface{}{
@@ -415,7 +415,7 @@ func (e *ToolExecutor) moderateUser(ctx context.Context, chatID int64, argsJSON 
 	var args struct {
 		Action          string `json:"action"`
 		Username        string `json:"username"`
-		DurationMinutes int    `json:"duration_minutes"`
+		DurationMinutes string `json:"duration_minutes"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
@@ -427,8 +427,9 @@ func (e *ToolExecutor) moderateUser(ctx context.Context, chatID int64, argsJSON 
 		return fmt.Sprintf("Пользователь @%s не найден в кэше юзеров бота. Бот должен увидеть хотя бы одно сообщение от пользователя, чтобы узнать его ID.", username), nil
 	}
 
-	if args.DurationMinutes <= 0 {
-		args.DurationMinutes = 10
+	durationMinutes := 10
+	if d, err := strconv.Atoi(args.DurationMinutes); err == nil && d > 0 {
+		durationMinutes = d
 	}
 
 	if args.Action == "ban" || args.Action == "mute" {
@@ -439,7 +440,7 @@ func (e *ToolExecutor) moderateUser(ctx context.Context, chatID int64, argsJSON 
 
 	switch args.Action {
 	case "mute":
-		untilDate := time.Now().Add(time.Duration(args.DurationMinutes) * time.Minute).Unix()
+		untilDate := time.Now().Add(time.Duration(durationMinutes) * time.Minute).Unix()
 		_, err := e.bot.RestrictChatMember(ctx, &tgbot.RestrictChatMemberParams{
 			ChatID: chatID,
 			UserID: userID,
@@ -460,7 +461,7 @@ func (e *ToolExecutor) moderateUser(ctx context.Context, chatID int64, argsJSON 
 		if err != nil {
 			return fmt.Sprintf("Не удалось ограничить права пользователя в Telegram: %v", err), nil
 		}
-		return fmt.Sprintf("Пользователь @%s замучен на %d минут.", username, args.DurationMinutes), nil
+		return fmt.Sprintf("Пользователь @%s замучен на %d минут.", username, durationMinutes), nil
 
 	case "ban":
 		_, err := e.bot.BanChatMember(ctx, &tgbot.BanChatMemberParams{
@@ -502,11 +503,16 @@ func (e *ToolExecutor) moderateUser(ctx context.Context, chatID int64, argsJSON 
 func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON string) (string, error) {
 	var args struct {
 		ProtocolName string `json:"protocol_name"`
-		ThreadID     int    `json:"thread_id"`
+		ThreadID     string `json:"thread_id"`
 		Username     string `json:"username"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
+	}
+
+	threadID := 0
+	if t, err := strconv.Atoi(args.ThreadID); err == nil {
+		threadID = t
 	}
 
 	if e.protocolsData == nil {
@@ -548,7 +554,7 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 	for _, action := range foundProto.Actions {
 		switch action.Type {
 		case "delete_messages":
-			rows, err := e.db.QueryContext(ctx, "SELECT message_id FROM message_buffer WHERE chat_id = ? AND thread_id = ? ORDER BY created_at DESC LIMIT ?", chatID, args.ThreadID, action.Count)
+			rows, err := e.db.QueryContext(ctx, "SELECT message_id FROM message_buffer WHERE chat_id = ? AND thread_id = ? ORDER BY created_at DESC LIMIT ?", chatID, threadID, action.Count)
 			if err != nil {
 				logMsg = append(logMsg, fmt.Sprintf("Ошибка получения сообщений для удаления: %v", err))
 				continue
@@ -580,7 +586,7 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 
 			if len(messageIDs) > 0 {
 				query := "DELETE FROM message_buffer WHERE chat_id = ? AND thread_id = ? AND message_id IN ("
-				sqlArgs := []interface{}{chatID, args.ThreadID}
+				sqlArgs := []interface{}{chatID, threadID}
 				for i, id := range messageIDs {
 					if i > 0 {
 						query += ","
@@ -593,7 +599,7 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 				if err != nil {
 					slog.Error("failed to delete messages from database", "error", err)
 				}
-				e.buffer.RemoveMessages(chatID, args.ThreadID, messageIDs)
+				e.buffer.RemoveMessages(chatID, threadID, messageIDs)
 			}
 			logMsg = append(logMsg, fmt.Sprintf("Удалено сообщений из Telegram и базы данных: %d", deletedCount))
 
@@ -602,13 +608,13 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 			if e.bot != nil {
 				_, err = e.bot.CloseForumTopic(ctx, &tgbot.CloseForumTopicParams{
 					ChatID:          chatID,
-					MessageThreadID: args.ThreadID,
+					MessageThreadID: threadID,
 				})
 			}
 			if err != nil {
 				logMsg = append(logMsg, fmt.Sprintf("Ошибка закрытия топика: %v", err))
 			} else {
-				e.db.ExecContext(ctx, "UPDATE topics SET is_active = 0 WHERE group_id = ? AND tg_thread_id = ?", chatID, args.ThreadID)
+				e.db.ExecContext(ctx, "UPDATE topics SET is_active = 0 WHERE group_id = ? AND tg_thread_id = ?", chatID, threadID)
 				logMsg = append(logMsg, "Топик успешно закрыт.")
 			}
 
@@ -617,13 +623,13 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 			if e.bot != nil {
 				_, err = e.bot.ReopenForumTopic(ctx, &tgbot.ReopenForumTopicParams{
 					ChatID:          chatID,
-					MessageThreadID: args.ThreadID,
+					MessageThreadID: threadID,
 				})
 			}
 			if err != nil {
 				logMsg = append(logMsg, fmt.Sprintf("Ошибка открытия топика: %v", err))
 			} else {
-				e.db.ExecContext(ctx, "UPDATE topics SET is_active = 1 WHERE group_id = ? AND tg_thread_id = ?", chatID, args.ThreadID)
+				e.db.ExecContext(ctx, "UPDATE topics SET is_active = 1 WHERE group_id = ? AND tg_thread_id = ?", chatID, threadID)
 				logMsg = append(logMsg, "Топик успешно открыт.")
 			}
 
@@ -632,7 +638,7 @@ func (e *ToolExecutor) runProtocol(ctx context.Context, chatID int64, argsJSON s
 			if e.bot != nil {
 				_, err = e.bot.SendMessage(ctx, &tgbot.SendMessageParams{
 					ChatID:          chatID,
-					MessageThreadID: args.ThreadID,
+					MessageThreadID: threadID,
 					Text:            action.Text,
 					ParseMode:       models.ParseModeHTML,
 				})

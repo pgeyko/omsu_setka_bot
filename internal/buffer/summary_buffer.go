@@ -16,11 +16,22 @@ type bufferedMessage struct {
 	Timestamp time.Time
 }
 
+type dbWrite struct {
+	ChatID    int64
+	ThreadID  int
+	MessageID int
+	Username  string
+	Text      string
+	Timestamp time.Time
+}
+
 type SummaryBuffer struct {
 	mu       sync.RWMutex
 	topics   map[string]*ringBuffer // Key: "chatID:threadID"
 	capacity int
 	db       *sql.DB
+	dbWrites chan dbWrite
+	done     chan struct{}
 }
 
 func NewSummaryBuffer(db *sql.DB, capacity int) *SummaryBuffer {
@@ -28,9 +39,28 @@ func NewSummaryBuffer(db *sql.DB, capacity int) *SummaryBuffer {
 		topics:   make(map[string]*ringBuffer),
 		capacity: capacity,
 		db:       db,
+		dbWrites: make(chan dbWrite, 256),
+		done:     make(chan struct{}),
 	}
 	sb.restoreFromDB()
+	if db != nil {
+		go sb.dbWriter()
+	}
 	return sb
+}
+
+func (b *SummaryBuffer) dbWriter() {
+	for w := range b.dbWrites {
+		_, err := b.db.Exec(`
+			INSERT INTO message_buffer (chat_id, thread_id, message_id, username, text, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			w.ChatID, w.ThreadID, w.MessageID, w.Username, w.Text, w.Timestamp,
+		)
+		if err != nil {
+			slog.Error("failed to save message to buffer db", "error", err)
+		}
+	}
+	close(b.done)
 }
 
 func (b *SummaryBuffer) restoreFromDB() {
@@ -99,17 +129,16 @@ func (b *SummaryBuffer) Push(chatID int64, threadID int, messageID int, username
 	}
 	rb.push(msg)
 
-	if b.db != nil {
-		go func() {
-			_, err := b.db.Exec(`
-				INSERT INTO message_buffer (chat_id, thread_id, message_id, username, text, created_at)
-				VALUES (?, ?, ?, ?, ?, ?)`,
-				chatID, threadID, msg.MessageID, msg.Username, msg.Text, msg.Timestamp,
-			)
-			if err != nil {
-				slog.Error("failed to save message to buffer db", "error", err)
-			}
-		}()
+	select {
+	case b.dbWrites <- dbWrite{
+		ChatID:    chatID,
+		ThreadID:  threadID,
+		MessageID: msg.MessageID,
+		Username:  msg.Username,
+		Text:      msg.Text,
+		Timestamp: msg.Timestamp,
+	}:
+	default:
 	}
 }
 
