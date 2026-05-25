@@ -77,6 +77,22 @@ llm:
       rpd_limit: 3000
       priority: 40
 
+    - name: openrouter-agent
+      type: groq
+      chain: agent
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
+      model: deepseek/deepseek-r1:free
+      priority: 50
+
+    - name: openrouter-agent-fallback
+      type: groq
+      chain: agent
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
+      model: deepseek/deepseek-chat-v3-0324:free
+      priority: 55
+
     # ── Simple chain ── (classify, simple responses, diagnostic) all Groq first, Google last
     - name: groq-simple
       type: groq
@@ -140,6 +156,22 @@ llm:
       rpm_limit: 30
       rpd_limit: 3000
       priority: 40
+
+    - name: openrouter-simple
+      type: groq
+      chain: simple
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
+      model: deepseek/deepseek-chat-v3-0324:free
+      priority: 50
+
+    - name: openrouter-simple-fallback
+      type: groq
+      chain: simple
+      api_key: "${OPENROUTER_API_KEY}"
+      base_url: "https://openrouter.ai/api"
+      model: meta-llama/llama-3.3-70b-instruct:free
+      priority: 55
 
     # ── Vision chain ── (OCR, фото) Groq → Gemini → Gemini
     - name: groq-vision
