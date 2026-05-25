@@ -6,7 +6,7 @@ telegram:
   omsu_group_id: 12345
 
 llm:
-  daily_token_limit: 100000
+  daily_token_limit: 200000
   classify_confidence_threshold: 0.75
   request_timeout_sec: 15
   circuit_breaker_failures: 3
@@ -20,10 +20,10 @@ llm:
       chain: agent
       api_key: "${GROQ_API_KEY}"
       model: llama-3.3-70b-versatile
-      rpm_limit: 30
-      rpd_limit: 1000
-      tpm_limit: 12000
-      tpd_limit: 100000
+      rpm_limit: 60
+      rpd_limit: 2000
+      tpm_limit: 24000
+      tpd_limit: 200000
       priority: 10
 
     - name: groq-agent-fallback
@@ -31,10 +31,10 @@ llm:
       chain: agent
       api_key: "${GROQ_API_KEY}"
       model: qwen/qwen3-32b
-      rpm_limit: 60
-      rpd_limit: 1000
-      tpm_limit: 6000
-      tpd_limit: 500000
+      rpm_limit: 120
+      rpd_limit: 2000
+      tpm_limit: 12000
+      tpd_limit: 1000000
       priority: 20
 
     - name: gemini-agent
@@ -42,8 +42,8 @@ llm:
       chain: agent
       api_key: "${GEMINI_API_KEY}"
       model: gemma-4-31b-it
-      rpm_limit: 15
-      rpd_limit: 1500
+      rpm_limit: 30
+      rpd_limit: 3000
       priority: 30
 
     - name: gemini-agent-fallback
@@ -51,8 +51,8 @@ llm:
       chain: agent
       api_key: "${GEMINI_API_KEY}"
       model: gemma-4-26b-a4b-it
-      rpm_limit: 15
-      rpd_limit: 1500
+      rpm_limit: 30
+      rpd_limit: 3000
       priority: 40
 
     # ── Simple chain ── (classify, simple responses, diagnostic) all Groq first, Google last
@@ -61,10 +61,10 @@ llm:
       chain: simple
       api_key: "${GROQ_API_KEY}"
       model: qwen/qwen3-32b
-      rpm_limit: 60
-      rpd_limit: 1000
-      tpm_limit: 6000
-      tpd_limit: 500000
+      rpm_limit: 120
+      rpd_limit: 2000
+      tpm_limit: 12000
+      tpd_limit: 1000000
       priority: 10
 
     - name: groq-simple-fallback
@@ -72,10 +72,10 @@ llm:
       chain: simple
       api_key: "${GROQ_API_KEY}"
       model: llama-3.1-8b-instant
-      rpm_limit: 30
-      rpd_limit: 14400
-      tpm_limit: 6000
-      tpd_limit: 500000
+      rpm_limit: 60
+      rpd_limit: 28800
+      tpm_limit: 12000
+      tpd_limit: 1000000
       priority: 20
 
     - name: gemini-simple
@@ -83,9 +83,9 @@ llm:
       chain: simple
       api_key: "${GEMINI_API_KEY}"
       model: gemini-3.1-flash-lite
-      rpm_limit: 15
-      rpd_limit: 1500
-      tpm_limit: 250000
+      rpm_limit: 30
+      rpd_limit: 3000
+      tpm_limit: 500000
       priority: 30
 
     - name: gemini-simple-fallback
@@ -93,8 +93,8 @@ llm:
       chain: simple
       api_key: "${GEMINI_API_KEY}"
       model: gemma-4-26b-a4b-it
-      rpm_limit: 15
-      rpd_limit: 1500
+      rpm_limit: 30
+      rpd_limit: 3000
       priority: 40
 
     # ── Vision chain ── (OCR, фото) Groq → Gemini → Gemini
@@ -103,10 +103,10 @@ llm:
       chain: vision
       api_key: "${GROQ_API_KEY}"
       model: meta-llama/llama-4-scout-17b-16e-instruct
-      rpm_limit: 30
-      rpd_limit: 1000
-      tpm_limit: 30000
-      tpd_limit: 500000
+      rpm_limit: 60
+      rpd_limit: 2000
+      tpm_limit: 60000
+      tpd_limit: 1000000
       priority: 10
 
     - name: gemini-vision
@@ -114,9 +114,9 @@ llm:
       chain: vision
       api_key: "${GEMINI_API_KEY}"
       model: gemini-3.1-flash-lite
-      rpm_limit: 15
-      rpd_limit: 500
-      tpm_limit: 250000
+      rpm_limit: 30
+      rpd_limit: 1000
+      tpm_limit: 500000
       priority: 20
 
     - name: gemini-vision-fallback
@@ -124,8 +124,8 @@ llm:
       chain: vision
       api_key: "${GEMINI_API_KEY}"
       model: gemma-4-31b-it
-      rpm_limit: 15
-      rpd_limit: 1500
+      rpm_limit: 30
+      rpd_limit: 3000
       priority: 30
 
     # ── Audio chain ── (STT, голосовые) flash-lite primary, whisper fallback
@@ -134,9 +134,9 @@ llm:
       chain: audio
       api_key: "${GEMINI_API_KEY}"
       model: gemini-3.1-flash-lite
-      rpm_limit: 15
-      rpd_limit: 500
-      tpm_limit: 500000
+      rpm_limit: 30
+      rpd_limit: 1000
+      tpm_limit: 1000000
       priority: 10
 
     - name: groq-audio
@@ -144,8 +144,8 @@ llm:
       chain: audio
       api_key: "${GROQ_API_KEY}"
       model: whisper-large-v3-turbo
-      rpm_limit: 20
-      rpd_limit: 2000
+      rpm_limit: 40
+      rpd_limit: 4000
       priority: 20
 
     - name: groq-audio-fallback
@@ -153,8 +153,8 @@ llm:
       chain: audio
       api_key: "${GROQ_API_KEY}"
       model: whisper-large-v3
-      rpm_limit: 20
-      rpd_limit: 2000
+      rpm_limit: 40
+      rpd_limit: 4000
       priority: 30
 
 api:
@@ -171,8 +171,8 @@ db:
   path: "./data/groupbot.db"
 
 rate_limit:
-  global_per_user_per_min: 5
-  summary_per_user_min: 30
+  global_per_user_per_min: 10
+  summary_per_user_min: 60
 
 setka:
   base_url: ""
