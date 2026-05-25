@@ -522,27 +522,10 @@ func main() {
 				slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", len(items))
 			}
 
-			// Photo processing: only when bot is explicitly mentioned (reply, @bot, alias).
-			// Auto-OCR on all photos is wasteful — ~60s per photo with fallback chain.
 			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
-				shouldOCR := isBotMention(msg) ||
-					(msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.Username == botUsername)
+				shouldOCR := true
 
-				if !shouldOCR && originalCaption != "" {
-					lowerCaption := strings.ToLower(originalCaption)
-					if p.Name != "" && strings.Contains(lowerCaption, strings.ToLower(p.Name)) {
-						shouldOCR = true
-					} else {
-						for _, alias := range p.Aliases {
-							if strings.Contains(lowerCaption, strings.ToLower(alias)) {
-								shouldOCR = true
-								break
-							}
-						}
-					}
-				}
-
-				// Skip photos in already-processed media groups to avoid duplicate OCR
+				// Skip duplicate OCR in already-processed media groups
 				if msg.MediaGroupID != "" {
 					if stored, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, time.Now()); seen {
 						if time.Since(stored.(time.Time)) < 10*time.Minute {
@@ -554,6 +537,7 @@ func main() {
 				}
 
 				if shouldOCR {
+					slog.Debug("processing photo OCR", "file_id", msg.Photo[len(msg.Photo)-1].FileID)
 					ocrText, err := mediaProcessor.ProcessPhoto(ctx, msg.Photo[len(msg.Photo)-1].FileID)
 					if err != nil {
 						slog.Error("failed to process photo", "error", err)
