@@ -224,6 +224,37 @@ func (d *DB) Migrate() error {
 		return fmt.Errorf("rows iteration error during migration: %w", err)
 	}
 
+	// Media group items: add media_type column for document/video/audio support
+	var hasMediaType bool
+	rows2, err := d.Query(`PRAGMA table_info(media_group_items)`)
+	if err != nil {
+		return fmt.Errorf("failed to get table info for media_group_items: %w", err)
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+		if err := rows2.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return fmt.Errorf("failed to scan table info for media_group_items: %w", err)
+		}
+		if name == "media_type" {
+			hasMediaType = true
+			break
+		}
+	}
+	if !hasMediaType {
+		slog.Info("migrating media_group_items: adding media_type column")
+		if _, err := d.Exec(`ALTER TABLE media_group_items ADD COLUMN media_type TEXT NOT NULL DEFAULT '';`); err != nil {
+			return fmt.Errorf("failed to add media_type to media_group_items: %w", err)
+		}
+	}
+	if err := rows2.Err(); err != nil {
+		return fmt.Errorf("rows iteration error during migration: %w", err)
+	}
+
 	slog.Info("database migration completed")
 	return nil
 }

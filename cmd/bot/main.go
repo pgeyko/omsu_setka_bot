@@ -502,24 +502,37 @@ func main() {
 					items = existing.([]agent.MediaGroupItem)
 				}
 				fileID := ""
-				if len(msg.Photo) > 0 {
+				mediaType := ""
+				switch {
+				case len(msg.Photo) > 0:
 					fileID = msg.Photo[len(msg.Photo)-1].FileID
+					mediaType = "photo"
+				case msg.Document != nil:
+					fileID = msg.Document.FileID
+					mediaType = "document"
+				case msg.Video != nil:
+					fileID = msg.Video.FileID
+					mediaType = "video"
+				case msg.Audio != nil:
+					fileID = msg.Audio.FileID
+					mediaType = "audio"
 				}
 				items = append(items, agent.MediaGroupItem{
 					MessageID: msg.ID,
 					FileID:    fileID,
 					Caption:   msg.Caption,
+					MediaType: mediaType,
 				})
 				mediaGroupMessages.Store(msg.MediaGroupID, items)
 				mediaGroupMu.Unlock()
 
 				// Persist to DB so album forwarding survives restarts
 				database.DB.ExecContext(ctx,
-					`INSERT OR IGNORE INTO media_group_items (media_group_id, message_id, chat_id, file_id, caption, created_at)
-				 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-					msg.MediaGroupID, msg.ID, msg.Chat.ID, fileID, msg.Caption,
+					`INSERT OR IGNORE INTO media_group_items (media_group_id, message_id, chat_id, file_id, caption, media_type, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+					msg.MediaGroupID, msg.ID, msg.Chat.ID, fileID, msg.Caption, mediaType,
 				)
-				slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", len(items))
+				slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", len(items), "media_type", mediaType)
 			}
 
 			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {

@@ -163,6 +163,7 @@ type MediaGroupItem struct {
 	MessageID int
 	FileID    string
 	Caption   string
+	MediaType string // "photo", "document", "video", "audio"
 }
 
 type ToolExecutor struct {
@@ -789,7 +790,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 	// Fallback: query DB when in-memory map is cold (after restart)
 	if len(groupItems) == 0 {
 		rows, err := e.db.QueryContext(ctx,
-			`SELECT mg.media_group_id, mg.message_id, mg.file_id, mg.caption
+				`SELECT mg.media_group_id, mg.message_id, mg.file_id, mg.caption, mg.media_type
 			 FROM media_group_items mg
 			 WHERE mg.media_group_id = (
 				SELECT media_group_id FROM media_group_items WHERE message_id = ?
@@ -802,7 +803,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 			for rows.Next() {
 				var item MediaGroupItem
 				var groupID string
-				rows.Scan(&groupID, &item.MessageID, &item.FileID, &item.Caption)
+				rows.Scan(&groupID, &item.MessageID, &item.FileID, &item.Caption, &item.MediaType)
 				groupItems = append(groupItems, item)
 			}
 			slog.Debug("forward_message DB fallback", "forward_msg_id", forwardMsgID, "group_items", len(groupItems))
@@ -839,12 +840,39 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 			if i == 0 {
 				cap = item.Caption + hashtagStr
 			}
-			media = append(media, &models.InputMediaPhoto{
-				Media:                 item.FileID,
-				Caption:               cap,
-				ShowCaptionAboveMedia: true,
-			})
-			slog.Debug("forward_message album item", "i", i, "file_id", item.FileID[:min(20, len(item.FileID))], "has_caption", cap != "")
+			mediaType := item.MediaType
+			if mediaType == "" {
+				mediaType = "photo"
+			}
+			switch mediaType {
+			case "document":
+				media = append(media, &models.InputMediaDocument{
+					Media:   item.FileID,
+					Caption: cap,
+				})
+			case "video":
+				media = append(media, &models.InputMediaVideo{
+					Media:                 item.FileID,
+					Caption:               cap,
+					ShowCaptionAboveMedia: true,
+				})
+			case "audio":
+				media = append(media, &models.InputMediaAudio{
+					Media:   item.FileID,
+					Caption: cap,
+				})
+			default:
+				media = append(media, &models.InputMediaPhoto{
+					Media:                 item.FileID,
+					Caption:               cap,
+					ShowCaptionAboveMedia: true,
+				})
+			}
+			short := item.FileID
+			if len(short) > 20 {
+				short = short[:20]
+			}
+			slog.Debug("forward_message album item", "i", i, "file_id", short, "media_type", mediaType, "has_caption", cap != "")
 		}
 		result, err := e.bot.SendMediaGroup(ctx, &tgbot.SendMediaGroupParams{
 			ChatID:          chatID,
@@ -859,7 +887,7 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 			lastLink = util.ChatLink(chatID, result[0].ID)
 		}
 		slog.Debug("forward_message album sent", "result_count", len(result))
-		return fmt.Sprintf("Альбом из %d фото переслан в топик «%s». %s", len(groupItems), topicName, lastLink), nil
+		return fmt.Sprintf("Альбом из %d элементов переслан в топик «%s». %s", len(groupItems), topicName, lastLink), nil
 	}
 
 	// Single message: copy
