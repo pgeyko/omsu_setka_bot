@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,7 +41,7 @@ var AvailableTools = []llm.Tool{
 					"description": "Относительный день недели (today, tomorrow, monday, tuesday, wednesday, thursday, friday, saturday)",
 				},
 				"subgroup": map[string]interface{}{
-					"type":        "integer",
+					"type":        "string",
 					"description": "Номер подгруппы (1 или 2)",
 				},
 			},
@@ -226,7 +227,7 @@ func (e *ToolExecutor) getSchedule(ctx context.Context, chatID int64, argsJSON s
 	var args struct {
 		Date        string `json:"date"`
 		RelativeDay string `json:"relative_day"`
-		Subgroup    int    `json:"subgroup"`
+		Subgroup    string `json:"subgroup"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
@@ -244,6 +245,9 @@ func (e *ToolExecutor) getSchedule(ctx context.Context, chatID int64, argsJSON s
 	}
 
 	url := fmt.Sprintf("%s/api/v1/schedule/group/%d/day?date=%s", e.setkaBaseURL, omsuGroupID, date)
+	if sg, err := strconv.Atoi(args.Subgroup); err == nil && sg > 0 {
+		url = fmt.Sprintf("%s&subgroup=%d", url, sg)
+	}
 	httpClient := &http.Client{Timeout: 15 * time.Second}
 	resp, err := httpClient.Get(url)
 	if err != nil {
@@ -830,8 +834,8 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 				cap = item.Caption + hashtagStr
 			}
 			media = append(media, &models.InputMediaPhoto{
-				Media:           item.FileID,
-				Caption:         cap,
+				Media:                 item.FileID,
+				Caption:               cap,
 				ShowCaptionAboveMedia: true,
 			})
 			slog.Debug("forward_message album item", "i", i, "file_id", item.FileID[:min(20, len(item.FileID))], "has_caption", cap != "")

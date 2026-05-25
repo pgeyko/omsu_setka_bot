@@ -59,6 +59,10 @@ func NewMiddleware(limitPerMin int) *Middleware {
 	}
 }
 
+func (m *Middleware) Allow(userID int64) bool {
+	return m.rateLimit.Allow(userID)
+}
+
 func (m *Middleware) RateLimit(next tgbot.HandlerFunc) tgbot.HandlerFunc {
 	return func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 		if update.Message != nil && update.Message.From != nil && !m.rateLimit.Allow(update.Message.From.ID) {

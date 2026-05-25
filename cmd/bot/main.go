@@ -41,7 +41,6 @@ import (
 	"omsu_bot/internal/config"
 	omsudb "omsu_bot/internal/db"
 	"omsu_bot/internal/forwarder"
-	"omsu_bot/internal/util"
 	handlers "omsu_bot/internal/handler"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/media"
@@ -50,6 +49,7 @@ import (
 	"omsu_bot/internal/persona"
 	"omsu_bot/internal/schedule"
 	"omsu_bot/internal/telegram"
+	"omsu_bot/internal/util"
 )
 
 type telegramPoster struct {
@@ -136,17 +136,17 @@ func main() {
 			}
 		}
 		p := &llm.Provider{
-			Name:     pcfg.Name,
-			Type:     pcfg.Type,
-			BaseURL:  baseURL,
-			APIKey:   pcfg.APIKey,
-			Model:    pcfg.Model,
+			Name:           pcfg.Name,
+			Type:           pcfg.Type,
+			BaseURL:        baseURL,
+			APIKey:         pcfg.APIKey,
+			Model:          pcfg.Model,
 			FallbackModels: pcfg.FallbackModels,
-			RPMLimit: pcfg.RPMLimit,
-			TPMLimit: pcfg.TPMLimit,
-			RPDLimit: pcfg.RPDLimit,
-			TPDLimit: pcfg.TPDLimit,
-			Priority: pcfg.Priority,
+			RPMLimit:       pcfg.RPMLimit,
+			TPMLimit:       pcfg.TPMLimit,
+			RPDLimit:       pcfg.RPDLimit,
+			TPDLimit:       pcfg.TPDLimit,
+			Priority:       pcfg.Priority,
 		}
 
 		if pcfg.Multimodal {
@@ -452,8 +452,8 @@ func main() {
 
 		// Active groups messaging
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
-			return update.Message != nil && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки"
-		}, tgRateLimit.RateLimit(func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
+			return update.Message != nil && update.Message.Text != "/start" && update.Message.Text != "/help" && update.Message.Text != "/settings" && update.Message.Text != "/настройки" && !strings.HasPrefix(update.Message.Text, "/init")
+		}, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			checkCtx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 			active := database.IsGroupActive(checkCtx, update.Message.Chat.ID)
 			cancel()
@@ -479,54 +479,54 @@ func main() {
 				return
 			}
 
-		features := settingsHandler.LoadFeatures(msg.Chat.ID)
-		p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
+			features := settingsHandler.LoadFeatures(msg.Chat.ID)
+			p := persona.GetGroupPersona(msg.Chat.ID, personaStore.Get())
 
-		if msg.Voice != nil && apiServer.GlobalVoiceTranscription.Load() && features["enable_voice_transcription"] {
-			txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
-			if err != nil {
-				slog.Error("failed to process voice", "error", err)
-			} else if txt != "" {
-				msg.Text = txt
+			if msg.Voice != nil && apiServer.GlobalVoiceTranscription.Load() && features["enable_voice_transcription"] {
+				txt, err := mediaProcessor.ProcessVoice(ctx, msg.Voice.FileID)
+				if err != nil {
+					slog.Error("failed to process voice", "error", err)
+				} else if txt != "" {
+					msg.Text = txt
+				}
 			}
-		}
 
-		originalCaption := msg.Caption
+			originalCaption := msg.Caption
 
-		// Track media group messages regardless of photo processing — needed for album forwarding
-		if msg.MediaGroupID != "" {
-			mediaGroupMu.Lock()
-			existing, _ := mediaGroupMessages.Load(msg.MediaGroupID)
-			var items []agent.MediaGroupItem
-			if existing != nil {
-				items = existing.([]agent.MediaGroupItem)
-			}
-			fileID := ""
-			if len(msg.Photo) > 0 {
-				fileID = msg.Photo[len(msg.Photo)-1].FileID
-			}
-			items = append(items, agent.MediaGroupItem{
-				MessageID: msg.ID,
-				FileID:    fileID,
-				Caption:   msg.Caption,
-			})
-			mediaGroupMessages.Store(msg.MediaGroupID, items)
-			mediaGroupMu.Unlock()
+			// Track media group messages regardless of photo processing — needed for album forwarding
+			if msg.MediaGroupID != "" {
+				mediaGroupMu.Lock()
+				existing, _ := mediaGroupMessages.Load(msg.MediaGroupID)
+				var items []agent.MediaGroupItem
+				if existing != nil {
+					items = existing.([]agent.MediaGroupItem)
+				}
+				fileID := ""
+				if len(msg.Photo) > 0 {
+					fileID = msg.Photo[len(msg.Photo)-1].FileID
+				}
+				items = append(items, agent.MediaGroupItem{
+					MessageID: msg.ID,
+					FileID:    fileID,
+					Caption:   msg.Caption,
+				})
+				mediaGroupMessages.Store(msg.MediaGroupID, items)
+				mediaGroupMu.Unlock()
 
-			// Persist to DB so album forwarding survives restarts
-			database.DB.ExecContext(ctx,
-				`INSERT OR IGNORE INTO media_group_items (media_group_id, message_id, chat_id, file_id, caption, created_at)
+				// Persist to DB so album forwarding survives restarts
+				database.DB.ExecContext(ctx,
+					`INSERT OR IGNORE INTO media_group_items (media_group_id, message_id, chat_id, file_id, caption, created_at)
 				 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-				msg.MediaGroupID, msg.ID, msg.Chat.ID, fileID, msg.Caption,
-			)
-			slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", len(items))
-		}
+					msg.MediaGroupID, msg.ID, msg.Chat.ID, fileID, msg.Caption,
+				)
+				slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", len(items))
+			}
 
-		// Photo processing: only when bot is explicitly mentioned (reply, @bot, alias).
-		// Auto-OCR on all photos is wasteful — ~60s per photo with fallback chain.
-		if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
-			shouldOCR := isBotMention(msg) ||
-				(msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.Username == botUsername)
+			// Photo processing: only when bot is explicitly mentioned (reply, @bot, alias).
+			// Auto-OCR on all photos is wasteful — ~60s per photo with fallback chain.
+			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
+				shouldOCR := isBotMention(msg) ||
+					(msg.ReplyToMessage != nil && msg.ReplyToMessage.From != nil && msg.ReplyToMessage.From.Username == botUsername)
 
 				if !shouldOCR && originalCaption != "" {
 					lowerCaption := strings.ToLower(originalCaption)
@@ -542,15 +542,15 @@ func main() {
 					}
 				}
 
-			// Skip photos in already-processed media groups to avoid duplicate OCR
-			if msg.MediaGroupID != "" {
-				if stored, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, time.Now()); seen {
-					if time.Since(stored.(time.Time)) < 10*time.Minute {
-						shouldOCR = false
-					} else {
-						processedMediaGroups.Store(msg.MediaGroupID, time.Now())
+				// Skip photos in already-processed media groups to avoid duplicate OCR
+				if msg.MediaGroupID != "" {
+					if stored, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, time.Now()); seen {
+						if time.Since(stored.(time.Time)) < 10*time.Minute {
+							shouldOCR = false
+						} else {
+							processedMediaGroups.Store(msg.MediaGroupID, time.Now())
+						}
 					}
-				}
 				}
 
 				if shouldOCR {
@@ -599,14 +599,25 @@ func main() {
 				}
 			}
 
-		if isBotCommand(msg) {
-			handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
-		} else if isMentionOrAlias {
-			mentionHandler.Handle(ctx, b, update)
+			if isBotCommand(msg) {
+				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
+				return
+			}
+
+			if !tgRateLimit.Allow(msg.From.ID) {
+				b.SendMessage(ctx, &tgbot.SendMessageParams{
+					ChatID: update.Message.Chat.ID,
+					Text:   "⏳ Слишком много запросов. Подожди минуту.",
+				})
+				return
+			}
+
+			if isMentionOrAlias {
+				mentionHandler.Handle(ctx, b, update)
 			} else {
 				h.HandleMessage(ctx, b, update)
 			}
-		}))
+		})
 
 		// Private / inactive groups handler
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
@@ -654,8 +665,8 @@ var (
 	botUsername          string
 	providerCount        int
 	globalLLM            *llm.Client
-	processedMediaGroups sync.Map // key=media_group_id, value=time.Time — dedup OCR per group
-	mediaGroupMessages   sync.Map // key=media_group_id, value=[]agent.MediaGroupItem
+	processedMediaGroups sync.Map   // key=media_group_id, value=time.Time — dedup OCR per group
+	mediaGroupMessages   sync.Map   // key=media_group_id, value=[]agent.MediaGroupItem
 	mediaGroupMu         sync.Mutex // guards Load+append+Store for mediaGroupMessages
 )
 
