@@ -19,6 +19,8 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Secret Scanning
         uses: gitleaks/gitleaks-action@v2
       - uses: actions/setup-go@v5
