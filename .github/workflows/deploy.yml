@@ -1,0 +1,61 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["CI/CD"]
+    types:
+      - completed
+
+jobs:
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
+    steps:
+      - name: Deploy via SSH
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SCHEDULE_WEBHOOK_SECRET: ${{ secrets.SCHEDULE_WEBHOOK_SECRET }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_API_KEY_2: ${{ secrets.GROQ_API_KEY_2 }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          SETKA_BASE_URL: ${{ secrets.SETKA_BASE_URL }}
+          SETKA_ADMIN_KEY: ${{ secrets.SETKA_ADMIN_KEY }}
+          SETKA_PUBLIC_URL: ${{ secrets.SETKA_PUBLIC_URL }}
+          APP_ENV: ${{ secrets.APP_ENV }}
+          ANNOUNCE_THREAD_ID: ${{ secrets.ANNOUNCE_THREAD_ID }}
+          CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
+        run: |
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "SSH secrets not configured, skipping deploy"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" \
+            "export BOT_TOKEN='$BOT_TOKEN'
+             export ADMIN_SECRET='$ADMIN_SECRET'
+             export JWT_SECRET='$JWT_SECRET'
+             export SCHEDULE_WEBHOOK_SECRET='$SCHEDULE_WEBHOOK_SECRET'
+             export GROQ_API_KEY='$GROQ_API_KEY'
+             export GROQ_API_KEY_2='$GROQ_API_KEY_2'
+             export GEMINI_API_KEY='$GEMINI_API_KEY'
+             export OPENROUTER_API_KEY='$OPENROUTER_API_KEY'
+             export SETKA_BASE_URL='$SETKA_BASE_URL'
+             export SETKA_ADMIN_KEY='$SETKA_ADMIN_KEY'
+             export SETKA_PUBLIC_URL='$SETKA_PUBLIC_URL'
+             export APP_ENV='$APP_ENV'
+             export ANNOUNCE_THREAD_ID='$ANNOUNCE_THREAD_ID'
+             export CORS_ORIGIN='$CORS_ORIGIN'
+             cd /app
+             docker compose pull bot
+             docker compose up -d bot"
+          echo "Deploy completed"
