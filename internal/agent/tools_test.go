@@ -15,6 +15,9 @@ import (
 )
 
 func TestRunProtocol_DeleteMessagesAndCloseTopic(t *testing.T) {
+	if os.Getenv("LLM_SKIP_FALLBACK_MODEL") == "" && os.Getenv("GROQ_API_KEY") == "" {
+		t.Skip("skipping integration test: no LLM provider configured")
+	}
 	t.Parallel()
 	// 1. Initialize in-memory database and migrate
 	database, err := db.New(":memory:")
