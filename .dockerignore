@@ -13,6 +13,5 @@ Dockerfile
 Dockerfile.dev
 docker-compose*.yml
 README.md
-docs/
 dev/
 .gitkeep
