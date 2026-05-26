@@ -206,6 +206,11 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 	tried := 0
 
 	for _, provider := range providers {
+		slog.Debug("provider iteration",
+			"provider", provider.Name,
+			"tried", tried,
+			"remaining", len(providers)-tried,
+		)
 		if !provider.IsActive() {
 			continue
 		}

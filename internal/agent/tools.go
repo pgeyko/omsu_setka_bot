@@ -189,6 +189,9 @@ type ToolExecutor struct {
 
 	protocolsOnce sync.Once
 	protocolsData *protocolsConfig
+
+	summaryDebounceMu    sync.Mutex
+	summaryLastCalled    map[int64]time.Time
 }
 
 func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string, adminChecker AdminChecker, mediaGroupMessages *sync.Map, classif *classifier.Classifier) *ToolExecutor {
@@ -202,6 +205,7 @@ func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *
 		adminChecker:       adminChecker,
 		mediaGroupMessages: mediaGroupMessages,
 		classifier:         classif,
+		summaryLastCalled:  make(map[int64]time.Time),
 	}
 }
 
@@ -290,6 +294,16 @@ func (e *ToolExecutor) getSchedule(ctx context.Context, chatID int64, argsJSON s
 }
 
 func (e *ToolExecutor) generateSummary(ctx context.Context, chatID int64, argsJSON string) (string, error) {
+	e.summaryDebounceMu.Lock()
+	last, ok := e.summaryLastCalled[chatID]
+	now := time.Now()
+	if ok && now.Sub(last) < 30*time.Second {
+		e.summaryDebounceMu.Unlock()
+		return "Пожалуйста, подождите 30 секунд перед повторным запросом саммари.", nil
+	}
+	e.summaryLastCalled[chatID] = now
+	e.summaryDebounceMu.Unlock()
+
 	var args struct {
 		TopicSlug string `json:"topic_slug"`
 	}
