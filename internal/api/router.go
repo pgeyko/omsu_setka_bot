@@ -106,6 +106,15 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 	s.GlobalPhotoProcessing.Store(true)
 
 	startTime := time.Now()
+	app.Get("/live", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"status": "ok"})
+	})
+	app.Get("/ready", func(c *fiber.Ctx) error {
+		if err := db.PingContext(c.Context()); err != nil {
+			return c.Status(503).JSON(fiber.Map{"status": "unhealthy", "db": err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "uptime": time.Since(startTime).String()})
+	})
 	app.Get("/health", func(c *fiber.Ctx) error {
 		if err := db.PingContext(c.Context()); err != nil {
 			return c.Status(503).JSON(fiber.Map{"status": "unhealthy", "db": err.Error()})

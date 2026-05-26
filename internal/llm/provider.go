@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"omsu_bot/internal/circuitbreaker"
 )
 
 type Capability string
@@ -11,16 +13,9 @@ type Capability string
 const (
 	CapabilityMultimodal Capability = "multimodal"
 
-	circuitBreakerCooldown = 5 * time.Minute
-	rateLimitWindow        = 1 * time.Minute
-	dayBoundary            = 24 * time.Hour
+	rateLimitWindow = 1 * time.Minute
+	dayBoundary     = 24 * time.Hour
 )
-
-type providerState struct {
-	failures   int
-	disabledAt time.Time
-	disabled   bool
-}
 
 type rateEntry struct {
 	at     time.Time
@@ -37,7 +32,7 @@ type Provider struct {
 	FallbackModels []string // tried after primary on same key (for rate limits)
 	Capabilities   []Capability
 	Priority       int // lower = tried first when sorted
-	state          *providerState
+	cb             *circuitbreaker.CircuitBreaker
 
 	// Rate limits
 	RPMLimit int // requests per minute (0 = unlimited)
@@ -61,18 +56,10 @@ func (p *Provider) IsActive() bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.state == nil {
-		return true
+	if p.cb != nil && !p.cb.IsActive() {
+		return false
 	}
-	if !p.state.disabled {
-		return !p.isRateLimitedLocked()
-	}
-	if time.Since(p.state.disabledAt) >= circuitBreakerCooldown {
-		p.state.disabled = false
-		p.state.failures = 0
-		return !p.isRateLimitedLocked()
-	}
-	return false
+	return !p.isRateLimitedLocked()
 }
 
 func (p *Provider) isRateLimitedLocked() bool {
@@ -136,21 +123,17 @@ func (p *Provider) RecordFailure() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.state == nil {
-		p.state = &providerState{}
+	if p.cb == nil {
+		p.cb = circuitbreaker.New(3, 5*time.Minute)
 	}
-	p.state.failures++
-	if p.state.failures >= 3 {
-		p.state.disabled = true
-		p.state.disabledAt = time.Now()
-	}
+	p.cb.RecordFailure()
 }
 
 func (p *Provider) RecordSuccess() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.state != nil {
-		p.state.failures = 0
+	if p.cb != nil {
+		p.cb.RecordSuccess()
 	}
 }
 
@@ -161,7 +144,7 @@ type Chain struct {
 
 func NewChain(providers []*Provider) *Chain {
 	for _, p := range providers {
-		p.state = &providerState{}
+		p.cb = circuitbreaker.New(3, 5*time.Minute)
 	}
 	return &Chain{providers: providers}
 }

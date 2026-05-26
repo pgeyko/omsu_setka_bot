@@ -2,6 +2,7 @@ package api
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -45,6 +46,9 @@ func (s *Server) handleUpdatePersona(c *fiber.Ctx) error {
 		if len(*req.SystemPrompt) > 10000 {
 			return respondError(c, fiber.StatusBadRequest, "SYSTEM_PROMPT_TOO_LARGE", "system_prompt must be ≤10000 characters")
 		}
+		if containsPromptInjection(*req.SystemPrompt) {
+			return respondError(c, fiber.StatusUnprocessableEntity, ErrValidation, "system_prompt contains prohibited patterns")
+		}
 		current.SystemPrompt = *req.SystemPrompt
 	}
 	if req.Signature != nil {
@@ -67,6 +71,21 @@ func (s *Server) handleUpdatePersona(c *fiber.Ctx) error {
 		SystemPrompt: current.SystemPrompt,
 		Signature:    current.Signature,
 	})
+}
+
+func containsPromptInjection(s string) bool {
+	lower := strings.ToLower(s)
+	patterns := []string{
+		"ignore all previous instructions",
+		"system",
+		"forget",
+	}
+	for _, p := range patterns {
+		if strings.Contains(lower, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) handleResetPersona(c *fiber.Ctx) error {

@@ -3,6 +3,7 @@ package forwarder
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"omsu_bot/internal/util"
 
@@ -68,13 +69,18 @@ func (f *Forwarder) ReplyWithLink(ctx context.Context, chatID int64, threadID in
 }
 
 func (f *Forwarder) buildHeader(fromTopic, username string, hashtags []string) string {
-	var header string
-	for i, tag := range hashtags {
-		if i == 0 {
-			header = "#" + tag
-		} else {
-			header += " #" + tag
-		}
+	if len(hashtags) == 0 {
+		return ""
 	}
-	return header
+	var b strings.Builder
+	b.Grow(len(hashtags) * 20)
+	for i, tag := range hashtags {
+		if i > 0 {
+			b.WriteString(" #")
+		} else {
+			b.WriteByte('#')
+		}
+		b.WriteString(tag)
+	}
+	return b.String()
 }

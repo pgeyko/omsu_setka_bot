@@ -7,13 +7,11 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: sessionStorage.getItem('jwt') || null,
+  token: null,
   setToken: (token) => {
-    sessionStorage.setItem('jwt', token)
     set({ token })
   },
   clearToken: () => {
-    sessionStorage.removeItem('jwt')
     set({ token: null })
   },
 }))

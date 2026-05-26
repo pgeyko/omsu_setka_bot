@@ -28,7 +28,7 @@ func setupWebhookTest(t *testing.T) (*WebhookHandler, *db.DB, func()) {
 	}
 
 	diffEngine := schedule.NewDiffEngine(database.DB, nil, nil, nil)
-	handler := NewWebhookHandler(diffEngine, database.DB, "test-secret", 0)
+	handler := NewWebhookHandler(diffEngine, database.DB, "test-secret")
 
 	cleanup := func() { database.Close() }
 	return handler, database, cleanup
@@ -69,16 +69,18 @@ func TestWebhookHandler_HMAC_Valid(t *testing.T) {
 	app.Post("/webhook/schedule", handler.Handle)
 
 	payload := schedule.WebhookPayload{
-		Type:    "schedule.update",
+		Type:    "change",
 		GroupID: 1,
 		Changes: []schedule.Change{},
 	}
 	body, _ := json.Marshal(payload)
-	sig := makeSignature("test-secret", body)
+	ts := time.Now().UTC().Format(time.RFC3339)
+	sig := makeTimestampedSignature("test-secret", ts, body)
 
 	req := httptest.NewRequest("POST", "/webhook/schedule", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Webhook-Signature", sig)
+	req.Header.Set("X-Webhook-Timestamp", ts)
 
 	resp, _ := app.Test(req, 1000)
 	if resp.StatusCode != 200 {
@@ -86,7 +88,7 @@ func TestWebhookHandler_HMAC_Valid(t *testing.T) {
 	}
 }
 
-func TestWebhookHandler_HMAC_Invalid(t *testing.T) {
+func TestWebhookHandler_HMAC_InvalidSignature(t *testing.T) {
 	t.Parallel()
 	handler, _, cleanup := setupWebhookTest(t)
 	defer cleanup()
@@ -94,11 +96,13 @@ func TestWebhookHandler_HMAC_Invalid(t *testing.T) {
 	app := fiber.New()
 	app.Post("/webhook/schedule", handler.Handle)
 
-	body := []byte(`{"type":"schedule.update"}`)
+	body := []byte(`{"type":"change"}`)
+	ts := time.Now().UTC().Format(time.RFC3339)
 
 	req := httptest.NewRequest("POST", "/webhook/schedule", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Webhook-Signature", "invalid-signature")
+	req.Header.Set("X-Webhook-Timestamp", ts)
 
 	resp, _ := app.Test(req, 1000)
 	if resp.StatusCode != 401 {
@@ -106,7 +110,7 @@ func TestWebhookHandler_HMAC_Invalid(t *testing.T) {
 	}
 }
 
-func TestWebhookHandler_HMAC_Missing(t *testing.T) {
+func TestWebhookHandler_HMAC_MissingSignature(t *testing.T) {
 	t.Parallel()
 	handler, _, cleanup := setupWebhookTest(t)
 	defer cleanup()
@@ -114,13 +118,37 @@ func TestWebhookHandler_HMAC_Missing(t *testing.T) {
 	app := fiber.New()
 	app.Post("/webhook/schedule", handler.Handle)
 
-	body := []byte(`{"type":"schedule.update"}`)
+	body := []byte(`{"type":"change"}`)
+	ts := time.Now().UTC().Format(time.RFC3339)
+
 	req := httptest.NewRequest("POST", "/webhook/schedule", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Webhook-Timestamp", ts)
 
 	resp, _ := app.Test(req, 1000)
 	if resp.StatusCode != 401 {
 		t.Errorf("expected 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestWebhookHandler_HMAC_MissingTimestamp(t *testing.T) {
+	t.Parallel()
+	handler, _, cleanup := setupWebhookTest(t)
+	defer cleanup()
+
+	app := fiber.New()
+	app.Post("/webhook/schedule", handler.Handle)
+
+	body := []byte(`{"type":"change"}`)
+	sig := makeSignature("test-secret", body)
+
+	req := httptest.NewRequest("POST", "/webhook/schedule", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Webhook-Signature", sig)
+
+	resp, _ := app.Test(req, 1000)
+	if resp.StatusCode != 400 {
+		t.Errorf("expected 400 for missing timestamp, got %d", resp.StatusCode)
 	}
 }
 
@@ -133,7 +161,7 @@ func TestWebhookHandler_TimestampSkew_Valid(t *testing.T) {
 	app := fiber.New()
 	app.Post("/webhook/schedule", handler.Handle)
 
-	payload := schedule.WebhookPayload{Type: "schedule.update", GroupID: 1}
+	payload := schedule.WebhookPayload{Type: "change", GroupID: 1}
 	body, _ := json.Marshal(payload)
 	ts := time.Now().UTC().Format(time.RFC3339)
 	sig := makeTimestampedSignature("test-secret", ts, body)
@@ -157,7 +185,7 @@ func TestWebhookHandler_TimestampSkew_Exceeded(t *testing.T) {
 	app := fiber.New()
 	app.Post("/webhook/schedule", handler.Handle)
 
-	payload := schedule.WebhookPayload{Type: "schedule.update", GroupID: 1}
+	payload := schedule.WebhookPayload{Type: "change", GroupID: 1}
 	body, _ := json.Marshal(payload)
 	// Timestamp 10 minutes in the past — exceeds maxClockSkew (5 min)
 	ts := time.Now().Add(-10 * time.Minute).UTC().Format(time.RFC3339)
@@ -256,10 +284,13 @@ func TestWebhookHandler_ChatIDResolution_Found(t *testing.T) {
 		int64(-100123), "Test Group", "token", 42,
 	)
 
-	chatID, err := handler.resolveChatID(ctx, 42)
-	if err != nil { t.Fatalf("resolveChatID: %v", err) }
+	chatID, threadID, err := handler.resolveGroupInfo(ctx, 42)
+	if err != nil { t.Fatalf("resolveGroupInfo: %v", err) }
 	if chatID != -100123 {
 		t.Errorf("expected -100123, got %d", chatID)
+	}
+	if threadID != 0 {
+		t.Errorf("expected 0, got %d", threadID)
 	}
 }
 
@@ -269,7 +300,7 @@ func TestWebhookHandler_ChatIDResolution_NotFound(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := handler.resolveChatID(ctx, 999)
+	_, _, err := handler.resolveGroupInfo(ctx, 999)
 	if err == nil {
 		t.Error("expected error for non-existent group")
 	}

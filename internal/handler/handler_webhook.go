@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"omsu_bot/internal/schedule"
@@ -23,18 +22,16 @@ const (
 )
 
 type WebhookHandler struct {
-	diffEngine       *schedule.DiffEngine
-	db               *sql.DB
-	scheduleSecret   string
-	announceThreadID int
+	diffEngine     *schedule.DiffEngine
+	db             *sql.DB
+	scheduleSecret string
 }
 
-func NewWebhookHandler(diffEngine *schedule.DiffEngine, db *sql.DB, scheduleSecret string, announceThreadID int) *WebhookHandler {
+func NewWebhookHandler(diffEngine *schedule.DiffEngine, db *sql.DB, scheduleSecret string) *WebhookHandler {
 	return &WebhookHandler{
-		diffEngine:       diffEngine,
-		db:               db,
-		scheduleSecret:   scheduleSecret,
-		announceThreadID: announceThreadID,
+		diffEngine:     diffEngine,
+		db:             db,
+		scheduleSecret: scheduleSecret,
 	}
 }
 
@@ -44,28 +41,27 @@ func (h *WebhookHandler) Handle(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "missing signature"})
 	}
 
+	if c.Request().Header.ContentLength() > 50*1024 {
+		return c.Status(fiber.StatusRequestEntityTooLarge).JSON(fiber.Map{"error": "body too large"})
+	}
+
 	body := c.Body()
 
 	// Replay protection: verify timestamp-signed HMAC (P1#11)
 	timestamp := c.Get("X-Webhook-Timestamp")
 	eventID := c.Get("X-Webhook-Event-ID")
 
-	if timestamp != "" {
-		if err := h.verifyTimestamp(timestamp); err != nil {
-			slog.Warn("webhook timestamp rejected", "error", err, "timestamp", timestamp)
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
-		}
+	if timestamp == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "missing X-Webhook-Timestamp header"})
+	}
+	if err := h.verifyTimestamp(timestamp); err != nil {
+		slog.Warn("webhook timestamp rejected", "error", err, "timestamp", timestamp)
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": err.Error()})
+	}
 
-		if !h.verifyTimestampedHMAC(body, timestamp, signature) {
-			slog.Warn("invalid webhook HMAC signature with timestamp")
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid signature"})
-		}
-	} else {
-		// Legacy: no-timestamp fallback
-		if !h.verifyHMAC(body, signature) {
-			slog.Warn("invalid webhook HMAC signature (legacy)")
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid signature"})
-		}
+	if !h.verifyTimestampedHMAC(body, timestamp, signature) {
+		slog.Warn("invalid webhook HMAC signature with timestamp")
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "invalid signature"})
 	}
 
 	// Deduplicate by event_id (P1#11)
@@ -107,14 +103,14 @@ func (h *WebhookHandler) Handle(c *fiber.Ctx) error {
 		"body_size", len(body),
 	)
 
-	// Resolve Telegram chat_id from omsu_group_id (P0#2: multi-tenancy)
-	chatID, err := h.resolveChatID(c.Context(), payload.GroupID)
+	// Resolve Telegram chat_id and announce_thread_id from omsu_group_id (P1-6: per-group)
+	chatID, announceThreadID, err := h.resolveGroupInfo(c.Context(), payload.GroupID)
 	if err != nil {
-		slog.Error("failed to resolve chat_id for webhook group", "group_id", payload.GroupID, "error", err)
+		slog.Error("failed to resolve group info for webhook group", "group_id", payload.GroupID, "error", err)
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "group not found"})
 	}
 
-	if err := h.diffEngine.ProcessWebhook(c.Context(), &payload, chatID, h.announceThreadID); err != nil {
+	if err := h.diffEngine.ProcessWebhook(c.Context(), &payload, chatID, announceThreadID); err != nil {
 		slog.Error("failed to process webhook", "error", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "processing failed"})
 	}
@@ -122,22 +118,16 @@ func (h *WebhookHandler) Handle(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "ok"})
 }
 
-func (h *WebhookHandler) resolveChatID(ctx context.Context, omsuGroupID int) (int64, error) {
+func (h *WebhookHandler) resolveGroupInfo(ctx context.Context, omsuGroupID int) (int64, int, error) {
 	var chatID int64
+	var announceThreadID int
 	err := h.db.QueryRowContext(ctx,
-		"SELECT chat_id FROM groups WHERE omsu_group_id = ? AND is_active = 1", omsuGroupID,
-	).Scan(&chatID)
+		"SELECT chat_id, announce_thread_id FROM groups WHERE omsu_group_id = ? AND is_active = 1", omsuGroupID,
+	).Scan(&chatID, &announceThreadID)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return chatID, nil
-}
-
-func (h *WebhookHandler) verifyHMAC(body []byte, signature string) bool {
-	mac := hmac.New(sha256.New, []byte(h.scheduleSecret))
-	mac.Write(body)
-	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(signature))
+	return chatID, announceThreadID, nil
 }
 
 func (h *WebhookHandler) verifyTimestampedHMAC(body []byte, timestamp, signature string) bool {
@@ -149,32 +139,9 @@ func (h *WebhookHandler) verifyTimestampedHMAC(body []byte, timestamp, signature
 }
 
 func (h *WebhookHandler) verifyTimestamp(ts string) error {
-	// Accept RFC3339 and Unix timestamp formats
-	var t time.Time
 	t, err := time.Parse(time.RFC3339, ts)
 	if err != nil {
-		// Try Unix timestamp (seconds or milliseconds)
-		var sec int64
-		if strings.Contains(ts, ".") {
-			// Try parsing as millis
-			var millis int64
-			_, parseErr := fmt.Sscanf(ts, "%d", &millis)
-			if parseErr != nil {
-				return fmt.Errorf("invalid timestamp format: %s", ts)
-			}
-			// Heuristic: if > 1e12, assume millis
-			if millis > 1e12 {
-				t = time.UnixMilli(millis)
-			} else {
-				t = time.Unix(millis, 0)
-			}
-		} else {
-			_, parseErr := fmt.Sscanf(ts, "%d", &sec)
-			if parseErr != nil {
-				return fmt.Errorf("invalid timestamp format: %s", ts)
-			}
-			t = time.Unix(sec, 0)
-		}
+		return fmt.Errorf("invalid timestamp format (RFC3339 required): %s", ts)
 	}
 
 	skew := time.Since(t)
@@ -188,7 +155,7 @@ func (h *WebhookHandler) verifyTimestamp(ts string) error {
 }
 
 func (h *WebhookHandler) checkDedup(ctx context.Context, eventID string) (bool, error) {
-	// Clean up expired events opportunistically
+	// Opportunistic cleanup on each webhook (periodic cleanup also runs via StartCleanupLoop)
 	h.cleanupExpiredEvents(ctx)
 
 	// Check if event already processed
@@ -221,5 +188,18 @@ func (h *WebhookHandler) cleanupExpiredEvents(ctx context.Context) {
 	)
 	if err != nil {
 		slog.Warn("failed to cleanup expired webhook events", "error", err)
+	}
+}
+
+func (h *WebhookHandler) StartCleanupLoop(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.cleanupExpiredEvents(ctx)
+		}
 	}
 }

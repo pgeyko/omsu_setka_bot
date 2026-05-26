@@ -73,12 +73,6 @@ func (ac *AdminCache) IsAdmin(ctx context.Context, chatID int64, userID int64) b
 	}
 
 	ac.mu.Lock()
-	// Clean up old entries
-	for k, e := range ac.cache {
-		if now.Sub(e.checkedAt) > 10*time.Minute {
-			delete(ac.cache, k)
-		}
-	}
 
 	// Cache false for this user if they are not admin
 	if !isAdmin {
@@ -110,6 +104,28 @@ func (ac *AdminCache) IsOwner(ctx context.Context, chatID int64, userID int64) b
 	entry, ok = ac.cache[key]
 	ac.mu.RUnlock()
 	return ok && entry.isOwner
+}
+
+func (ac *AdminCache) StartEviction(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				ac.mu.Lock()
+				now := time.Now()
+				for k, e := range ac.cache {
+					if now.Sub(e.checkedAt) > 10*time.Minute {
+						delete(ac.cache, k)
+					}
+				}
+				ac.mu.Unlock()
+			}
+		}
+	}()
 }
 
 func GetChatMemberUserID(m models.ChatMember) int64 {

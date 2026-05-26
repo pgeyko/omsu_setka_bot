@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"html"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -312,8 +313,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 			if len(preview) > 100 {
 				preview = preview[:100] + "..."
 			}
-			timeStr := m.CreatedAt.Format("02.01 15:04")
-			sb.WriteString(fmt.Sprintf("<a href=\"%s\">🔗</a> %s @%s\n<code>%s</code>\n\n", link, timeStr, m.Username, preview))
+			sb.WriteString(fmt.Sprintf("<a href=\"%s\">🔗</a> %s @%s\n<code>%s</code>\n\n", link, m.CreatedAt.Format("02.01 15:04"), m.Username, html.EscapeString(preview)))
 		}
 		b.SendMessage(ctx, &tgbot.SendMessageParams{
 			ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID,

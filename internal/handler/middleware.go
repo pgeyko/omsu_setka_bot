@@ -9,29 +9,46 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type RateLimiter struct {
+type rateLimiterShard struct {
 	mu       sync.Mutex
 	requests map[int64][]time.Time
-	limit    int
-	window   time.Duration
 }
 
+type RateLimiter struct {
+	shards []*rateLimiterShard
+	limit  int
+	window time.Duration
+}
+
+const numShards = 16
+
 func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
-	return &RateLimiter{
-		requests: make(map[int64][]time.Time),
-		limit:    limit,
-		window:   window,
+	r := &RateLimiter{
+		shards: make([]*rateLimiterShard, numShards),
+		limit:  limit,
+		window: window,
 	}
+	for i := range r.shards {
+		r.shards[i] = &rateLimiterShard{
+			requests: make(map[int64][]time.Time),
+		}
+	}
+	return r
+}
+
+func (r *RateLimiter) shard(userID int64) *rateLimiterShard {
+	return r.shards[uint64(userID)&(numShards-1)]
 }
 
 func (r *RateLimiter) Allow(userID int64) bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	s := r.shard(userID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
 	now := time.Now()
 	cutoff := now.Add(-r.window)
 
-	times := r.requests[userID]
+	times := s.requests[userID]
 	var valid []time.Time
 	for _, t := range times {
 		if t.After(cutoff) {
@@ -40,19 +57,19 @@ func (r *RateLimiter) Allow(userID int64) bool {
 	}
 
 	if len(valid) >= r.limit {
-		r.requests[userID] = valid
+		s.requests[userID] = valid
 		return false
 	}
 
 	valid = append(valid, now)
-	r.requests[userID] = valid
+	s.requests[userID] = valid
 
 	// Evict stale entries periodically to prevent unbounded growth
-	if len(r.requests) > 10000 {
+	if len(s.requests) > 10000 {
 		globalCutoff := now.Add(-2 * r.window)
-		for uid, ts := range r.requests {
+		for uid, ts := range s.requests {
 			if len(ts) > 0 && ts[len(ts)-1].Before(globalCutoff) {
-				delete(r.requests, uid)
+				delete(s.requests, uid)
 			}
 		}
 	}

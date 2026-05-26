@@ -31,7 +31,8 @@ type SummaryBuffer struct {
 	capacity int
 	db       *sql.DB
 	dbWrites chan dbWrite
-	done     chan struct{}
+	wg       sync.WaitGroup
+	closeCh  chan struct{}
 }
 
 func NewSummaryBuffer(db *sql.DB, capacity int) *SummaryBuffer {
@@ -40,16 +41,21 @@ func NewSummaryBuffer(db *sql.DB, capacity int) *SummaryBuffer {
 		capacity: capacity,
 		db:       db,
 		dbWrites: make(chan dbWrite, 256),
-		done:     make(chan struct{}),
+		closeCh:  make(chan struct{}),
 	}
 	sb.restoreFromDB()
-	if db != nil {
-		go sb.dbWriter()
-	}
 	return sb
 }
 
+func (b *SummaryBuffer) Start() {
+	if b.db != nil {
+		b.wg.Add(1)
+		go b.dbWriter()
+	}
+}
+
 func (b *SummaryBuffer) dbWriter() {
+	defer b.wg.Done()
 	for w := range b.dbWrites {
 		var err error
 		for retry := 0; retry < 3; retry++ {
@@ -72,7 +78,6 @@ func (b *SummaryBuffer) dbWriter() {
 			slog.Error("failed to save message to buffer db", "error", err)
 		}
 	}
-	close(b.done)
 }
 
 func (b *SummaryBuffer) restoreFromDB() {
@@ -154,9 +159,14 @@ func (b *SummaryBuffer) Push(chatID int64, threadID int, messageID int, username
 	}
 }
 
+func (b *SummaryBuffer) Close() {
+	close(b.dbWrites)
+	b.wg.Wait()
+}
+
 func (b *SummaryBuffer) GetMessages(chatID int64, threadID int) string {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
 	key := fmt.Sprintf("%d:%d", chatID, threadID)
 	rb, ok := b.topics[key]

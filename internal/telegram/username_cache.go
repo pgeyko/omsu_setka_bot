@@ -91,6 +91,10 @@ func (uc *UsernameCache) Get(username string) (int64, bool) {
 	return entry.userID, true
 }
 
+func (uc *UsernameCache) Close() {
+	close(uc.done)
+}
+
 func (uc *UsernameCache) All() []string {
 	uc.mu.RLock()
 	defer uc.mu.RUnlock()

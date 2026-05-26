@@ -29,6 +29,11 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+type pendingMediaEntry struct {
+	cancel    context.CancelFunc
+	createdAt time.Time
+}
+
 type Handler struct {
 	classifier    *classifier.Classifier
 	forwarder     *forwarder.Forwarder
@@ -39,21 +44,26 @@ type Handler struct {
 	token         string
 	httpClient    *http.Client
 
-	pendingMediaCancel map[string]context.CancelFunc
-	pendingMu          sync.Mutex
+	pendingMediaCancel sync.Map
 }
 
 func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, token string, database *omsudb.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
 	return &Handler{
-		classifier:         classifier,
-		forwarder:          forwarder,
-		db:                 database,
-		buffer:             buffer,
-		usernameCache:      usernameCache,
-		bot:                bot,
-		token:              token,
-		httpClient:         &http.Client{Timeout: 30 * time.Second},
-		pendingMediaCancel: make(map[string]context.CancelFunc),
+		classifier:    classifier,
+		forwarder:     forwarder,
+		db:            database,
+		buffer:        buffer,
+		usernameCache: usernameCache,
+		bot:           bot,
+		token:         token,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:       20,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:    90 * time.Second,
+			},
+		},
 	}
 }
 
@@ -405,8 +415,11 @@ func (h *Handler) fuzzySlugMatch(ctx context.Context, chatID int64, topic string
 		return 0, fmt.Errorf("no words in topic")
 	}
 
-	query := `SELECT slug, tg_thread_id FROM topics WHERE group_id = ? AND is_active = 1`
-	args := []any{chatID}
+	slugPrefix := strings.SplitN(strings.ToLower(topic), "-", 2)[0]
+	slugPrefix = strings.SplitN(slugPrefix, " ", 2)[0]
+
+	query := `SELECT slug, tg_thread_id FROM topics WHERE group_id = ? AND is_active = 1 AND slug LIKE ?`
+	args := []any{chatID, slugPrefix + "%"}
 	longWords := make([]string, 0, len(words))
 	for _, w := range words {
 		if len(w) >= 3 {
@@ -501,29 +514,42 @@ func (h *Handler) fuzzyLookupThreadID(ctx context.Context, chatID int64, topic s
 }
 
 func (h *Handler) deferMediaGroup(ctx context.Context, b *tgbot.Bot, msg *models.Message, text, fileID string, isPhoto bool) {
-	h.pendingMu.Lock()
-	if cancel, ok := h.pendingMediaCancel[msg.MediaGroupID]; ok {
-		cancel()
+	if entry, ok := h.pendingMediaCancel.Load(msg.MediaGroupID); ok {
+		entry.(*pendingMediaEntry).cancel()
+		h.pendingMediaCancel.Delete(msg.MediaGroupID)
 	}
 	childCtx, cancel := context.WithCancel(ctx)
-	h.pendingMediaCancel[msg.MediaGroupID] = cancel
-	h.pendingMu.Unlock()
+	h.pendingMediaCancel.Store(msg.MediaGroupID, &pendingMediaEntry{
+		cancel:    cancel,
+		createdAt: time.Now(),
+	})
+	h.cleanStalePendingMedia()
 
-		go func() {
-			select {
-			case <-time.After(2 * time.Second):
-				h.processDeferredAlbum(childCtx, b, msg, text, fileID, isPhoto)
-			case <-childCtx.Done():
-				return
-			}
-		}()
+	go func() {
+		select {
+		case <-time.After(2 * time.Second):
+			h.processDeferredAlbum(childCtx, b, msg, text, fileID, isPhoto)
+		case <-childCtx.Done():
+			return
+		}
+	}()
+}
+
+func (h *Handler) cleanStalePendingMedia() {
+	now := time.Now()
+	h.pendingMediaCancel.Range(func(key, value interface{}) bool {
+		entry := value.(*pendingMediaEntry)
+		if now.Sub(entry.createdAt) > 5*time.Minute {
+			entry.cancel()
+			h.pendingMediaCancel.Delete(key)
+		}
+		return true
+	})
 }
 
 func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *models.Message, text, fileID string, isPhoto bool) {
 	defer func() {
-		h.pendingMu.Lock()
-		delete(h.pendingMediaCancel, msg.MediaGroupID)
-		h.pendingMu.Unlock()
+		h.pendingMediaCancel.Delete(msg.MediaGroupID)
 	}()
 
 	var result *classifier.ClassifyResult

@@ -27,10 +27,11 @@ const maxPhotoDimension = 512
 // When no multimodal provider is available, ProcessPhoto returns ("", nil) so
 // the caller can treat the message as text-only without error.
 type MediaProcessor struct {
-	botClient *tgbot.Bot
-	token     string
-	llmClient llm.LLMClient
-	prompts   PromptLoader
+	botClient  *tgbot.Bot
+	token      string
+	llmClient  llm.LLMClient
+	prompts    PromptLoader
+	httpClient *http.Client
 }
 
 type PromptLoader interface {
@@ -39,10 +40,11 @@ type PromptLoader interface {
 
 func NewMediaProcessor(botClient *tgbot.Bot, token string, llmClient llm.LLMClient, prompts PromptLoader) *MediaProcessor {
 	return &MediaProcessor{
-		botClient: botClient,
-		token:     token,
-		llmClient: llmClient,
-		prompts:   prompts,
+		botClient:  botClient,
+		token:      token,
+		llmClient:  llmClient,
+		prompts:    prompts,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -222,8 +224,7 @@ func (mp *MediaProcessor) downloadFile(ctx context.Context, fileID string) ([]by
 		return nil, "", err
 	}
 
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	resp, err := httpClient.Do(req)
+	resp, err := mp.httpClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to download file: %w", err)
 	}

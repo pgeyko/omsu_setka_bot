@@ -132,7 +132,7 @@ func (e *DiffEngine) ProcessWebhook(ctx context.Context, payload *WebhookPayload
 		return nil
 	}
 	if err := e.bot.PostToThread(ctx, chatID, announceThreadID, msg); err != nil {
-		slog.Error("failed to post announcement", "error", err)
+		return fmt.Errorf("failed to post announcement: %w", err)
 	}
 
 	return nil

@@ -47,28 +47,31 @@ jobs:
           ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" \
             "mkdir -p ~/bot"
 
-          # Upload docker-compose.prod.yml
+          # Upload docker-compose.prod.yml and .env (to avoid leaking secrets via export in ps aux)
           scp -o StrictHostKeyChecking=no \
             docker-compose.prod.yml \
             "$DEPLOY_USER@$DEPLOY_HOST:~/bot/docker-compose.yml"
 
-          # Deploy — export only non-empty vars (cleanenv fails on empty ints)
+          # Write env vars to .env file and use docker compose --env-file
           ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" \
-            "export BOT_TOKEN='$BOT_TOKEN'
-             export ADMIN_SECRET='$ADMIN_SECRET'
-             export JWT_SECRET='$JWT_SECRET'
-             export SCHEDULE_WEBHOOK_SECRET='$SCHEDULE_WEBHOOK_SECRET'
-             export GROQ_API_KEY='$GROQ_API_KEY'
-             export GROQ_API_KEY_2='$GROQ_API_KEY_2'
-             export GEMINI_API_KEY='$GEMINI_API_KEY'
-             export OPENROUTER_API_KEY='$OPENROUTER_API_KEY'
-             $( [ -n "$SETKA_BASE_URL" ] && echo "export SETKA_BASE_URL='$SETKA_BASE_URL'" )
-             $( [ -n "$SETKA_ADMIN_KEY" ] && echo "export SETKA_ADMIN_KEY='$SETKA_ADMIN_KEY'" )
-             $( [ -n "$SETKA_PUBLIC_URL" ] && echo "export SETKA_PUBLIC_URL='$SETKA_PUBLIC_URL'" )
-             $( [ -n "$APP_ENV" ] && echo "export APP_ENV='$APP_ENV'" )
-             $( [ -n "$ANNOUNCE_THREAD_ID" ] && echo "export ANNOUNCE_THREAD_ID='$ANNOUNCE_THREAD_ID'" )
-             $( [ -n "$CORS_ORIGIN" ] && echo "export CORS_ORIGIN='$CORS_ORIGIN'" )
+            "cat > ~/bot/.env << 'ENVEOF'
+BOT_TOKEN=$BOT_TOKEN
+ADMIN_SECRET=$ADMIN_SECRET
+JWT_SECRET=$JWT_SECRET
+SCHEDULE_WEBHOOK_SECRET=$SCHEDULE_WEBHOOK_SECRET
+GROQ_API_KEY=$GROQ_API_KEY
+GROQ_API_KEY_2=$GROQ_API_KEY_2
+GEMINI_API_KEY=$GEMINI_API_KEY
+OPENROUTER_API_KEY=$OPENROUTER_API_KEY
+$( [ -n "$SETKA_BASE_URL" ] && echo "SETKA_BASE_URL=$SETKA_BASE_URL" )
+$( [ -n "$SETKA_ADMIN_KEY" ] && echo "SETKA_ADMIN_KEY=$SETKA_ADMIN_KEY" )
+$( [ -n "$SETKA_PUBLIC_URL" ] && echo "SETKA_PUBLIC_URL=$SETKA_PUBLIC_URL" )
+$( [ -n "$APP_ENV" ] && echo "APP_ENV=$APP_ENV" )
+$( [ -n "$ANNOUNCE_THREAD_ID" ] && echo "ANNOUNCE_THREAD_ID=$ANNOUNCE_THREAD_ID" )
+$( [ -n "$CORS_ORIGIN" ] && echo "CORS_ORIGIN=$CORS_ORIGIN" )
+ENVEOF
+             chmod 600 ~/bot/.env
              cd ~/bot
-             docker compose pull bot
-             docker compose up -d bot"
+             docker compose --env-file .env pull bot
+             docker compose --env-file .env up -d bot"
           echo "Deploy completed"

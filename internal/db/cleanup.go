@@ -42,6 +42,9 @@ func (d *DB) runCleanup(ctx context.Context) {
 	}
 
 	if time.Now().Weekday() == time.Sunday {
+		if _, err := d.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+			slog.Warn("wal_checkpoint before VACUUM failed", "error", err)
+		}
 		if _, err := d.ExecContext(ctx, "VACUUM"); err != nil {
 			slog.Error("db VACUUM failed", "error", err)
 		} else {

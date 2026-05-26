@@ -1,18 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"strings"
-	"time"
 	"unicode/utf16"
 
 	tgbot "github.com/go-telegram/bot"
@@ -182,42 +177,4 @@ func generateAPIToken() string {
 		panic("crypto/rand.Read failed: " + err.Error())
 	}
 	return hex.EncodeToString(b)
-}
-
-func registerWithSetka(ctx context.Context, cfg *config.Config) {
-	publicURL := cfg.Setka.PublicURL
-	if publicURL == "" {
-		publicURL = fmt.Sprintf("http://localhost%s", cfg.API.Listen)
-	}
-	body := map[string]interface{}{
-		"url":       publicURL + "/webhook/schedule",
-		"secret":    cfg.Webhook.ScheduleSecret,
-		"group_ids": []int{cfg.Telegram.OmsuGroupID},
-		"enabled":   true,
-	}
-
-	data, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, "PUT",
-		fmt.Sprintf("%s/api/v1/admin/webhooks/by-url", cfg.Setka.BaseURL),
-		bytes.NewReader(data))
-	if err != nil {
-		slog.Error("failed to create setka registration request", "error", err)
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Admin-Key", cfg.Setka.AdminKey)
-
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		slog.Warn("failed to register with omsu_setka", "error", err)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		slog.Info("registered webhook with omsu_setka")
-	} else {
-		slog.Warn("omsu_setka registration returned non-2xx", "status", resp.StatusCode)
-	}
 }

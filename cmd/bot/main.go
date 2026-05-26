@@ -155,6 +155,43 @@ func initLLM(cfg *config.Config, db *omsudb.DB, personaStore *persona.Store, pro
 	return
 }
 
+func initDB(cfg *config.Config) *omsudb.DB {
+	database, err := omsudb.New(cfg.DB.Path)
+	if err != nil {
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
+	}
+	if err := database.Migrate(); err != nil {
+		slog.Error("failed to migrate database", "error", err)
+		os.Exit(1)
+	}
+	database.StartCleanup(context.Background())
+	return database
+}
+
+func initPersona(db *omsudb.DB, _ *llm.PromptRegistry) *persona.Store {
+	personaStore := persona.NewStore(db.DB)
+	if err := personaStore.Load(context.Background(), "prompts/persona.md"); err != nil {
+		slog.Error("failed to load persona", "error", err)
+		os.Exit(1)
+	}
+	return personaStore
+}
+
+func startSighupHandler(sighupCtx context.Context, prompts *llm.PromptRegistry) {
+	go func() {
+		<-sighupCtx.Done()
+		slog.Info("SIGHUP received, reloading prompts and protocols")
+		if err := prompts.Reload(); err != nil {
+			slog.Error("failed to reload prompts", "error", err)
+		} else {
+			slog.Info("prompts reloaded successfully")
+		}
+		agent.ReloadProtocols()
+		slog.Info("protocols reloaded")
+	}()
+}
+
 func main() {
 	configPath := "config.yaml"
 	if p := os.Getenv("CONFIG_PATH"); p != "" {
@@ -174,30 +211,16 @@ func main() {
 		}
 	}
 
-	database, err := omsudb.New(cfg.DB.Path)
-	if err != nil {
-		slog.Error("failed to open database", "error", err)
-		os.Exit(1)
-	}
+	database := initDB(cfg)
 	defer database.Close()
-
-	if err := database.Migrate(); err != nil {
-		slog.Error("failed to migrate database", "error", err)
-		os.Exit(1)
-	}
-	database.StartCleanup(context.Background())
-
-	personaStore := persona.NewStore(database.DB)
-	if err := personaStore.Load(context.Background(), "prompts/persona.md"); err != nil {
-		slog.Error("failed to load persona", "error", err)
-		os.Exit(1)
-	}
 
 	prompts, err := llm.NewPromptRegistry("prompts")
 	if err != nil {
 		slog.Error("failed to load prompts", "error", err)
 		os.Exit(1)
 	}
+
+	personaStore := initPersona(database, prompts)
 
 	cmdReg := handler.NewCommandRegistry()
 
@@ -248,7 +271,7 @@ func main() {
 		poster = &telegramPoster{b: tgBot}
 	}
 	diffEngine := schedule.NewDiffEngine(database.DB, poster, llmClient, schedule.NewAnnouncer(llmClient, prompts))
-	webhookHandler := handler.NewWebhookHandler(diffEngine, database.DB, cfg.Webhook.ScheduleSecret, cfg.Webhook.AnnounceThreadID)
+	webhookHandler := handler.NewWebhookHandler(diffEngine, database.DB, cfg.Webhook.ScheduleSecret)
 
 	var botSender api.BotSender
 	if poster != nil {
@@ -300,28 +323,9 @@ func main() {
 		},
 	}), webhookHandler.Handle)
 
-	sighupCtx, sighupCancel := context.WithCancel(context.Background())
+	sighupCtx, sighupCancel := signal.NotifyContext(context.Background(), syscall.SIGHUP)
 	defer sighupCancel()
-	go func() {
-		sigHup := make(chan os.Signal, 1)
-		signal.Notify(sigHup, syscall.SIGHUP)
-		for {
-			select {
-			case <-sigHup:
-				slog.Info("SIGHUP received, reloading prompts and protocols")
-				if err := prompts.Reload(); err != nil {
-					slog.Error("failed to reload prompts", "error", err)
-				} else {
-					slog.Info("prompts reloaded successfully")
-				}
-				agent.ReloadProtocols()
-				slog.Info("protocols reloaded")
-			case <-sighupCtx.Done():
-				signal.Stop(sigHup)
-				return
-			}
-		}
-	}()
+	startSighupHandler(sighupCtx, prompts)
 
 	go func() {
 		t := time.NewTicker(5 * time.Minute)
@@ -344,16 +348,20 @@ func main() {
 		}
 	}()
 
+	var summaryBuf *buffer.SummaryBuffer
+
 	if tgBot != nil {
 		classif := classifier.New(llmClient, prompts, &dbTopicsProvider{db: database.DB})
 		fwd := forwarder.New(tgBot, personaStore)
-		summaryBuf := buffer.NewSummaryBuffer(database.DB, 200)
+		summaryBuf = buffer.NewSummaryBuffer(database.DB, 200)
+		summaryBuf.Start()
 		usernameCache := telegram.NewUsernameCache()
 		h := handler.NewHandler(classif, fwd, tgBot, cfg.Telegram.Token, database, summaryBuf, usernameCache)
 
 		sessionStore := telegram.NewSessionStore()
 		sessionStore.StartCleanup(context.Background())
 		adminCache := telegram.NewAdminCache(tgBot)
+		adminCache.StartEviction(context.Background())
 		settingsHandler := handler.NewSettingsHandler(
 			database,
 			sessionStore,
@@ -681,11 +689,39 @@ func main() {
 	}()
 
 	if cfg.Setka.BaseURL != "" && cfg.Setka.AdminKey != "" {
-		registerWithSetka(context.Background(), cfg)
+		if _, err := telegram.RegisterWebhooksWithSetka(
+			context.Background(), database.DB,
+			cfg.Setka.BaseURL, cfg.Setka.AdminKey,
+			cfg.Webhook.ScheduleSecret, cfg.Setka.PublicURL,
+		); err != nil {
+			slog.Warn("failed to register webhooks with setka", "error", err)
+		}
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
+
+	// P1-5: Periodic webhook re-registration every 10 minutes
+	if cfg.Setka.BaseURL != "" && cfg.Setka.AdminKey != "" {
+		go func() {
+			ticker := time.NewTicker(10 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					if _, err := telegram.RegisterWebhooksWithSetka(
+						context.Background(), database.DB,
+						cfg.Setka.BaseURL, cfg.Setka.AdminKey,
+						cfg.Webhook.ScheduleSecret, cfg.Setka.PublicURL,
+					); err != nil {
+						slog.Warn("periodic webhook re-registration failed", "error", err)
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
 
 	if tgBot != nil {
 		tgBot.Start(ctx)
@@ -693,6 +729,9 @@ func main() {
 		<-ctx.Done()
 	}
 
+	if summaryBuf != nil {
+		summaryBuf.Close()
+	}
 	apiServer.App.Shutdown()
 }
 

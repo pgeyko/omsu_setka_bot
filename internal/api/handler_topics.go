@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -176,41 +177,47 @@ func (s *Server) handleUpdateTopic(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid request body")
 	}
 
-	query := "UPDATE topics SET "
+	var b strings.Builder
+	b.WriteString("UPDATE topics SET ")
 	var args []interface{}
-	var sets []string
+	n := 0
+
+	addField := func(col string, val interface{}) {
+		if n > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(col)
+		b.WriteString(" = ?")
+		args = append(args, val)
+		n++
+	}
 
 	if req.Name != nil {
-		sets = append(sets, "name = ?")
-		args = append(args, *req.Name)
+		addField("name", *req.Name)
 	}
 	if req.Slug != nil {
-		sets = append(sets, "slug = ?")
-		args = append(args, *req.Slug)
+		addField("slug", *req.Slug)
 	}
 	if req.Description != nil {
-		sets = append(sets, "description = ?")
-		args = append(args, *req.Description)
+		addField("description", *req.Description)
 	}
 	if req.Aliases != nil {
-		sets = append(sets, "aliases = ?")
 		j, _ := json.Marshal(*req.Aliases)
-		args = append(args, string(j))
+		addField("aliases", string(j))
 	}
 	if req.Hashtags != nil {
-		sets = append(sets, "hashtags = ?")
 		j, _ := json.Marshal(*req.Hashtags)
-		args = append(args, string(j))
+		addField("hashtags", string(j))
 	}
 
-	if len(sets) == 0 {
+	if n == 0 {
 		return respondError(c, fiber.StatusUnprocessableEntity, ErrValidation, "no fields to update")
 	}
 
-	query += joinStrings(sets, ", ") + " WHERE id = ?"
+	b.WriteString(" WHERE id = ?")
 	args = append(args, id)
 
-	result, err := s.DB.ExecContext(c.Context(), query, args...)
+	result, err := s.DB.ExecContext(c.Context(), b.String(), args...)
 	if err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to update topic")
 	}
@@ -270,13 +277,4 @@ func (s *Server) toggleTopicActive(c *fiber.Ctx, active int) error {
 	return respondSuccess(c, fiber.Map{"id": id, "is_active": active == 1})
 }
 
-func joinStrings(strs []string, sep string) string {
-	result := ""
-	for i, s := range strs {
-		if i > 0 {
-			result += sep
-		}
-		result += s
-	}
-	return result
-}
+

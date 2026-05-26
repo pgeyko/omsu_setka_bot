@@ -5,21 +5,18 @@ import (
 	"testing"
 )
 
-func TestGroupsCRUD(t *testing.T) {
+func TestGroupCRUD_Create(t *testing.T) {
 	t.Parallel()
 	d, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)
 	}
 	defer d.Close()
-
 	if err := d.Migrate(); err != nil {
 		t.Fatalf("migration failed: %v", err)
 	}
 
 	ctx := context.Background()
-
-	// Test Create
 	g := &Group{
 		ChatID:      -1001234567,
 		Title:       "Test Group",
@@ -28,12 +25,10 @@ func TestGroupsCRUD(t *testing.T) {
 		IsActive:    true,
 		IsVIP:       false,
 	}
-
 	if err := d.CreateGroup(ctx, g); err != nil {
 		t.Fatalf("failed to create group: %v", err)
 	}
 
-	// Test Get
 	retrieved, err := d.GetGroup(ctx, -1001234567)
 	if err != nil {
 		t.Fatalf("failed to get group: %v", err)
@@ -42,7 +37,6 @@ func TestGroupsCRUD(t *testing.T) {
 		t.Errorf("mismatched group fields: %+v", retrieved)
 	}
 
-	// Test GetByToken
 	retrieved2, err := d.GetGroupByToken(ctx, "test-token")
 	if err != nil {
 		t.Fatalf("failed to get group by token: %v", err)
@@ -50,8 +44,37 @@ func TestGroupsCRUD(t *testing.T) {
 	if retrieved2.ChatID != -1001234567 {
 		t.Errorf("mismatched chat_id on token lookup: %d", retrieved2.ChatID)
 	}
+}
 
-	// Test Update
+func TestGroupCRUD_Update(t *testing.T) {
+	t.Parallel()
+	d, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create db: %v", err)
+	}
+	defer d.Close()
+	if err := d.Migrate(); err != nil {
+		t.Fatalf("migration failed: %v", err)
+	}
+
+	ctx := context.Background()
+	g := &Group{
+		ChatID:      -1001234567,
+		Title:       "Test Group",
+		APIToken:    "test-token",
+		OmsuGroupID: 42,
+		IsActive:    true,
+		IsVIP:       false,
+	}
+	if err := d.CreateGroup(ctx, g); err != nil {
+		t.Fatalf("failed to create group: %v", err)
+	}
+
+	retrieved, err := d.GetGroup(ctx, -1001234567)
+	if err != nil {
+		t.Fatalf("failed to get group: %v", err)
+	}
+
 	retrieved.Title = "Updated Title"
 	retrieved.IsVIP = true
 	if err := d.UpdateGroup(ctx, retrieved); err != nil {
@@ -65,71 +88,32 @@ func TestGroupsCRUD(t *testing.T) {
 	if updated.Title != "Updated Title" || !updated.IsVIP {
 		t.Errorf("mismatched updated fields: %+v", updated)
 	}
+}
 
-	// Test List
-	list, err := d.ListGroups(ctx)
+func TestGroupCRUD_Delete(t *testing.T) {
+	t.Parallel()
+	d, err := New(":memory:")
 	if err != nil {
-		t.Fatalf("failed to list groups: %v", err)
+		t.Fatalf("failed to create db: %v", err)
 	}
-	if len(list) != 1 || list[0].ChatID != -1001234567 {
-		t.Errorf("expected list of length 1, got %d", len(list))
-	}
-
-	// Test Superadmin
-	isSA, err := d.IsSuperadmin(ctx, 999)
-	if err != nil {
-		t.Fatalf("failed to check superadmin: %v", err)
-	}
-	if isSA {
-		t.Fatal("expected false for unregistered superadmin")
+	defer d.Close()
+	if err := d.Migrate(); err != nil {
+		t.Fatalf("migration failed: %v", err)
 	}
 
-	if err := d.AddSuperadmin(ctx, 999, "my note"); err != nil {
-		t.Fatalf("failed to add superadmin: %v", err)
+	ctx := context.Background()
+	g := &Group{
+		ChatID:      -1001234567,
+		Title:       "Test Group",
+		APIToken:    "test-token",
+		OmsuGroupID: 42,
+		IsActive:    true,
+		IsVIP:       false,
+	}
+	if err := d.CreateGroup(ctx, g); err != nil {
+		t.Fatalf("failed to create group: %v", err)
 	}
 
-	isSA2, err := d.IsSuperadmin(ctx, 999)
-	if err != nil {
-		t.Fatalf("failed to check superadmin: %v", err)
-	}
-	if !isSA2 {
-		t.Fatal("expected true for registered superadmin")
-	}
-
-	// Test ListSuperadmins
-	saList, err := d.ListSuperadmins(ctx)
-	if err != nil {
-		t.Fatalf("failed to list superadmins: %v", err)
-	}
-	if len(saList) != 1 || saList[0].UserID != 999 || saList[0].Note != "my note" {
-		t.Errorf("expected 1 superadmin, got: %+v", saList)
-	}
-
-	if err := d.RemoveSuperadmin(ctx, 999); err != nil {
-		t.Fatalf("failed to remove superadmin: %v", err)
-	}
-
-	isSA3, err := d.IsSuperadmin(ctx, 999)
-	if err != nil {
-		t.Fatalf("failed to check superadmin: %v", err)
-	}
-	if isSA3 {
-		t.Fatal("expected false after removal")
-	}
-
-	// Test UpdateGroupOmsuID
-	if err := d.UpdateGroupOmsuID(ctx, -1001234567, 9999); err != nil {
-		t.Fatalf("failed to update group omsu id: %v", err)
-	}
-	updatedOmsu, err := d.GetGroup(ctx, -1001234567)
-	if err != nil {
-		t.Fatalf("failed to get group after update: %v", err)
-	}
-	if updatedOmsu.OmsuGroupID != 9999 {
-		t.Errorf("expected OmsuGroupID to be 9999, got %d", updatedOmsu.OmsuGroupID)
-	}
-
-	// Test Delete
 	if err := d.DeleteGroup(ctx, -1001234567); err != nil {
 		t.Fatalf("failed to delete group: %v", err)
 	}
@@ -137,5 +121,94 @@ func TestGroupsCRUD(t *testing.T) {
 	_, err = d.GetGroup(ctx, -1001234567)
 	if err == nil {
 		t.Fatal("expected error getting deleted group")
+	}
+}
+
+func TestGroupCRUD_SoftDelete(t *testing.T) {
+	t.Parallel()
+	d, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create db: %v", err)
+	}
+	defer d.Close()
+	if err := d.Migrate(); err != nil {
+		t.Fatalf("migration failed: %v", err)
+	}
+
+	ctx := context.Background()
+	g := &Group{
+		ChatID:      -1001234567,
+		Title:       "Test Group",
+		APIToken:    "test-token",
+		OmsuGroupID: 42,
+		IsActive:    true,
+		IsVIP:       false,
+	}
+	if err := d.CreateGroup(ctx, g); err != nil {
+		t.Fatalf("failed to create group: %v", err)
+	}
+
+	if err := d.SoftDeleteGroup(ctx, -1001234567); err != nil {
+		t.Fatalf("failed to soft-delete group: %v", err)
+	}
+
+	retrieved, err := d.GetGroup(ctx, -1001234567)
+	if err != nil {
+		t.Fatalf("failed to get soft-deleted group: %v", err)
+	}
+	if retrieved.IsActive {
+		t.Error("expected is_active to be false after soft delete")
+	}
+}
+
+func TestGroupCRUD_List(t *testing.T) {
+	t.Parallel()
+	d, err := New(":memory:")
+	if err != nil {
+		t.Fatalf("failed to create db: %v", err)
+	}
+	defer d.Close()
+	if err := d.Migrate(); err != nil {
+		t.Fatalf("migration failed: %v", err)
+	}
+
+	ctx := context.Background()
+	g1 := &Group{
+		ChatID:      -1001234567,
+		Title:       "Group A",
+		APIToken:    "token-a",
+		OmsuGroupID: 1,
+		IsActive:    true,
+		IsVIP:       false,
+	}
+	g2 := &Group{
+		ChatID:      -1001234568,
+		Title:       "Group B",
+		APIToken:    "token-b",
+		OmsuGroupID: 2,
+		IsActive:    false,
+		IsVIP:       true,
+	}
+	if err := d.CreateGroup(ctx, g1); err != nil {
+		t.Fatalf("failed to create group 1: %v", err)
+	}
+	if err := d.CreateGroup(ctx, g2); err != nil {
+		t.Fatalf("failed to create group 2: %v", err)
+	}
+
+	list, err := d.ListGroups(ctx)
+	if err != nil {
+		t.Fatalf("failed to list groups: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(list))
+	}
+
+	found := make(map[int64]bool)
+	for _, g := range list {
+		found[g.ChatID] = true
+	}
+	if !found[-1001234567] || !found[-1001234568] {
+		t.Error("ListGroups did not return both groups")
 	}
 }

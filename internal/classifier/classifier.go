@@ -161,28 +161,7 @@ func (c *Classifier) fillPrompt(template string, topics []TopicInfo, text string
 }
 
 func replacePlaceholder(s, placeholder, value string) string {
-	idx := 0
-	for {
-		pos := indexOf(s, placeholder, idx)
-		if pos == -1 {
-			break
-		}
-		s = s[:pos] + value + s[pos+len(placeholder):]
-		idx = pos + len(value)
-	}
-	return s
-}
-
-func indexOf(s, substr string, start int) int {
-	if start >= len(s) {
-		return -1
-	}
-	for i := start; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
+	return strings.ReplaceAll(s, placeholder, value)
 }
 
 func (c *Classifier) loadGroupRules(chatID int64) string {

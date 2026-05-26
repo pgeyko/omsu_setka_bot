@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"os"
+	"strings"
 
 	"github.com/ilyakaznacheev/cleanenv"
 )
@@ -27,7 +28,7 @@ type apiConfig struct {
 	Listen      string `yaml:"listen" env:"API_LISTEN" env-default:":8081"`
 	AdminSecret string `yaml:"admin_secret" env:"ADMIN_SECRET" env-required:"true"`
 	JWTSecret   string `yaml:"jwt_secret" env:"JWT_SECRET" env-required:"true"`
-	CORSOrigin  string `yaml:"cors_origin" env:"CORS_ORIGIN" env-default:"*"`
+	CORSOrigin  string `yaml:"cors_origin" env:"CORS_ORIGIN" env-required:"true"`
 }
 
 type webhookConfig struct {
@@ -77,7 +78,7 @@ type LLMProviderConfig struct {
 	Name           string   `yaml:"name"`
 	Type           string   `yaml:"type"`
 	Chain          string   `yaml:"chain"` // "agent", "simple", "vision", "audio"
-	APIKey         string   `yaml:"api_key"`
+	APIKey         string   `yaml:"api_key" env:"-"`
 	Model          string   `yaml:"model"`
 	FallbackModels []string `yaml:"fallback_models"`
 	Multimodal     bool     `yaml:"multimodal"`
@@ -98,9 +99,17 @@ func Load(configPath string) *Config {
 	}
 
 	for i := range cfg.LLM.Providers {
-		cfg.LLM.Providers[i].APIKey = os.ExpandEnv(cfg.LLM.Providers[i].APIKey)
-		if cfg.LLM.Providers[i].BaseURL != "" {
-			cfg.LLM.Providers[i].BaseURL = os.ExpandEnv(cfg.LLM.Providers[i].BaseURL)
+		p := &cfg.LLM.Providers[i]
+
+		// Warn if API key appears hardcoded (doesn't reference an env var)
+		if p.APIKey != "" && !strings.HasPrefix(p.APIKey, "$") {
+			slog.Warn("LLM provider API key appears hardcoded — use env vars instead (${VAR_NAME})",
+				"provider", p.Name)
+		}
+
+		p.APIKey = os.ExpandEnv(p.APIKey)
+		if p.BaseURL != "" {
+			p.BaseURL = os.ExpandEnv(p.BaseURL)
 		}
 	}
 

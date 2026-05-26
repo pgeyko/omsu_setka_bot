@@ -162,7 +162,7 @@ func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
 
 		switch provider.Type {
 		case "gemini":
-			apiURL := provider.BaseURL + "/v1beta/models/" + provider.Model + ":generateContent?key=" + provider.APIKey
+			apiURL := provider.BaseURL + "/v1beta/models/" + provider.Model + ":generateContent"
 			body := map[string]interface{}{
 				"contents": []map[string]interface{}{
 					{"parts": []map[string]string{{"text": testPrompt}}},
@@ -174,7 +174,15 @@ func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
 				tr.Error = fmt.Sprintf("marshal: %v", err)
 				break
 			}
-			resp, err := httpClient.Post(apiURL, "application/json", bytes.NewReader(b))
+			req, reqErr := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+			if reqErr != nil {
+				tr.Success = false
+				tr.Error = reqErr.Error()
+				break
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Goog-Api-Key", provider.APIKey)
+			resp, err := httpClient.Do(req)
 			if err != nil {
 				tr.Success = false
 				tr.Error = err.Error()
@@ -185,7 +193,7 @@ func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
 
 			if resp.StatusCode >= 400 {
 				tr.Success = false
-				tr.Error = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(content))
+				tr.Error = fmt.Sprintf("HTTP %d: provider error (body %d bytes)", resp.StatusCode, len(content))
 				break
 			}
 
@@ -200,7 +208,7 @@ func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
 			}
 			if jsonErr := json.Unmarshal(content, &geminiResp); jsonErr != nil {
 				tr.Success = false
-				tr.Error = fmt.Sprintf("parse: %v — %s", jsonErr, string(content))
+				tr.Error = fmt.Sprintf("parse error: %v", jsonErr)
 				break
 			}
 			if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
@@ -209,7 +217,7 @@ func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
 				ok++
 			} else {
 				tr.Success = false
-				tr.Error = fmt.Sprintf("empty response: %s", string(content))
+				tr.Error = "empty response from provider"
 			}
 
 		default:
@@ -247,7 +255,7 @@ func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
 
 			if resp.StatusCode >= 400 {
 				tr.Success = false
-				tr.Error = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(content))
+				tr.Error = fmt.Sprintf("HTTP %d: provider error (body %d bytes)", resp.StatusCode, len(content))
 				break
 			}
 
@@ -260,7 +268,7 @@ func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
 			}
 			if jsonErr := json.Unmarshal(content, &openAIResp); jsonErr != nil {
 				tr.Success = false
-				tr.Error = fmt.Sprintf("parse: %v — %s", jsonErr, string(content))
+				tr.Error = fmt.Sprintf("parse error: %v", jsonErr)
 				break
 			}
 			if len(openAIResp.Choices) > 0 {
@@ -269,7 +277,7 @@ func (s *Server) handleTestAllModels(c *fiber.Ctx) error {
 				ok++
 			} else {
 				tr.Success = false
-				tr.Error = fmt.Sprintf("empty choices: %s", string(content))
+				tr.Error = "empty choices from provider"
 			}
 		}
 

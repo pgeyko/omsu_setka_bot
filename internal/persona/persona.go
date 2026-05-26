@@ -108,6 +108,7 @@ func (s *Store) Reset(ctx context.Context, seedPath string) error {
 }
 
 // GetGroupPersona returns a group-specific persona, falling back to defaultPersona if not found or fields are empty.
+// chatID is expected to be a valid Telegram chat ID (positive for users, negative for groups).
 func GetGroupPersona(chatID int64, defaultPersona Persona) Persona {
 	if chatID == 0 {
 		return defaultPersona
@@ -133,6 +134,7 @@ func GetGroupPersona(chatID int64, defaultPersona Persona) Persona {
 }
 
 // GetGroupSystemPrompt returns the resolved system prompt and persona for a group.
+// chatID is expected to be a valid Telegram chat ID (positive for users, negative for groups).
 func GetGroupSystemPrompt(chatID int64, defaultPersona Persona) (string, Persona) {
 	p := GetGroupPersona(chatID, defaultPersona)
 	if chatID == 0 {

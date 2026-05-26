@@ -233,6 +233,7 @@ func (d *DB) Migrate() error {
 	if err != nil {
 		return fmt.Errorf("failed to get table info for media_group_items: %w", err)
 	}
+	defer mtypeRows.Close()
 	for mtypeRows.Next() {
 		var cid int
 		var name, ctype string
@@ -255,6 +256,38 @@ func (d *DB) Migrate() error {
 		slog.Info("migrating media_group_items: adding media_type column")
 		if _, err := d.Exec(`ALTER TABLE media_group_items ADD COLUMN media_type TEXT NOT NULL DEFAULT '';`); err != nil {
 			return fmt.Errorf("failed to add media_type to media_group_items: %w", err)
+		}
+	}
+
+	// P1-6: announce_thread_id per-group
+	var hasAnnounceThreadID bool
+	atidRows, err := d.Query(`PRAGMA table_info(groups)`)
+	if err != nil {
+		return fmt.Errorf("failed to get table info for groups: %w", err)
+	}
+	defer atidRows.Close()
+	for atidRows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue interface{}
+		var pk int
+		if err := atidRows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			atidRows.Close()
+			return fmt.Errorf("failed to scan table info for groups: %w", err)
+		}
+		if name == "announce_thread_id" {
+			hasAnnounceThreadID = true
+		}
+	}
+	atidRows.Close()
+	if err := atidRows.Err(); err != nil {
+		return fmt.Errorf("rows iteration error during migration: %w", err)
+	}
+	if !hasAnnounceThreadID {
+		slog.Info("migrating groups: adding announce_thread_id column")
+		if _, err := d.Exec(`ALTER TABLE groups ADD COLUMN announce_thread_id INTEGER NOT NULL DEFAULT 0;`); err != nil {
+			return fmt.Errorf("failed to add announce_thread_id to groups: %w", err)
 		}
 	}
 

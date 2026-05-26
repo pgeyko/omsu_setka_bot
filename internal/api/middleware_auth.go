@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"database/sql"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -12,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"omsu_bot/internal/db"
 )
+
+const authCookieName = "auth_token"
 
 type AuthMiddleware struct {
 	jwtSecret  []byte
@@ -22,6 +25,10 @@ type AuthMiddleware struct {
 func NewAuthMiddleware(adminSecret, jwtSecret string, database *sql.DB) *AuthMiddleware {
 	if len(adminSecret) < 16 {
 		slog.Warn("admin_secret is too short, minimum 16 characters recommended")
+		if os.Getenv("APP_ENV") == "production" {
+			slog.Error("admin_secret must be at least 16 characters in production")
+			os.Exit(1)
+		}
 	}
 	return &AuthMiddleware{
 		jwtSecret:  []byte(jwtSecret),
@@ -67,6 +74,16 @@ func (m *AuthMiddleware) Login(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "token generation failed")
 	}
 
+	c.Cookie(&fiber.Cookie{
+		Name:     authCookieName,
+		Value:    signed,
+		Path:     "/",
+		Expires:  expiry,
+		SameSite: "lax",
+		Secure:   os.Getenv("APP_ENV") == "production",
+		HTTPOnly: true,
+	})
+
 	return respondSuccess(c, fiber.Map{
 		"token":      signed,
 		"expires_at": expiry.UTC().Format(time.RFC3339),
@@ -87,14 +104,14 @@ func (m *AuthMiddleware) LoginWithRateLimit() fiber.Handler {
 }
 
 func (m *AuthMiddleware) Logout(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		return respondError(c, fiber.StatusUnauthorized, ErrUnauthorized, "missing Authorization header")
-	}
-
-	tokenStr := authHeader
-	if len(tokenStr) > 7 && tokenStr[:7] == "Bearer " {
+	tokenStr := c.Get("Authorization")
+	if tokenStr != "" && len(tokenStr) > 7 && tokenStr[:7] == "Bearer " {
 		tokenStr = tokenStr[7:]
+	} else {
+		tokenStr = c.Cookies(authCookieName)
+	}
+	if tokenStr == "" {
+		return respondError(c, fiber.StatusUnauthorized, ErrUnauthorized, "missing Authorization header or auth cookie")
 	}
 
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
@@ -121,18 +138,28 @@ func (m *AuthMiddleware) Logout(c *fiber.Ctx) error {
 		}
 	}
 
+	c.Cookie(&fiber.Cookie{
+		Name:     authCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		SameSite: "lax",
+		Secure:   os.Getenv("APP_ENV") == "production",
+		HTTPOnly: true,
+	})
+
 	return respondSuccess(c, fiber.Map{"status": "ok"})
 }
 
 func (m *AuthMiddleware) RequireAuth(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		return respondError(c, fiber.StatusUnauthorized, ErrUnauthorized, "missing Authorization header")
-	}
-
-	tokenStr := authHeader
-	if len(tokenStr) > 7 && tokenStr[:7] == "Bearer " {
+	tokenStr := c.Get("Authorization")
+	if tokenStr != "" && len(tokenStr) > 7 && tokenStr[:7] == "Bearer " {
 		tokenStr = tokenStr[7:]
+	} else {
+		tokenStr = c.Cookies(authCookieName)
+	}
+	if tokenStr == "" {
+		return respondError(c, fiber.StatusUnauthorized, ErrUnauthorized, "missing Authorization header or auth cookie")
 	}
 
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {

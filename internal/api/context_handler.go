@@ -48,6 +48,9 @@ func (s *Server) handleUploadPersona(c *fiber.Ctx) error {
 	}
 
 	filePath := filepath.Join(dir, "persona.md")
+	if !filepath.IsLocal(filePath) {
+		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid file path")
+	}
 	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write persona file")
 	}
@@ -86,6 +89,9 @@ func (s *Server) handleUploadSystemPrompt(c *fiber.Ctx) error {
 	}
 
 	filePath := filepath.Join(dir, "system_prompt.md")
+	if !filepath.IsLocal(filePath) {
+		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid file path")
+	}
 	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write system_prompt file")
 	}
@@ -125,6 +131,9 @@ func (s *Server) handleUploadKnowledge(c *fiber.Ctx) error {
 	}
 
 	filePath := filepath.Join(dir, "knowledge_base.md")
+	if !filepath.IsLocal(filePath) {
+		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid file path")
+	}
 	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write knowledge_base file")
 	}
