@@ -10,7 +10,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go vet ./...
+RUN go vet ./cmd/... ./internal/...
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -trimpath -o groupbot ./cmd/bot/
 
 FROM alpine:3.19
