@@ -88,6 +88,7 @@ func setupOrchestratorTest(t *testing.T, chatID int64) (*AgentOrchestrator, stri
 		&mockToolExecutor{},
 		&mockAdminChecker{isAdmin: true},
 		nil,
+		nil,
 	)
 
 	cleanup := func() { os.Chdir(origWd) }

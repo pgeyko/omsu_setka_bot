@@ -1,0 +1,29 @@
+name: generate_summary
+display_name: Саммари
+type: tool
+category: summary
+admin_only: false
+enabled_by_default: true
+
+description: |
+  Собирает последние сообщения из топика и предоставляет их для суммаризации.
+
+tool:
+  name: generate_summary
+  parameters:
+    topic_slug:
+      type: string
+      description: Слаг или имя топика
+      required: true
+
+triggers:
+  - саммари
+  - что тут было
+  - о чём говорили
+  - подытожь
+  - итоги
+  - summary
+
+instructions: |
+  Используй только реальные сообщения из буфера.
+  Не выдумывай содержание разговоров.

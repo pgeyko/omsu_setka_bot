@@ -379,7 +379,7 @@ func _get_group_persona_stub() {}
 func _put_group_persona_stub() {}
 
 // @Summary Get group system prompt content
-// @Description Read group-specific system_prompt.txt content
+// @Description Read group-specific system_prompt.md content
 // @Tags Groups
 // @Security BearerAuth
 // @Produce json
@@ -389,7 +389,7 @@ func _put_group_persona_stub() {}
 func _get_group_system_prompt_stub() {}
 
 // @Summary Upload group system prompt content
-// @Description Write/upload group-specific system_prompt.txt content
+// @Description Write/upload group-specific system_prompt.md content
 // @Tags Groups
 // @Security BearerAuth
 // @Accept json
@@ -401,7 +401,7 @@ func _get_group_system_prompt_stub() {}
 func _put_group_system_prompt_stub() {}
 
 // @Summary Get group knowledge base content
-// @Description Read group-specific knowledge_base.txt content
+// @Description Read group-specific knowledge_base.md content
 // @Tags Groups
 // @Security BearerAuth
 // @Produce json
@@ -411,7 +411,7 @@ func _put_group_system_prompt_stub() {}
 func _get_group_knowledge_stub() {}
 
 // @Summary Upload group knowledge base content
-// @Description Write/upload group-specific knowledge_base.txt content
+// @Description Write/upload group-specific knowledge_base.md content
 // @Tags Groups
 // @Security BearerAuth
 // @Accept json

@@ -29,8 +29,8 @@ func TestNewPromptRegistry_EmptyDir(t *testing.T) {
 func TestNewPromptRegistry_WithFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	os.WriteFile(filepath.Join(tmpDir, "test.txt"), []byte("hello world"), 0644)
-	os.WriteFile(filepath.Join(tmpDir, "other.txt"), []byte("foo bar"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "test.md"), []byte("hello world"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "other.md"), []byte("foo bar"), 0644)
 	os.WriteFile(filepath.Join(tmpDir, "not_a_prompt.md"), []byte("markdown"), 0644)
 
 	reg, err := NewPromptRegistry(tmpDir)

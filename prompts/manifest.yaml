@@ -1,0 +1,72 @@
+version: 1
+prompts:
+  persona:
+    file: persona.md
+    type: system_prompt
+    format: markdown
+    reloadable: true
+    priority: highest
+    extends: false
+    description: Базовая личность и инструкции бота. Не переопределяется группой.
+
+  classify:
+    file: classify.md
+    type: classifier
+    reloadable: true
+    extends: true
+    placeholders:
+      - topics
+      - text
+    description: Базовый промпт классификатора сообщений.
+
+  greeting:
+    file: greeting.md
+    type: greeting
+    reloadable: true
+    placeholders:
+      - name
+    description: Приветствие нового пользователя.
+
+  schedule_announce:
+    file: schedule_announce.md
+    type: announcement
+    reloadable: true
+    placeholders:
+      - changes
+    description: Анонс изменений в расписании.
+
+  status_report:
+    file: status_report.md
+    type: status
+    reloadable: true
+    placeholders:
+      - stats
+    description: Отчёт о состоянии бота по /status.
+
+  diagnostic_test:
+    file: diagnostic_test.md
+    type: diagnostic
+    reloadable: true
+    description: Диагностический тест LLM-провайдера.
+
+  ocr:
+    file: ocr.md
+    type: tool
+    tool: ocr
+    reloadable: true
+    description: Распознавание текста с изображений.
+
+  stt:
+    file: stt.md
+    type: tool
+    tool: stt
+    reloadable: true
+    description: Расшифровка аудиосообщений.
+
+  start_fallback:
+    file: start_fallback.md
+    type: fallback
+    reloadable: true
+    placeholders:
+      - name
+    description: Резервный ответ на /start без LLM.

@@ -1,0 +1,43 @@
+name: moderate_user
+display_name: Модерация
+type: tool
+category: moderation
+admin_only: true
+enabled_by_default: true
+
+description: |
+  Модерация участников: мут, бан, размут.
+
+tool:
+  name: moderate_user
+  parameters:
+    action:
+      type: string
+      enum:
+        - mute
+        - ban
+        - unmute
+      description: Действие модерации
+      required: true
+    username:
+      type: string
+      description: Имя пользователя в Telegram (с @ или без)
+      required: true
+    duration_minutes:
+      type: string
+      description: Длительность ограничения в минутах (по умолчанию 10)
+      required: false
+
+triggers:
+  - замуть
+  - замьютить
+  - заглушить
+  - забань
+  - заблокируй
+  - размуть
+  - разбань
+  - разблокируй
+
+instructions: |
+  Применяй только к участникам группы.
+  Указывай причину и длительность в ответе пользователю.

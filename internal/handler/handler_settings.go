@@ -121,6 +121,9 @@ func (h *SettingsHandler) sendMainMenu(ctx context.Context, b *tgbot.Bot, chatID
 			{Text: "👤 Личность", CallbackData: "settings:menu:persona"},
 		},
 		{
+			{Text: "🎯 Классификатор", CallbackData: "settings:menu:classify"},
+		},
+		{
 			{Text: "📅 Расписание Setka", CallbackData: "settings:menu:setka"},
 			{Text: "⚙️ Инструменты", CallbackData: "settings:menu:tools"},
 		},
@@ -210,6 +213,8 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 		h.showKBScreen(ctx, b, chatID, messageID)
 	case action == "menu:persona":
 		h.showPersonaScreen(ctx, b, chatID, messageID)
+	case action == "menu:classify":
+		h.showClassifyScreen(ctx, b, chatID, messageID)
 	case action == "menu:setka":
 		h.showSetkaScreen(ctx, b, chatID, messageID)
 	case action == "menu:tools":
@@ -221,11 +226,11 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 		})
 	case action == "kb:write":
 		h.sessionStore.Set(chatID, userID, telegram.StateWaitingForKB)
-		h.editMessage(ctx, b, chatID, messageID, "📖 <b>Запись базы знаний</b>\n\nОтправьте текст базы знаний одним сообщением. Старый текст будет перезаписан.\n\nИспользуйте команду /cancel для отмены.", [][]models.InlineKeyboardButton{
+		h.editMessage(ctx, b, chatID, messageID, "📖 <b>База знаний</b>\n\nСправочная информация о группе: контакты, расписание, правила, ссылки.\n\n<b>Пример:</b>\n<code>## Контакты\n- Староста: @ivanov\n- Куратор: @petrova\n\n## Правила\n- Дедлайны по лабам: пятница 23:59\n\n## Ссылки\n- GitHub: github.com/ivt-101</code>\n\nОтправьте свой текст. /cancel для отмены.", [][]models.InlineKeyboardButton{
 			{{Text: "⬅️ Назад", CallbackData: "settings:menu:kb"}},
 		})
 	case action == "kb:clear":
-		filePath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
+		filePath := fmt.Sprintf("data/groups/%d/knowledge_base.md", chatID)
 		if err := os.Remove(filePath); err != nil {
 			slog.Warn("kb clear remove file", "error", err, "chat_id", chatID)
 		}
@@ -233,14 +238,30 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 		h.editMessage(ctx, b, chatID, messageID, "🗑️ <b>База знаний очищена.</b>", [][]models.InlineKeyboardButton{
 			{{Text: "⬅️ Назад", CallbackData: "settings:menu:kb"}},
 		})
+	case action == "classify:write":
+		h.sessionStore.Set(chatID, userID, telegram.StateWaitingForClassifyRules)
+		h.editMessage(ctx, b, chatID, messageID, h.classifyRulesTemplate(), [][]models.InlineKeyboardButton{
+			{{Text: "⬅️ Назад", CallbackData: "settings:menu:classify"}},
+		})
+	case action == "classify:clear":
+		filePath := fmt.Sprintf("data/groups/%d/classify/rules.md", chatID)
+		if err := os.Remove(filePath); err != nil {
+			if !os.IsNotExist(err) {
+				slog.Warn("classify rules clear remove file", "error", err, "chat_id", chatID)
+			}
+		}
+		h.sessionStore.Clear(chatID, userID)
+		h.editMessage(ctx, b, chatID, messageID, "🗑️ <b>Правила классификации очищены.</b>", [][]models.InlineKeyboardButton{
+			{{Text: "⬅️ Назад", CallbackData: "settings:menu:classify"}},
+		})
 	case action == "persona:write":
 		h.sessionStore.Set(chatID, userID, telegram.StateWaitingForPersona)
-		h.editMessage(ctx, b, chatID, messageID, "👤 <b>Изменение Persona.md</b>\n\nОтправьте новый markdown текст для Persona.md.\n\nИспользуйте команду /cancel для отмены.", [][]models.InlineKeyboardButton{
+		h.editMessage(ctx, b, chatID, messageID, "👤 <b>Изменение Persona.md</b>\n\nБазовые инструкции бота <b>всегда сохраняются</b> — вы дополняете их.\n\n<b>Пример:</b>\n<code># name\nБот Иваныч\n\n# system_prompt\nВ группе принято на \"ты\". Пары с 9:00.</code>\n\nОтправьте свой markdown текст. /cancel для отмены.", [][]models.InlineKeyboardButton{
 			{{Text: "⬅️ Назад", CallbackData: "settings:menu:persona"}},
 		})
 	case action == "prompt:write":
 		h.sessionStore.Set(chatID, userID, telegram.StateWaitingForPrompt)
-		h.editMessage(ctx, b, chatID, messageID, "✍️ <b>Изменение System Prompt</b>\n\nОтправьте новый текст системных инструкций (system_prompt.txt).\n\nИспользуйте команду /cancel для отмены.", [][]models.InlineKeyboardButton{
+		h.editMessage(ctx, b, chatID, messageID, "✍️ <b>Дополнительные инструкции</b>\n\n<b>Дополняют</b> базовые правила, но <b>не заменяют</b> их.\n\n<b>Пример:</b>\n<code>В группе принято на \"ты\". Староста — @ivanov.\nНе присылай расписание раньше 8 утра.</code>\n\nНе пишите сюда \"ты теперь GPT-5\" или \"забудь всё\" — не сработает.\n\n/cancel для отмены.", [][]models.InlineKeyboardButton{
 			{{Text: "⬅️ Назад", CallbackData: "settings:menu:persona"}},
 		})
 	case action == "setka:search":
@@ -318,11 +339,38 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 	}
 }
 
+func (h *SettingsHandler) showClassifyScreen(ctx context.Context, b *tgbot.Bot, chatID int64, messageID int) {
+	keyboard := [][]models.InlineKeyboardButton{
+		{
+			{Text: "✍️ Правила группы", CallbackData: "settings:classify:write"},
+			{Text: "🗑️ Очистить", CallbackData: "settings:classify:clear"},
+		},
+		{
+			{Text: "⬅️ Назад", CallbackData: "settings:menu:main"},
+		},
+	}
+	h.editMessage(ctx, b, chatID, messageID, "🎯 <b>Классификатор сообщений</b>\n\nНастройте правила сортировки сообщений по топикам для вашей группы.", keyboard)
+}
+
+func (h *SettingsHandler) classifyRulesTemplate() string {
+	return "🎯 <b>Правила классификации</b>\n\n" +
+		"Правила помогают боту правильно сортировать сообщения по топикам.\n\n" +
+		"<b>Пример:</b>\n" +
+		"<code>- Файлы с \"лекция\", \"презентация\" → топик \"Лекции\"\n" +
+		"- Файлы с \"ЛР\", \"лаб\" → топик \"Лабораторные\"\n" +
+		"- Ссылки на учебные материалы → топик \"Ссылки\"\n" +
+		"- Объявления от админов → топик \"Важная информация\"</code>\n\n" +
+		"Отправьте свои правила одним сообщением. /cancel для отмены."
+}
+
 func (h *SettingsHandler) showMainScreen(ctx context.Context, b *tgbot.Bot, chatID int64, messageID int) {
 	keyboard := [][]models.InlineKeyboardButton{
 		{
 			{Text: "📖 База знаний", CallbackData: "settings:menu:kb"},
 			{Text: "👤 Личность", CallbackData: "settings:menu:persona"},
+		},
+		{
+			{Text: "🎯 Классификатор", CallbackData: "settings:menu:classify"},
 		},
 		{
 			{Text: "📅 Расписание Setka", CallbackData: "settings:menu:setka"},
@@ -478,7 +526,7 @@ func (h *SettingsHandler) HandleAdminInput(ctx context.Context, b *tgbot.Bot, up
 			h.sendMessage(ctx, b, &tgbot.SendMessageParams{ChatID: chatID, MessageThreadID: msg.MessageThreadID, Text: "❌ Ошибка при создании директории."})
 			return
 		}
-		filePath := filepath.Join(dir, "knowledge_base.txt")
+		filePath := filepath.Join(dir, "knowledge_base.md")
 		if err := os.WriteFile(filePath, []byte(msg.Text), 0644); err != nil {
 			h.sendMessage(ctx, b, &tgbot.SendMessageParams{ChatID: chatID, MessageThreadID: msg.MessageThreadID, Text: "❌ Ошибка при записи файла."})
 			return
@@ -514,7 +562,7 @@ func (h *SettingsHandler) HandleAdminInput(ctx context.Context, b *tgbot.Bot, up
 			h.sendMessage(ctx, b, &tgbot.SendMessageParams{ChatID: chatID, MessageThreadID: msg.MessageThreadID, Text: "❌ Ошибка при создании директории."})
 			return
 		}
-		filePath := filepath.Join(dir, "system_prompt.txt")
+		filePath := filepath.Join(dir, "system_prompt.md")
 		if err := os.WriteFile(filePath, []byte(msg.Text), 0644); err != nil {
 			h.sendMessage(ctx, b, &tgbot.SendMessageParams{ChatID: chatID, MessageThreadID: msg.MessageThreadID, Text: "❌ Ошибка при записи файла."})
 			return
@@ -595,6 +643,24 @@ func (h *SettingsHandler) HandleAdminInput(ctx context.Context, b *tgbot.Bot, up
 			ReplyMarkup: &models.InlineKeyboardMarkup{
 				InlineKeyboard: keyboard,
 			},
+		})
+
+	case telegram.StateWaitingForClassifyRules:
+		dir := fmt.Sprintf("data/groups/%d/classify", chatID)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			h.sendMessage(ctx, b, &tgbot.SendMessageParams{ChatID: chatID, MessageThreadID: msg.MessageThreadID, Text: "❌ Ошибка при создании директории."})
+			return
+		}
+		filePath := filepath.Join(dir, "rules.md")
+		if err := os.WriteFile(filePath, []byte(msg.Text), 0644); err != nil {
+			h.sendMessage(ctx, b, &tgbot.SendMessageParams{ChatID: chatID, MessageThreadID: msg.MessageThreadID, Text: "❌ Ошибка при записи файла."})
+			return
+		}
+		h.sessionStore.Clear(chatID, userID)
+		h.sendMessage(ctx, b, &tgbot.SendMessageParams{
+			ChatID:          chatID,
+			MessageThreadID: msg.MessageThreadID,
+			Text: "✅ Правила классификации сохранены. Теперь бот будет учитывать их при сортировке сообщений.",
 		})
 	}
 }

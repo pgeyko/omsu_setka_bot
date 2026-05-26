@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -81,7 +82,7 @@ func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text s
 	if len(text) > 2000 {
 		text = text[:2000]
 	}
-	userPrompt := c.fillPrompt(c.prompts.Get("classify"), topicList, text)
+	userPrompt := c.fillPrompt(c.prompts.Get("classify"), topicList, text, c.loadGroupRules(chatID))
 	systemPrompt := "Ты — классификатор сообщений студенческой группы. Отвечай ТОЛЬКО JSON без пояснений."
 
 	var resp *llm.Response
@@ -135,7 +136,7 @@ func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text s
 	return &result, nil
 }
 
-func (c *Classifier) fillPrompt(template string, topics []TopicInfo, text string) string {
+func (c *Classifier) fillPrompt(template string, topics []TopicInfo, text string, groupRules string) string {
 	var b strings.Builder
 	b.Grow(len(topics) * 120)
 	for _, t := range topics {
@@ -149,7 +150,13 @@ func (c *Classifier) fillPrompt(template string, topics []TopicInfo, text string
 
 	result := template
 	result = replacePlaceholder(result, "{topics}", topicStr)
-	result = replacePlaceholder(result, "{text}", text)
+	if groupRules != "" {
+		groupSection := groupRules + "\n\nВходящее сообщение для анализа:\n\"{text}\""
+		result = replacePlaceholder(result, "{text}", groupSection)
+		result = replacePlaceholder(result, "{text}", text)
+	} else {
+		result = replacePlaceholder(result, "{text}", text)
+	}
 	return result
 }
 
@@ -176,4 +183,13 @@ func indexOf(s, substr string, start int) int {
 		}
 	}
 	return -1
+}
+
+func (c *Classifier) loadGroupRules(chatID int64) string {
+	path := fmt.Sprintf("data/groups/%d/classify/rules.md", chatID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }

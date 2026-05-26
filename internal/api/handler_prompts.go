@@ -28,7 +28,7 @@ func (s *Server) handleGetPrompts(c *fiber.Ctx) error {
 	names := s.Prompts.List()
 	items := make([]promptItem, 0, len(names))
 	for _, name := range names {
-		path := filepath.Join(s.Prompts.Dir(), name+".txt")
+		path := filepath.Join(s.Prompts.Dir(), name+".md")
 		info, err := os.Stat(path)
 		size := int64(0)
 		if err == nil {

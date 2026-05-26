@@ -1,0 +1,46 @@
+name: manage_topic
+display_name: Управление топиками
+type: tool
+category: topics
+admin_only: true
+enabled_by_default: true
+
+description: |
+  Создание, закрытие, переименование, открытие топиков форума.
+
+tool:
+  name: manage_topic
+  parameters:
+    action:
+      type: string
+      enum:
+        - create
+        - close
+        - rename
+        - reopen
+      description: Действие с топиком
+      required: true
+    name:
+      type: string
+      description: Название топика
+      required: true
+    new_name:
+      type: string
+      description: Новое название (только для rename)
+      required: false
+
+triggers:
+  - создай топик
+  - создай тему
+  - создай ветку
+  - создай раздел
+  - закрой топик
+  - закрой тему
+  - переименуй
+  - открой топик
+  - открой тему
+
+instructions: |
+  Создавай топики ПО ОДНОМУ за вызов инструмента.
+  Если нужно создать несколько — вызывай последовательно, дожидаясь результата.
+  НЕ закрывай, НЕ переименовывай и НЕ удаляй топики без прямого запроса пользователя.

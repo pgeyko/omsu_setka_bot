@@ -1,0 +1,31 @@
+name: forward_message
+display_name: Пересылка сообщений
+type: tool
+category: topics
+admin_only: false
+enabled_by_default: true
+
+description: |
+  Пересылает (копирует) сообщение в указанный топик.
+  Пользователь должен ответить (reply) на сообщение, которое нужно переслать.
+
+tool:
+  name: forward_message
+  parameters:
+    target_topic:
+      type: string
+      description: Название или slug целевого топика
+      required: true
+
+triggers:
+  - перешли
+  - скинь
+  - отправь в
+  - в топик
+  - в тему
+  - дублируй
+  - скопируй в
+
+instructions: |
+  Перед пересылкой проверь что пользователь ответил на сообщение.
+  Если топик не найден по названию — сообщи об этом, НЕ создавай новый.

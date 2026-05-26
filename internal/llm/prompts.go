@@ -40,7 +40,7 @@ func (r *PromptRegistry) load() error {
 	exts := make(map[string]string)
 	for _, entry := range entries {
 		ext := filepath.Ext(entry.Name())
-		if entry.IsDir() || (ext != ".txt" && ext != ".md") {
+		if entry.IsDir() || ext != ".md" {
 			continue
 		}
 		data, err := os.ReadFile(filepath.Join(r.promptsDir, entry.Name()))
@@ -91,7 +91,7 @@ func (r *PromptRegistry) Update(name, content string) error {
 	ext := r.extensions[name]
 	r.mu.RUnlock()
 	if ext == "" {
-		ext = ".txt"
+		ext = ".md"
 	}
 	path := filepath.Join(r.promptsDir, name+ext)
 	absPath, err := filepath.Abs(path)
@@ -119,7 +119,7 @@ func (r *PromptRegistry) Delete(name string) error {
 	ext := r.extensions[name]
 	r.mu.RUnlock()
 	if ext == "" {
-		ext = ".txt"
+		ext = ".md"
 	}
 	path := filepath.Join(r.promptsDir, name+ext)
 	absPath, err := filepath.Abs(path)

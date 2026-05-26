@@ -109,7 +109,7 @@ func TestSettingsHandler_HandleAdminInput(t *testing.T) {
 
 	h.HandleAdminInput(ctx, nil, updateKB, telegram.StateWaitingForKB)
 
-	kbContent, err := os.ReadFile(fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID))
+	kbContent, err := os.ReadFile(fmt.Sprintf("data/groups/%d/knowledge_base.md", chatID))
 	if err != nil {
 		t.Fatalf("failed to read kb file: %v", err)
 	}

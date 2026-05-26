@@ -40,7 +40,7 @@ func TestFillPrompt(t *testing.T) {
 		{Slug: "lectures", Name: "Лекции", Description: "Лекционные занятия"},
 	}
 
-	result := c.fillPrompt("{topics}\n{text}", topics, "Привет!")
+	result := c.fillPrompt("{topics}\n{text}", topics, "Привет!", "")
 	if result == "" {
 		t.Fatal("expected non-empty prompt")
 	}

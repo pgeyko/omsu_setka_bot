@@ -139,14 +139,17 @@ func GetGroupSystemPrompt(chatID int64, defaultPersona Persona) (string, Persona
 		return p.SystemPrompt, p
 	}
 
-	spPath := fmt.Sprintf("data/groups/%d/system_prompt.txt", chatID)
+	systemPrompt := defaultPersona.SystemPrompt
+
+	spPath := fmt.Sprintf("data/groups/%d/system_prompt.md", chatID)
 	if spBytes, err := os.ReadFile(spPath); err == nil {
-		p.SystemPrompt = string(spBytes)
+		groupSP := strings.TrimSpace(string(spBytes))
+		if groupSP != "" {
+			systemPrompt += "\n\n---\n## Дополнительные правила группы\n" + groupSP
+		}
 	}
 
-	systemPrompt := p.SystemPrompt
-
-	kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
+	kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.md", chatID)
 	if kbBytes, err := os.ReadFile(kbPath); err == nil {
 		kbStr := string(kbBytes)
 		if strings.TrimSpace(kbStr) != "" {

@@ -85,14 +85,14 @@ func (s *Server) handleUploadSystemPrompt(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to create directory")
 	}
 
-	filePath := filepath.Join(dir, "system_prompt.txt")
+	filePath := filepath.Join(dir, "system_prompt.md")
 	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write system_prompt file")
 	}
 
 	// Also re-read for dynamic prompts
 
-	return respondSuccess(c, fiber.Map{"status": "ok", "file": "system_prompt.txt"})
+	return respondSuccess(c, fiber.Map{"status": "ok", "file": "system_prompt.md"})
 }
 
 func (s *Server) handleUploadKnowledge(c *fiber.Ctx) error {
@@ -124,12 +124,12 @@ func (s *Server) handleUploadKnowledge(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to create directory")
 	}
 
-	filePath := filepath.Join(dir, "knowledge_base.txt")
+	filePath := filepath.Join(dir, "knowledge_base.md")
 	if err := os.WriteFile(filePath, []byte(req.Content), 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write knowledge_base file")
 	}
 
-	return respondSuccess(c, fiber.Map{"status": "ok", "file": "knowledge_base.txt"})
+	return respondSuccess(c, fiber.Map{"status": "ok", "file": "knowledge_base.md"})
 }
 
 func (s *Server) handleGetGroupPersona(c *fiber.Ctx) error {
@@ -158,7 +158,7 @@ func (s *Server) handleGetGroupSystemPrompt(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid chat_id")
 	}
 
-	filePath := fmt.Sprintf("data/groups/%d/system_prompt.txt", chatID)
+	filePath := fmt.Sprintf("data/groups/%d/system_prompt.md", chatID)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -177,7 +177,7 @@ func (s *Server) handleGetGroupKnowledge(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid chat_id")
 	}
 
-	filePath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
+	filePath := fmt.Sprintf("data/groups/%d/knowledge_base.md", chatID)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {

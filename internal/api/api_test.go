@@ -46,7 +46,7 @@ func setupTestServer(t *testing.T) *Server {
 	auth := NewAuthMiddleware("test-admin-secret", "test-jwt-secret", nil)
 
 	promptsDir := t.TempDir()
-	os.WriteFile(promptsDir+"/classify.txt", []byte("test prompt"), 0644)
+	os.WriteFile(promptsDir+"/classify.md", []byte("test prompt"), 0644)
 	prompts, err := llm.NewPromptRegistry(promptsDir)
 	if err != nil {
 		t.Fatalf("failed to create prompts: %v", err)

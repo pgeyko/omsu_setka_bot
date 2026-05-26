@@ -1,0 +1,35 @@
+name: run_protocol
+display_name: Протоколы
+type: tool
+category: moderation
+admin_only: true
+enabled_by_default: true
+
+description: |
+  Запускает предопределённый сценарий модерации из protocols.json.
+  Доступные протоколы загружаются при старте.
+
+tool:
+  name: run_protocol
+  parameters:
+    protocol_name:
+      type: string
+      description: Имя протокола
+      required: true
+    thread_id:
+      type: string
+      description: ID топика к которому применяется протокол
+      required: false
+    username:
+      type: string
+      description: Имя пользователя если протокол требует модерации
+      required: false
+
+triggers:
+  - зачистка
+  - зачисти
+  - протокол
+
+instructions: |
+  Запускай протоколы только по прямому запросу админа.
+  Подтверждай действие перед выполнением если есть сомнения.

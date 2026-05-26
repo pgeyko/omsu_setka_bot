@@ -12,6 +12,7 @@ import (
 
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/permissions"
+	"omsu_bot/internal/skills"
 )
 
 const maxKBSize = 8 * 1024
@@ -27,12 +28,13 @@ type ToolExecutorInterface interface {
 }
 
 type AgentOrchestrator struct {
-	llmClient        llm.LLMClient
-	executor         ToolExecutorInterface
-	adminChecker     AdminChecker
-	permService      *permissions.Service
-	featuresCache    sync.Map // key=chatID, value=featuresCacheEntry
-	kbCache          sync.Map // key=chatID, value=kbCacheEntry
+	llmClient      llm.LLMClient
+	executor       ToolExecutorInterface
+	adminChecker   AdminChecker
+	permService    *permissions.Service
+	skillsRegistry *skills.Registry
+	featuresCache  sync.Map // key=chatID, value=featuresCacheEntry
+	kbCache        sync.Map // key=chatID, value=kbCacheEntry
 }
 
 type featuresCacheEntry struct {
@@ -45,12 +47,13 @@ type kbCacheEntry struct {
 	expiresAt time.Time
 }
 
-func NewAgentOrchestrator(llmClient llm.LLMClient, executor ToolExecutorInterface, adminChecker AdminChecker, permService *permissions.Service) *AgentOrchestrator {
+func NewAgentOrchestrator(llmClient llm.LLMClient, executor ToolExecutorInterface, adminChecker AdminChecker, permService *permissions.Service, skillsRegistry *skills.Registry) *AgentOrchestrator {
 	return &AgentOrchestrator{
-		llmClient:    llmClient,
-		executor:     executor,
-		adminChecker: adminChecker,
-		permService:  permService,
+		llmClient:      llmClient,
+		executor:       executor,
+		adminChecker:   adminChecker,
+		permService:    permService,
+		skillsRegistry: skillsRegistry,
 	}
 }
 
@@ -68,17 +71,23 @@ func (ao *AgentOrchestrator) Run(ctx context.Context, chatID int64, threadID int
 // sourceMessageID is the ID of the message containing the mention (for forwarding).
 // replyToMessageID is the ID of the replied-to message (if the mention was a reply).
 func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, threadID int, query string, username string, userID int64, sourceMessageID int, replyToMessageID int) (string, error) {
-	// 1. Load group features
-	enabledTools := ao.loadEnabledTools(chatID)
+	// 1. Load group features and determine enabled tools
+	isAuthorized := ao.adminChecker != nil && (ao.adminChecker.IsAdmin(ctx, chatID, userID) || ao.adminChecker.IsOwner(ctx, chatID, userID))
+
+	var enabledTools []llm.Tool
+	if ao.skillsRegistry != nil {
+		features := ao.loadFeatures(chatID)
+		enabledTools = ao.skillsRegistry.GetTools(chatID, isAuthorized, features)
+	} else {
+		enabledTools = ao.loadEnabledTools(chatID)
+	}
 
 	// Filter restricted tools based on DB command_permissions (P1#7)
-	isAuthorized := ao.adminChecker != nil && (ao.adminChecker.IsAdmin(ctx, chatID, userID) || ao.adminChecker.IsOwner(ctx, chatID, userID))
 	var filtered []llm.Tool
 	for _, t := range enabledTools {
 		if restrictedTools[t.Name] && !isAuthorized {
 			continue
 		}
-		// Check DB permissions: if command is admin-only and user is not admin, skip
 		if ao.permService != nil && ao.permService.IsAdminOnly(ctx, chatID, t.Name) && !isAuthorized {
 			continue
 		}
@@ -119,7 +128,7 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 		}
 	}
 	if kbBytes == nil {
-		kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.txt", chatID)
+		kbPath := fmt.Sprintf("data/groups/%d/knowledge_base.md", chatID)
 		if data, err := os.ReadFile(kbPath); err == nil && len(data) > 0 {
 			kbBytes = data
 		}
@@ -312,6 +321,19 @@ func (ao *AgentOrchestrator) loadEnabledTools(chatID int64) []llm.Tool {
 		expiresAt: time.Now().Add(30 * time.Second),
 	})
 	return filtered
+}
+
+func (ao *AgentOrchestrator) loadFeatures(chatID int64) map[string]bool {
+	featuresPath := fmt.Sprintf("data/groups/%d/features.json", chatID)
+	bytes, err := os.ReadFile(featuresPath)
+	if err != nil {
+		return nil
+	}
+	var features map[string]bool
+	if err := json.Unmarshal(bytes, &features); err != nil {
+		return nil
+	}
+	return features
 }
 
 var (

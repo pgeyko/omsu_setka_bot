@@ -199,7 +199,7 @@ func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowS
 	api.Post("/admin/groups/register-webhooks", s.handleRegisterWebhooks)
 	api.Post("/admin/sync-trigger", s.handleSyncTrigger)
 
-	// Context routes: persona.md / knowledge_base.txt / system_prompt.txt can be large.
+	// Context routes: persona.md / knowledge_base.md / system_prompt.md can be large.
 	// Allow up to 512 KB for these endpoints.
 	contextBodyLimit := func(c *fiber.Ctx) error {
 		if len(c.Body()) > 512*1024 {

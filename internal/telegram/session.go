@@ -15,6 +15,7 @@ const (
 	StateWaitingForPersona
 	StateWaitingForPrompt
 	StateWaitingForScheduleSearch
+	StateWaitingForClassifyRules
 )
 
 type sessionEntry struct {

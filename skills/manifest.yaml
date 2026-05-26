@@ -1,0 +1,20 @@
+version: 1
+skills:
+  get_schedule:
+    file: get_schedule.yaml
+    handler: getSchedule
+  forward_message:
+    file: forward_message.yaml
+    handler: forwardMessage
+  generate_summary:
+    file: generate_summary.yaml
+    handler: generateSummary
+  manage_topic:
+    file: manage_topic.yaml
+    handler: manageTopic
+  moderate_user:
+    file: moderate_user.yaml
+    handler: moderateUser
+  run_protocol:
+    file: run_protocol.yaml
+    handler: runProtocol

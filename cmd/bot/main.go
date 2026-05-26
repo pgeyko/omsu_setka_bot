@@ -40,6 +40,7 @@ import (
 	"omsu_bot/internal/permissions"
 	"omsu_bot/internal/persona"
 	"omsu_bot/internal/schedule"
+	"omsu_bot/internal/skills"
 	"omsu_bot/internal/telegram"
 	"omsu_bot/internal/util"
 )
@@ -367,7 +368,11 @@ func main() {
 
 		permService := permissions.NewService(database.DB)
 		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache, &app.MediaGroupMessages, classif)
-		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache, permService)
+		skillRegistry, err := skills.Load("skills")
+		if err != nil {
+			slog.Warn("failed to load skills registry, using built-in tools", "error", err)
+		}
+		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache, permService, skillRegistry)
 		mentionHandler := handler.NewMentionHandler(orchestrator, database.DB, app.BotUsername)
 		antispam := handler.NewAntispam(settingsHandler.LoadFeatures)
 		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient, prompts)

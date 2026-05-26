@@ -1,0 +1,39 @@
+name: get_schedule
+display_name: Расписание
+type: tool
+category: schedule
+admin_only: false
+enabled_by_default: true
+
+description: |
+  Получает расписание занятий группы на конкретный день из Setka.
+  Требует чтобы группа была привязана к Setka через /settings.
+
+tool:
+  name: get_schedule
+  parameters:
+    date:
+      type: string
+      description: Дата в формате YYYY-MM-DD
+      required: false
+    relative_day:
+      type: string
+      description: Относительный день (today, tomorrow, monday, tuesday, wednesday, thursday, friday, saturday)
+      required: false
+    subgroup:
+      type: string
+      description: Номер подгруппы (1 или 2)
+      required: false
+
+triggers:
+  - расписание
+  - какие пары
+  - сколько пар
+  - пары сегодня
+  - пары завтра
+  - что завтра
+  - что сегодня
+
+instructions: |
+  Используй Setka как источник данных. Не придумывай расписание.
+  Для даты по умолчанию — сегодня.
