@@ -11,6 +11,7 @@ node_modules/
 # Frontend build
 admin/dist/
 admin/node_modules/
+*.tsbuildinfo
 
 # Environment
 .env

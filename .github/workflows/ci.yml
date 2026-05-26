@@ -1,4 +1,4 @@
-name: CI Pipeline
+name: CI/CD
 
 on:
   push:
@@ -18,15 +18,12 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
           cache-dependency-path: go.sum
-      - name: Run tests
-        run: |
-          go vet ./...
-          go test -race -v ./...
+      - run: go vet ./...
+      - run: go test -race -v ./...
 
   frontend-test:
     name: Frontend Test
@@ -35,20 +32,15 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: admin/package-lock.json
-      - name: Install dependencies
-        run: |
-          cd admin
-          npm ci
-      - name: Verify build
-        run: |
-          cd admin
-          npm run build
+      - run: npm ci
+        working-directory: admin
+      - run: npm run build
+        working-directory: admin
 
   build-and-push:
     name: Build & Push Image
@@ -60,16 +52,12 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ github.token }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v5
+      - uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
@@ -77,3 +65,26 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+    steps:
+      - name: Deploy via SSH
+        run: |
+          if [ -z "$DEPLOY_HOST" ]; then
+            echo "SSH secrets not configured, skipping deploy"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd /app && docker compose pull bot && docker compose up -d bot"
+          echo "Deploy completed"
