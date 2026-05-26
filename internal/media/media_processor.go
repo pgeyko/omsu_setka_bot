@@ -29,7 +29,7 @@ const maxPhotoDimension = 512
 type MediaProcessor struct {
 	botClient *tgbot.Bot
 	token     string
-	llmClient *llm.Client
+	llmClient llm.LLMClient
 	prompts   PromptLoader
 }
 
@@ -37,7 +37,7 @@ type PromptLoader interface {
 	Get(name string) string
 }
 
-func NewMediaProcessor(botClient *tgbot.Bot, token string, llmClient *llm.Client, prompts PromptLoader) *MediaProcessor {
+func NewMediaProcessor(botClient *tgbot.Bot, token string, llmClient llm.LLMClient, prompts PromptLoader) *MediaProcessor {
 	return &MediaProcessor{
 		botClient: botClient,
 		token:     token,

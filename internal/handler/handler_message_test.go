@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"context"
@@ -30,6 +30,7 @@ func TestCountWords(t *testing.T) {
 }
 
 func TestHandleMessage_TopiclessBypass(t *testing.T) {
+	t.Parallel()
 	database, err := db.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)
@@ -53,7 +54,7 @@ func TestHandleMessage_TopiclessBypass(t *testing.T) {
 	}
 
 	h := &Handler{
-		db: database.DB,
+		db: database,
 	}
 
 	// We pass a message with 15+ words which would normally trigger prefilter and classification

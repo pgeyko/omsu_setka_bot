@@ -1,9 +1,8 @@
-package handlers
+package handler
 
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"fmt"
 	"image"
 	"image/jpeg"
@@ -21,7 +20,7 @@ import (
 
 	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/classifier"
-	"omsu_bot/internal/db"
+	omsudb "omsu_bot/internal/db"
 	"omsu_bot/internal/forwarder"
 	"omsu_bot/internal/telegram"
 	"omsu_bot/internal/util"
@@ -33,25 +32,27 @@ import (
 type Handler struct {
 	classifier    *classifier.Classifier
 	forwarder     *forwarder.Forwarder
-	db            *sql.DB
+	db            *omsudb.DB
 	buffer        *buffer.SummaryBuffer
 	usernameCache *telegram.UsernameCache
 	bot           *tgbot.Bot
 	token         string
+	httpClient    *http.Client
 
 	pendingMediaCancel map[string]context.CancelFunc
 	pendingMu          sync.Mutex
 }
 
-func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, token string, db *sql.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
+func NewHandler(classifier *classifier.Classifier, forwarder *forwarder.Forwarder, bot *tgbot.Bot, token string, database *omsudb.DB, buffer *buffer.SummaryBuffer, usernameCache *telegram.UsernameCache) *Handler {
 	return &Handler{
 		classifier:         classifier,
 		forwarder:          forwarder,
-		db:                 db,
+		db:                 database,
 		buffer:             buffer,
 		usernameCache:      usernameCache,
 		bot:                bot,
 		token:              token,
+		httpClient:         &http.Client{Timeout: 30 * time.Second},
 		pendingMediaCancel: make(map[string]context.CancelFunc),
 	}
 }
@@ -173,8 +174,7 @@ if targetThreadID == msg.MessageThreadID {
 	// Text-prefix deduplication: skip if same text already in target topic
 	if text != "" {
 		textPrefix := textPrefix(text)
-		d := &db.DB{DB: h.db}
-		exists, err := d.HasMessageWithText(ctx, msg.Chat.ID, targetThreadID, textPrefix)
+		exists, err := h.db.HasMessageWithText(ctx, msg.Chat.ID, targetThreadID, textPrefix)
 		if err == nil && exists {
 			slog.Debug("duplicate message detected, skipping forward", "msg_id", msg.ID, "topic", result.Topic)
 			h.bot.SendMessage(ctx, &tgbot.SendMessageParams{
@@ -374,7 +374,7 @@ func (h *Handler) classifyPhoto(ctx context.Context, chatID int64, text, fileID 
 	if err != nil {
 		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := h.httpClient.Do(req)
 	if err != nil {
 		return h.classifier.ClassifyMessage(ctx, chatID, text, fileID)
 	}
@@ -405,9 +405,26 @@ func (h *Handler) fuzzySlugMatch(ctx context.Context, chatID int64, topic string
 		return 0, fmt.Errorf("no words in topic")
 	}
 
-	rows, err := h.db.QueryContext(ctx,
-		`SELECT slug, tg_thread_id FROM topics WHERE group_id = ? AND is_active = 1`, chatID,
-	)
+	query := `SELECT slug, tg_thread_id FROM topics WHERE group_id = ? AND is_active = 1`
+	args := []any{chatID}
+	longWords := make([]string, 0, len(words))
+	for _, w := range words {
+		if len(w) >= 3 {
+			longWords = append(longWords, "%"+w+"%")
+		}
+	}
+	if len(longWords) > 0 {
+		query += " AND ("
+		for i, w := range longWords {
+			if i > 0 {
+				query += " OR "
+			}
+			query += "slug LIKE ?"
+			args = append(args, w)
+		}
+		query += ")"
+	}
+	rows, err := h.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -631,8 +648,7 @@ func (h *Handler) processDeferredAlbum(ctx context.Context, b *tgbot.Bot, msg *m
 	}
 
 	if len(result.Hashtags) > 0 {
-		d := &db.DB{DB: h.db}
-		d.AddTags(ctx, msg.Chat.ID, msg.ID, result.Hashtags)
+		h.db.AddTags(ctx, msg.Chat.ID, msg.ID, result.Hashtags)
 	}
 
 	for _, item := range groupItems {

@@ -52,7 +52,23 @@ func setupTestServer(t *testing.T) *Server {
 		t.Fatalf("failed to create prompts: %v", err)
 	}
 
-	s := NewServer(database.DB, personaStore, prompts, auth, false, "test", "*", nil, nil, nil, 0, false, 9999, 9999, 60, "http://localhost:8080", "test-setka-key", "", "test-webhook-secret", ":8081")
+	s := NewServer(database.DB, personaStore, prompts, auth,
+		&ServerConfig{
+			SwaggerEnabled:     false,
+			AppEnv:             "test",
+			CORSOrigin:         "*",
+			SkipFallbackModel:  false,
+			TelegramGroupID:    0,
+			RateLimitGeneral:   9999,
+			RateLimitSearch:    9999,
+			RateLimitWindowSec: 60,
+			SetkaBaseURL:       "http://localhost:8080",
+			SetkaAdminKey:      "test-setka-key",
+			SetkaPublicURL:     "",
+			WebhookSecret:      "test-webhook-secret",
+			ListenAddr:         ":8081",
+		},
+		nil, nil, nil)
 	return s
 }
 
@@ -80,6 +96,7 @@ func getAuthToken(s *Server) string {
 }
 
 func TestAuthLogin_Success(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	resp := performRequest(s, "POST", "/api/auth/token", `{"admin_secret":"test-admin-secret"}`, "")
 
@@ -96,6 +113,7 @@ func TestAuthLogin_Success(t *testing.T) {
 }
 
 func TestAuthLogin_WrongSecret(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	resp := performRequest(s, "POST", "/api/auth/token", `{"admin_secret":"wrong"}`, "")
 
@@ -105,6 +123,7 @@ func TestAuthLogin_WrongSecret(t *testing.T) {
 }
 
 func TestAuth_NoToken(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	resp := performRequest(s, "GET", "/api/persona", "", "")
 
@@ -114,6 +133,7 @@ func TestAuth_NoToken(t *testing.T) {
 }
 
 func TestGetPersona(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	token := getAuthToken(s)
 	resp := performRequest(s, "GET", "/api/persona", "", token)
@@ -124,6 +144,7 @@ func TestGetPersona(t *testing.T) {
 }
 
 func TestUpdatePersona(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	token := getAuthToken(s)
 	resp := performRequest(s, "PUT", "/api/persona", `{"name":"TestBot"}`, token)
@@ -141,6 +162,7 @@ func TestUpdatePersona(t *testing.T) {
 }
 
 func TestCrudTopics(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	token := getAuthToken(s)
 
@@ -195,6 +217,7 @@ func TestCrudTopics(t *testing.T) {
 }
 
 func TestPermissions(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	token := getAuthToken(s)
 
@@ -218,6 +241,7 @@ func TestPermissions(t *testing.T) {
 }
 
 func TestStats(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	token := getAuthToken(s)
 
@@ -238,6 +262,7 @@ func TestStats(t *testing.T) {
 }
 
 func TestScheduleEndpoints(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	token := getAuthToken(s)
 
@@ -253,6 +278,7 @@ func TestScheduleEndpoints(t *testing.T) {
 }
 
 func TestSuperadminEndpoints(t *testing.T) {
+	t.Parallel()
 	s := setupTestServer(t)
 	token := getAuthToken(s)
 

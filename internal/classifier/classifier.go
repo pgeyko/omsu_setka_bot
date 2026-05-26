@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,7 +34,7 @@ type visionCacheEntry struct {
 }
 
 type Classifier struct {
-	llmClient *llm.Client
+	llmClient llm.LLMClient
 	prompts   *llm.PromptRegistry
 	topics    TopicsProvider
 
@@ -43,7 +44,7 @@ type Classifier struct {
 	cacheTTL    time.Duration
 }
 
-func New(llmClient *llm.Client, prompts *llm.PromptRegistry, topics TopicsProvider) *Classifier {
+func New(llmClient llm.LLMClient, prompts *llm.PromptRegistry, topics TopicsProvider) *Classifier {
 	return &Classifier{
 		llmClient:   llmClient,
 		prompts:     prompts,
@@ -135,10 +136,16 @@ func (c *Classifier) ClassifyWithImage(ctx context.Context, chatID int64, text s
 }
 
 func (c *Classifier) fillPrompt(template string, topics []TopicInfo, text string) string {
-	var topicStr string
+	var b strings.Builder
+	b.Grow(len(topics) * 120)
 	for _, t := range topics {
-		topicStr += fmt.Sprintf("- %s: %s\n", t.Name, t.Description)
+		b.WriteString("- ")
+		b.WriteString(t.Name)
+		b.WriteString(": ")
+		b.WriteString(t.Description)
+		b.WriteByte('\n')
 	}
+	topicStr := b.String()
 
 	result := template
 	result = replacePlaceholder(result, "{topics}", topicStr)

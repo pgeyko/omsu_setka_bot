@@ -40,7 +40,7 @@ func RegisterWebhooksWithSetka(ctx context.Context, db *sql.DB, setkaBaseURL, se
 
 	publicURL := setkaPublicURL
 	if publicURL == "" {
-		publicURL = "http://localhost"
+		publicURL = "http://localhost:8081"
 	}
 
 	body := map[string]interface{}{

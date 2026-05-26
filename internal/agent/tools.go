@@ -166,6 +166,12 @@ type MediaGroupItem struct {
 	MediaType string // "photo", "document", "video", "audio"
 }
 
+type MediaGroupEntry struct {
+	Mu        sync.Mutex
+	Items     []MediaGroupItem
+	CreatedAt time.Time
+}
+
 type ToolExecutor struct {
 	db                  *sql.DB
 	bot                 *tgbot.Bot
@@ -205,7 +211,7 @@ func (e *ToolExecutor) SetMessageContext(sourceMessageID, replyToMessageID int) 
 }
 
 func (e *ToolExecutor) Execute(ctx context.Context, chatID int64, name string, arguments string) (string, error) {
-	slog.Info("Executing tool", "name", name, "chat_id", chatID, "arguments", arguments)
+	slog.Info("Executing tool", "name", name, "chat_id", chatID)
 	switch name {
 	case "get_schedule":
 		return e.getSchedule(ctx, chatID, arguments)
@@ -774,10 +780,10 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 	var groupItems []MediaGroupItem
 	if e.mediaGroupMessages != nil {
 		e.mediaGroupMessages.Range(func(key, value interface{}) bool {
-			if items, ok := value.([]MediaGroupItem); ok {
-				for _, item := range items {
+			if entry, ok := value.(*MediaGroupEntry); ok {
+				for _, item := range entry.Items {
 					if item.MessageID == forwardMsgID {
-						groupItems = items
+						groupItems = entry.Items
 						return false
 					}
 				}

@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"log/slog"
 	"os"
 	"strings"
@@ -25,35 +27,40 @@ type BotSender interface {
 	Send(ctx context.Context, chatID int64, text string) error
 }
 
+// ServerConfig holds configuration fields for the API server.
+type ServerConfig struct {
+	SwaggerEnabled     bool
+	AppEnv             string
+	CORSOrigin         string
+	SkipFallbackModel  bool
+	TelegramGroupID    int64
+	RateLimitGeneral   int
+	RateLimitSearch    int
+	RateLimitWindowSec int
+	SetkaBaseURL       string
+	SetkaAdminKey      string
+	SetkaPublicURL     string
+	WebhookSecret      string
+	ListenAddr         string
+}
+
 type Server struct {
 	App                      *fiber.App
 	DB                       *sql.DB
 	Persona                  *persona.Store
 	Prompts                  *llm.PromptRegistry
 	AuthMiddleware           *AuthMiddleware
-	SwaggerEnabled           bool
-	AppEnv                   string
-	CORSOrigin               string
+	Config                   *ServerConfig
 	Chain                    *llm.Chain
-	LLMClient                *llm.Client
+	LLMClient                llm.LLMClient
 	TelegramBot              BotSender
-	TelegramGroupID          int64
-	SkipFallbackModel           bool
-	GroupRegistrationRestricted bool
-	SetkaBaseURL                string
-	SetkaAdminKey            string
-	SetkaPublicURL           string
-	WebhookSecret            string
-	ListenAddr               string
 	GlobalVoiceTranscription atomic.Bool
 	GlobalPhotoProcessing    atomic.Bool
+	GroupRegistrationRestricted bool
 }
 
 func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, auth *AuthMiddleware,
-	swaggerEnabled bool, appEnv string, corsOrigin string, chain *llm.Chain, llmClient *llm.Client,
-	tgBot BotSender, tgGroupID int64, skipFallbackModel bool,
-	rateLimitGeneral, rateLimitSearch, rateLimitWindowSec int,
-	setkaBaseURL, setkaAdminKey, setkaPublicURL, webhookSecret, listenAddr string) *Server {
+	cfg *ServerConfig, chain *llm.Chain, llmClient llm.LLMClient, tgBot BotSender) *Server {
 
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
@@ -67,41 +74,33 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 	})
 
 	app.Use(recover.New())
+	app.Use(requestID())
 	app.Use(securityHeaders())
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: corsOrigin,
+		AllowOrigins: cfg.CORSOrigin,
 		AllowHeaders: "Authorization, Content-Type",
 	}))
 	// Guard against accidentally allowing all origins in production.
-	if corsOrigin == "*" && appEnv == "production" {
+	if cfg.CORSOrigin == "*" && cfg.AppEnv == "production" {
 		slog.Error("CORS_ORIGIN must not be '*' in production")
 		os.Exit(1)
 	}
 	app.Use(etag.New())
 
-	if appEnv != "production" {
+	if cfg.AppEnv != "production" {
 		app.Use(requestLogger())
 	}
 
 	s := &Server{
-		App:                      app,
-		DB:                       db,
-		Persona:                  persona,
-		Prompts:                  prompts,
-		AuthMiddleware:           auth,
-		SwaggerEnabled:           swaggerEnabled,
-		AppEnv:                   appEnv,
-		CORSOrigin:               corsOrigin,
-		Chain:                    chain,
-		LLMClient:                llmClient,
-		TelegramBot:              tgBot,
-		TelegramGroupID:          tgGroupID,
-		SkipFallbackModel:        skipFallbackModel,
-		SetkaBaseURL:             setkaBaseURL,
-		SetkaAdminKey:            setkaAdminKey,
-		SetkaPublicURL:           setkaPublicURL,
-		WebhookSecret:            webhookSecret,
-		ListenAddr:               listenAddr,
+		App:            app,
+		DB:             db,
+		Persona:        persona,
+		Prompts:        prompts,
+		AuthMiddleware: auth,
+		Config:         cfg,
+		Chain:          chain,
+		LLMClient:      llmClient,
+		TelegramBot:    tgBot,
 	}
 	s.GlobalVoiceTranscription.Store(true)
 	s.GlobalPhotoProcessing.Store(true)
@@ -114,8 +113,22 @@ func NewServer(db *sql.DB, persona *persona.Store, prompts *llm.PromptRegistry, 
 		return c.JSON(fiber.Map{"status": "ok", "uptime": time.Since(startTime).String()})
 	})
 
-	s.setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowSec)
+	s.setupRoutes(cfg.RateLimitGeneral, cfg.RateLimitSearch, cfg.RateLimitWindowSec)
 	return s
+}
+
+var reqIDCounter atomic.Uint64
+
+func requestID() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		var buf [12]byte
+		rand.Read(buf[:8])
+		counter := reqIDCounter.Add(1)
+		id := hex.EncodeToString(buf[:8]) + "-" + hex.EncodeToString([]byte{byte(counter >> 24), byte(counter >> 16), byte(counter >> 8), byte(counter)})
+		c.Locals("request_id", id)
+		c.Set("X-Request-ID", id)
+		return c.Next()
+	}
 }
 
 func securityHeaders() fiber.Handler {
@@ -135,6 +148,7 @@ func requestLogger() fiber.Handler {
 		start := time.Now()
 		err := c.Next()
 		slog.Debug("api",
+			"request_id", c.Locals("request_id"),
 			"method", c.Method(),
 			"path", c.Path(),
 			"status", c.Response().StatusCode(),
@@ -146,12 +160,12 @@ func requestLogger() fiber.Handler {
 }
 
 func (s *Server) setupRoutes(rateLimitGeneral, rateLimitSearch, rateLimitWindowSec int) {
-	if s.SwaggerEnabled && s.AppEnv != "production" {
+	if s.Config.SwaggerEnabled && s.Config.AppEnv != "production" {
 		// Swagger is protected by JWT auth to prevent API schema leakage.
 		s.App.Get("/swagger/*", s.AuthMiddleware.RequireAuth, swagger.HandlerDefault)
 	}
 
-	s.App.Post("/api/auth/token", s.AuthMiddleware.Login)
+	s.App.Post("/api/auth/token", s.AuthMiddleware.LoginWithRateLimit(), s.AuthMiddleware.Login)
 	s.App.Post("/api/auth/logout", s.AuthMiddleware.Logout)
 
 	window := time.Duration(rateLimitWindowSec) * time.Second

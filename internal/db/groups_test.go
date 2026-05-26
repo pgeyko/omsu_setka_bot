@@ -6,6 +6,7 @@ import (
 )
 
 func TestGroupsCRUD(t *testing.T) {
+	t.Parallel()
 	d, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)

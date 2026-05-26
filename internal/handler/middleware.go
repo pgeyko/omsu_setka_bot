@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"context"
@@ -46,6 +46,17 @@ func (r *RateLimiter) Allow(userID int64) bool {
 
 	valid = append(valid, now)
 	r.requests[userID] = valid
+
+	// Evict stale entries periodically to prevent unbounded growth
+	if len(r.requests) > 10000 {
+		globalCutoff := now.Add(-2 * r.window)
+		for uid, ts := range r.requests {
+			if len(ts) > 0 && ts[len(ts)-1].Before(globalCutoff) {
+				delete(r.requests, uid)
+			}
+		}
+	}
+
 	return true
 }
 

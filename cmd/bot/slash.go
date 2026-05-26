@@ -13,13 +13,13 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	omsudb "omsu_bot/internal/db"
-	handlers "omsu_bot/internal/handler"
+	"omsu_bot/internal/handler"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/messages"
 	"omsu_bot/internal/util"
 )
 
-func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handlers.MentionHandler, helpText string, cmd *handlers.CommandRegistry, settingsHandler *handlers.SettingsHandler, botMsgs *messages.Messages, promptRegistry *llm.PromptRegistry) {
+func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update, db *sql.DB, groupID int64, mh *handler.MentionHandler, helpText string, cmd *handler.CommandRegistry, settingsHandler *handler.SettingsHandler, botMsgs *messages.Messages, promptRegistry *llm.PromptRegistry) {
 	msg := update.Message
 	if msg == nil || msg.From == nil {
 		return
@@ -181,7 +181,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		})
 
 	case "status":
-		uptime := time.Since(botStartTime).Round(time.Second)
+		uptime := time.Since(app.BotStartTime).Round(time.Second)
 		var msgCount, fwdCount, llmToday int
 		if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ?`, msg.Chat.ID).Scan(&msgCount); err != nil {
 			slog.Warn("status msg count query", "error", err)
@@ -194,11 +194,11 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		}
 
 		statsStr := fmt.Sprintf("Аптайм: %s\nОбработано сообщений: %d\nПереслано: %d\nLLM запросов сегодня: %d\nПровайдеров: %d\nБот: @%s",
-			uptime, msgCount, fwdCount, llmToday, providerCount, botUsername)
+			uptime, msgCount, fwdCount, llmToday, app.ProviderCount, app.BotUsername)
 
-		if globalLLM != nil {
+		if app.GlobalLLM != nil {
 			statusPrompt := strings.ReplaceAll(promptRegistry.Get("status_report"), "{stats}", statsStr)
-			resp, err := globalLLM.Call(ctx, "diagnostic", "", statusPrompt, false)
+			resp, err := app.GlobalLLM.Call(ctx, "diagnostic", "", statusPrompt, false)
 			if err == nil {
 				resp.Content = util.StripMarkdown(resp.Content)
 				b.SendMessage(ctx, &tgbot.SendMessageParams{

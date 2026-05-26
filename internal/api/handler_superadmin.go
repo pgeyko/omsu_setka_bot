@@ -66,10 +66,10 @@ func (s *Server) handleRegisterWebhooks(c *fiber.Ctx) error {
 	groupIDs, err := telegram.RegisterWebhooksWithSetka(
 		c.Context(),
 		s.DB,
-		s.SetkaBaseURL,
-		s.SetkaAdminKey,
-		s.WebhookSecret,
-		s.SetkaPublicURL,
+		s.Config.SetkaBaseURL,
+		s.Config.SetkaAdminKey,
+		s.Config.WebhookSecret,
+		s.Config.SetkaPublicURL,
 	)
 	if err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to register webhooks with Setka: "+err.Error())
@@ -83,7 +83,7 @@ func (s *Server) handleRegisterWebhooks(c *fiber.Ctx) error {
 }
 
 func (s *Server) handleSyncTrigger(c *fiber.Ctx) error {
-	targetURL := s.SetkaBaseURL + "/api/v1/sync/trigger"
+	targetURL := s.Config.SetkaBaseURL + "/api/v1/sync/trigger"
 	if targetURL == "/api/v1/sync/trigger" {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "Setka base URL not configured")
 	}
@@ -93,7 +93,7 @@ func (s *Server) handleSyncTrigger(c *fiber.Ctx) error {
 	if err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to create request: "+err.Error())
 	}
-	req.Header.Set("X-Admin-Key", s.SetkaAdminKey)
+	req.Header.Set("X-Admin-Key", s.Config.SetkaAdminKey)
 
 	resp, err := client.Do(req)
 	if err != nil {

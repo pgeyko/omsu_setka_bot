@@ -54,6 +54,7 @@ func TestBuildMessages_WithSystemExtra(t *testing.T) {
 }
 
 func TestClient_TokenParsing(t *testing.T) {
+	t.Parallel()
 	// 1. Setup in-memory DB and Migrate
 	database, err := db.New(":memory:")
 	if err != nil {

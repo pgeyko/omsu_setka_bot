@@ -42,6 +42,9 @@ func (s *Server) handleUpdatePersona(c *fiber.Ctx) error {
 		current.Name = *req.Name
 	}
 	if req.SystemPrompt != nil {
+		if len(*req.SystemPrompt) > 10000 {
+			return respondError(c, fiber.StatusBadRequest, "SYSTEM_PROMPT_TOO_LARGE", "system_prompt must be ≤10000 characters")
+		}
 		current.SystemPrompt = *req.SystemPrompt
 	}
 	if req.Signature != nil {

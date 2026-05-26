@@ -296,6 +296,97 @@
 - [x] P1#12 Setka admin API: PUT /webhooks/by-url + PATCH /webhooks/:id
 - [x] P2#13 Schedule diff: hasNewLessons() — новые пары тоже объявляются
 
+---
+
+## Этап 16 — Аудит безопасности 2026-05-26: P0/P1 фиксы
+✅ Completed: 2026-05-26
+
+> Skills: `golang-pro`, `lint-and-validate`
+
+- [x] P0#1 Gemini API key: URL query param → `x-goog-api-key` header (`llm/client.go`)
+- [x] P0#2 Auth rate-limit: 5 req/min/IP на `/api/auth/token` (`middleware_auth.go` + `router.go`)
+- [x] P0#3 JWT algorithm confusion: `jwt.WithValidMethods(["HS256"])` в ParseWithClaims (`middleware_auth.go`)
+- [x] P0#4 Constant-time admin_secret сравнение через `subtle.ConstantTimeCompare` (`middleware_auth.go`)
+- [x] P1#5 Admin_secret min length check (16 символов) (`middleware_auth.go`)
+- [x] P1#6 Uniform file permissions: features.json 0644→0640, dir 0755→0750 (`context_handler.go`)
+- [x] P1#7 system_prompt length validation (≤10000 символов) (`handler_persona.go`)
+- [x] P1#8 Webhook debug log: truncated body to 500 chars + body_size field (`handler_webhook.go`)
+- [x] P1#9 Dockerfile: removed `go test` from build stage, added HEALTHCHECK
+- [x] P1#10 Created `.dockerignore` (19 entries)
+
+---
+
+## Этап 17 — Архитектурный рефакторинг
+✅ Completed: 2026-05-26
+
+> Skills: `golang-pro`, `lint-and-validate`
+
+- [x] 2.1 LLMClient interface extracted to `llm/client.go` (6 методов, 5 потребителей обновлены)
+- [x] 2.2 App struct created, 6 package globals consolidated into `var app *App`
+- [x] 2.3 `initLLM()` extracted from main() (провайдеры → цепи → клиент)
+- [x] 2.4+2.5 `ServerConfig` struct created, `NewServer` 20→9 positional args
+- [x] 2.6 `http.DefaultClient` → `http.Client{Timeout: 30s}` в classifyPhoto
+
+---
+
+## Этап 18 — Производительность
+✅ Completed: 2026-05-26
+
+> Skills: `golang-pro`, `lint-and-validate`, `performance-optimizer`
+
+- [x] 3.1 MaxOpenConns 10→4, MaxIdleConns 10→4 (`db/db.go`)
+- [x] 3.2 Reusable http client: moved to `Handler.httpClient` field, initialized once in `NewHandler` (`handler_message.go`)
+- [x] 3.3 fuzzySlugMatch: SQL LIKE pre-filter to reduce rows fetched from SQLite (`handler_message.go`)
+- [x] 3.4 classifier.fillPrompt: `topicStr +=` → `strings.Builder` (`classifier/classifier.go`)
+- [x] 3.5 Media group cleanup TTL: extracted constants `processedMediaGroupsTTL` (10m) + `mediaGroupMessagesTTL` (30m) (`cmd/bot/main.go`)
+- [x] 3.6 Username cache: added TTL-based eviction (6h TTL, 30m cleanup interval) (`telegram/username_cache.go`)
+- [x] 3.7 Request ID middleware: `X-Request-ID` header + `c.Locals("request_id", ...)` + log injection (`api/router.go`)
+
+---
+
+## Этап 19 — Интеграционный контракт setka ↔ bot
+✅ Completed: 2026-05-26
+
+> Skills: `golang-pro`, `lint-and-validate`, `api-endpoint-builder`
+
+- [x] 5.1 Fallback URL порт :8081 в RegisterWebhooksWithSetka (`telegram/sync.go`)
+- [x] 5.2 Добавлены AnomalyTeacher, AnomalyPair, AnomalyDate, AnomalySubgroup в classifyChange + buildAnnouncement (`schedule/diff.go`)
+- [x] 5.3 Унификация: registerWithSetka переведён с POST на PUT /api/v1/admin/webhooks/by-url (`cmd/bot/helpers.go`)
+
+---
+
+## Этап 20 — Технический долг
+✅ Completed: 2026-05-26
+
+> Skills: `golang-pro`, `lint-and-validate`, `web-design-guidelines`
+
+### Go backend
+- [x] 7.7 Убраны `arguments` из debug-лога тула (`agent/tools.go`)
+- [x] 7.8 `resp.Content` в llm response log → `util.Truncate(..., 500)` (`llm/client.go`)
+- [x] 7.9 `IsOwner` использует кеш админов; `adminCacheEntry` хранит `isOwner` (`telegram/admin_cache.go`)
+- [x] 7.10 `package handlers` → `package handler` (11 файлов + 2 потребителя)
+
+### React SPA (admin/)
+- [x] 7.1 GroupsPage (551→78 строк) разбит на GroupList, GroupDetail, GroupSettings, CreateGroupModal (`entities/groups/`)
+- [x] 7.2 `request` + `requestFull` объединены в единый `request()`, возвращающий `ApiResponse<T>` (`shared/api/client.ts`)
+- [x] 7.3 FSD: созданы `shared/` (api, stores, ui, constants, hooks), `entities/groups/`, `features/`
+- [x] 7.4 Nav-конфигурация вынесена в `shared/constants/navigation.ts`
+- [x] 7.5 `document.documentElement.setAttribute` → `useTheme()` хук (`shared/hooks/useTheme.ts`)
+- [x] 7.6 API-хуки выделены в `entities/groups/hooks.ts`
+
+---
+
+## Этап 21 — Тесты и надёжность
+✅ Completed: 2026-05-26
+
+> Skills: `golang-pro`, `lint-and-validate`
+
+- [x] 6.1 `mockLLMClient` + `ToolExecutorInterface` + 7 table-driven тестов для `AgentOrchestrator` (tool filtering, max steps, async dispatch, error paths, sequential) (`agent/orchestrator_test.go`)
+- [x] 6.2 10 тестов для `WebhookHandler`: HMAC valid/invalid/missing, timestamp skew ±5m, event dedup new/duplicate/expired, chatID resolution found/not-found (`handler/handler_webhook_test.go`)
+- [x] 6.3 8 тестов для `AuthMiddleware`: JWT generation, parsing, expiration, revocation, role enforcement, invalid body (`api/middleware_auth_test.go`)
+- [x] 6.4 `t.Parallel()` добавлен во все DB-backed тесты (56+ test functions в 10+ файлах)
+- [x] 6.7 Race detector: `go test -race` проходит на всех ключевых пакетах (agent, api, handler, llm, telegram)
+
 ## Легенда
 
 ```

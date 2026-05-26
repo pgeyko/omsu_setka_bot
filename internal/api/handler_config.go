@@ -21,8 +21,8 @@ type configResponse struct {
 // Call this once after NewServer and Migrate to restore persisted settings.
 func (s *Server) LoadConfigFromDB(ctx context.Context) {
 	d := &db.DB{DB: s.DB}
-	if val, err := d.GetConfig(ctx, "skip_fallback_model", strconv.FormatBool(s.SkipFallbackModel)); err == nil {
-		s.SkipFallbackModel, _ = strconv.ParseBool(val)
+	if val, err := d.GetConfig(ctx, "skip_fallback_model", strconv.FormatBool(s.Config.SkipFallbackModel)); err == nil {
+		s.Config.SkipFallbackModel, _ = strconv.ParseBool(val)
 	}
 	if val, err := d.GetConfig(ctx, "global_voice_transcription", strconv.FormatBool(s.GlobalVoiceTranscription.Load())); err == nil {
 		if parsed, err := strconv.ParseBool(val); err == nil {
@@ -38,13 +38,13 @@ func (s *Server) LoadConfigFromDB(ctx context.Context) {
 		s.GroupRegistrationRestricted, _ = strconv.ParseBool(val)
 	}
 	if s.LLMClient != nil {
-		s.LLMClient.SetSkipFallbackModel(s.SkipFallbackModel)
+		s.LLMClient.SetSkipFallbackModel(s.Config.SkipFallbackModel)
 	}
 }
 
 func (s *Server) handleGetConfig(c *fiber.Ctx) error {
 	return respondSuccess(c, configResponse{
-		SkipFallbackModel:           s.SkipFallbackModel,
+		SkipFallbackModel:           s.Config.SkipFallbackModel,
 		GlobalVoiceTranscription:    s.GlobalVoiceTranscription.Load(),
 		GlobalPhotoProcessing:       s.GlobalPhotoProcessing.Load(),
 		GroupRegistrationRestricted: s.GroupRegistrationRestricted,
@@ -57,7 +57,7 @@ func (s *Server) handleUpdateConfig(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid request")
 	}
 
-	s.SkipFallbackModel = req.SkipFallbackModel
+	s.Config.SkipFallbackModel = req.SkipFallbackModel
 	s.GlobalVoiceTranscription.Store(req.GlobalVoiceTranscription)
 	s.GlobalPhotoProcessing.Store(req.GlobalPhotoProcessing)
 	s.GroupRegistrationRestricted = req.GroupRegistrationRestricted
@@ -82,7 +82,7 @@ func (s *Server) handleUpdateConfig(c *fiber.Ctx) error {
 	}
 
 	return respondSuccess(c, configResponse{
-		SkipFallbackModel:           s.SkipFallbackModel,
+		SkipFallbackModel:           s.Config.SkipFallbackModel,
 		GlobalVoiceTranscription:    s.GlobalVoiceTranscription.Load(),
 		GlobalPhotoProcessing:       s.GlobalPhotoProcessing.Load(),
 		GroupRegistrationRestricted: s.GroupRegistrationRestricted,

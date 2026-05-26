@@ -5,6 +5,7 @@ import (
 )
 
 func TestNewInMemory(t *testing.T) {
+	t.Parallel()
 	d, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create in-memory db: %v", err)
@@ -17,6 +18,7 @@ func TestNewInMemory(t *testing.T) {
 }
 
 func TestMigration(t *testing.T) {
+	t.Parallel()
 	d, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)
@@ -54,6 +56,7 @@ func TestMigration(t *testing.T) {
 }
 
 func TestIdempotentMigration(t *testing.T) {
+	t.Parallel()
 	d, err := New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)

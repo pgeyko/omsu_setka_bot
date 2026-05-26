@@ -15,6 +15,7 @@ import (
 )
 
 func TestRunProtocol_DeleteMessagesAndCloseTopic(t *testing.T) {
+	t.Parallel()
 	// 1. Initialize in-memory database and migrate
 	database, err := db.New(":memory:")
 	if err != nil {
@@ -167,6 +168,7 @@ func TestRunProtocol_DeleteMessagesAndCloseTopic(t *testing.T) {
 }
 
 func TestRunProtocol_ModerateUser(t *testing.T) {
+	t.Parallel()
 	database, err := db.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)
@@ -239,6 +241,7 @@ func TestRunProtocol_ModerateUser(t *testing.T) {
 }
 
 func TestRunProtocol_ProtocolNotFound(t *testing.T) {
+	t.Parallel()
 	database, err := db.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)

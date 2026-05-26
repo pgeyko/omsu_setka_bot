@@ -21,7 +21,7 @@ func (s *Server) handleGetPermissions(c *fiber.Ctx) error {
 	if groupIDStr != "" {
 		groupID, _ = strconv.ParseInt(groupIDStr, 10, 64)
 	} else {
-		groupID = s.TelegramGroupID
+		groupID = s.Config.TelegramGroupID
 	}
 
 	// Seed defaults: ensure every known command has a row regardless of FK
@@ -72,7 +72,7 @@ func (s *Server) handleUpdatePermission(c *fiber.Ctx) error {
 	if groupIDStr != "" {
 		groupID, _ = strconv.ParseInt(groupIDStr, 10, 64)
 	} else {
-		groupID = s.TelegramGroupID
+		groupID = s.Config.TelegramGroupID
 	}
 
 	var req updatePermissionRequest

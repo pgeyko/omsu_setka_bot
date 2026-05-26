@@ -33,10 +33,14 @@ type WebhookPayload struct {
 type AnomalyType string
 
 const (
-	AnomalyBuilding AnomalyType = "ANOMALY_BUILDING"
-	AnomalyRoom     AnomalyType = "ANOMALY_ROOM"
-	AnomalySubject  AnomalyType = "ANOMALY_SUBJECT"
-	AnomalyCancel   AnomalyType = "ANOMALY_CANCEL"
+	AnomalyBuilding  AnomalyType = "ANOMALY_BUILDING"
+	AnomalyRoom      AnomalyType = "ANOMALY_ROOM"
+	AnomalySubject   AnomalyType = "ANOMALY_SUBJECT"
+	AnomalyCancel    AnomalyType = "ANOMALY_CANCEL"
+	AnomalyTeacher   AnomalyType = "ANOMALY_TEACHER"
+	AnomalyPair      AnomalyType = "ANOMALY_PAIR"
+	AnomalyDate      AnomalyType = "ANOMALY_DATE"
+	AnomalySubgroup  AnomalyType = "ANOMALY_SUBGROUP"
 )
 
 type Anomaly struct {
@@ -201,6 +205,46 @@ func (e *DiffEngine) classifyChange(c Change) *Anomaly {
 			}
 		}
 		return nil
+	case "teacher":
+		return &Anomaly{
+			Type:    AnomalyTeacher,
+			Field:   c.Field,
+			Date:    c.Date,
+			Pair:    c.Pair,
+			Old:     c.Old,
+			New:     c.New,
+			Subject: c.Subject,
+		}
+	case "pair":
+		return &Anomaly{
+			Type:    AnomalyPair,
+			Field:   c.Field,
+			Date:    c.Date,
+			Pair:    c.Pair,
+			Old:     c.Old,
+			New:     c.New,
+			Subject: c.Subject,
+		}
+	case "date":
+		return &Anomaly{
+			Type:    AnomalyDate,
+			Field:   c.Field,
+			Date:    c.Date,
+			Pair:    c.Pair,
+			Old:     c.Old,
+			New:     c.New,
+			Subject: c.Subject,
+		}
+	case "subgroup":
+		return &Anomaly{
+			Type:    AnomalySubgroup,
+			Field:   c.Field,
+			Date:    c.Date,
+			Pair:    c.Pair,
+			Old:     c.Old,
+			New:     c.New,
+			Subject: c.Subject,
+		}
 	default:
 		return nil
 	}
@@ -223,6 +267,14 @@ func (e *DiffEngine) buildAnnouncement(anomalies []Anomaly) string {
 			text += fmt.Sprintf("🔄 %s, %d-я пара — замена: %s → %s\n", dateStr, a.Pair, a.Old, a.New)
 		case AnomalyCancel:
 			text += fmt.Sprintf("❌ %s, %d-я пара — %s ОТМЕНЕНА\n", dateStr, a.Pair, a.Subject)
+		case AnomalyTeacher:
+			text += fmt.Sprintf("\U0001F9D1 %s, %d-я пара — %s. Преподаватель: %s → %s\n", dateStr, a.Pair, a.Subject, a.Old, a.New)
+		case AnomalyPair:
+			text += fmt.Sprintf("🕐 %s — %s. Номер пары: %s → %s\n", dateStr, a.Subject, a.Old, a.New)
+		case AnomalyDate:
+			text += fmt.Sprintf("📅 %s, %d-я пара — %s. Дата: %s → %s\n", dateStr, a.Pair, a.Subject, a.Old, a.New)
+		case AnomalySubgroup:
+			text += fmt.Sprintf("👥 %s, %d-я пара — %s. Подгруппа: %s → %s\n", dateStr, a.Pair, a.Subject, a.Old, a.New)
 		}
 	}
 	text += "\nНе перепутайте 👆"

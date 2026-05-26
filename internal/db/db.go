@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -31,8 +32,9 @@ func New(dbPath string) (*DB, error) {
 		conn.SetMaxOpenConns(1)
 		conn.SetMaxIdleConns(1)
 	} else {
-		conn.SetMaxOpenConns(10)
-		conn.SetMaxIdleConns(10)
+		conn.SetMaxOpenConns(4)
+		conn.SetMaxIdleConns(4)
+		conn.SetConnMaxLifetime(30 * time.Minute)
 	}
 
 	if _, err := conn.Exec("PRAGMA journal_mode=WAL;"); err != nil {

@@ -1,31 +1,16 @@
 import { useState, useMemo } from 'react'
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { Bot, MessageSquare, Shield, FileText, BarChart3, Calendar, Settings, Send, LogOut, Menu, Sun, Moon, X, Users } from 'lucide-react'
+import { LogOut, Menu, Sun, Moon, X } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
+import { navItems, titleMap } from '../shared/constants/navigation'
+import { useTheme } from '../shared/hooks/useTheme'
 import ErrorBoundary from './ErrorBoundary'
 import Toast from './Toast'
 
-const nav = [
-  { to: '/stats', icon: BarChart3, label: 'Статистика' },
-  { to: '/groups', icon: Users, label: 'Группы' },
-  { to: '/topics', icon: MessageSquare, label: 'Топики' },
-  { to: '/permissions', icon: Shield, label: 'Действия' },
-  { to: '/prompts', icon: FileText, label: 'Промпты' },
-  { to: '/settings', icon: Settings, label: 'Настройки' },
-  { to: '/send-message', icon: Send, label: 'Отправить' },
-  { to: '/schedule', icon: Calendar, label: 'Расписание' },
-]
-
 function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
-  const [dark, setDark] = useState(true)
+  const { dark, toggleTheme } = useTheme()
   const clearToken = useAuthStore((s) => s.clearToken)
   const navigate = useNavigate()
-
-  const toggleTheme = () => {
-    const next = !dark
-    setDark(next)
-    document.documentElement.setAttribute('data-theme', next ? '' : 'light')
-  }
 
   const logout = async () => {
     const token = useAuthStore.getState().token
@@ -35,9 +20,7 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         })
-      } catch {
-        // Ignore network errors — local session cleared regardless.
-      }
+      } catch { /* ignore */ }
     }
     clearToken()
     navigate('/login')
@@ -46,11 +29,10 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
   return (
     <>
       <div style={{ padding: '1rem', borderBottom: '1px solid var(--glass-border)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <Bot size={24} color="var(--accent)" />
         <span style={{ fontWeight: 600, fontSize: '1.1rem' }}>GroupBot</span>
       </div>
       <nav style={{ flex: 1, padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-        {nav.map(({ to, icon: Icon, label }) => (
+        {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink key={to} to={to} end={to === '/'} onClick={onNavClick}
             style={({ isActive }) => ({
               display: 'flex', alignItems: 'center', gap: '0.6rem',
@@ -73,17 +55,6 @@ function SidebarContent({ onNavClick }: { onNavClick?: () => void }) {
       </div>
     </>
   )
-}
-
-const titleMap: Record<string, string> = {
-  '/stats': 'Статистика',
-  '/groups': 'Группы',
-  '/topics': 'Топики',
-  '/permissions': 'Действия',
-  '/prompts': 'Промпты',
-  '/settings': 'Настройки',
-  '/send-message': 'Отправить сообщение',
-  '/schedule': 'Расписание',
 }
 
 export default function Layout() {

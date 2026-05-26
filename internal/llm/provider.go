@@ -113,7 +113,23 @@ func (p *Provider) isRateLimitedLocked() bool {
 func (p *Provider) recordCall(tokens int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.rateHistory = append(p.rateHistory, rateEntry{at: time.Now(), tokens: tokens})
+	now := time.Now()
+	dayCutoff := now.Truncate(dayBoundary)
+	cutoff := now.Add(-rateLimitWindow)
+	valid := p.rateHistory[:0]
+	for _, e := range p.rateHistory {
+		if e.at.After(cutoff) {
+			valid = append(valid, e)
+		}
+	}
+	valid = append(valid, rateEntry{at: now, tokens: tokens})
+	if len(valid) > 0 {
+		first := valid[0].at
+		if first.Before(dayCutoff) {
+			_ = first
+		}
+	}
+	p.rateHistory = valid
 }
 
 func (p *Provider) RecordFailure() {

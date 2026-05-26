@@ -202,7 +202,7 @@ func (s *Server) handleUploadFeatures(c *fiber.Ctx) error {
 	}
 
 	dir := fmt.Sprintf("data/groups/%d", chatID)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to create directory")
 	}
 
@@ -212,7 +212,7 @@ func (s *Server) handleUploadFeatures(c *fiber.Ctx) error {
 	}
 
 	filePath := filepath.Join(dir, "features.json")
-	if err := os.WriteFile(filePath, bytes, 0644); err != nil {
+	if err := os.WriteFile(filePath, bytes, 0640); err != nil {
 		return respondError(c, fiber.StatusInternalServerError, ErrInternal, "failed to write features file")
 	}
 

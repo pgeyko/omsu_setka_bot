@@ -90,7 +90,7 @@ func isBotMention(msg *models.Message) bool {
 			if e.Type == models.MessageEntityTypeMention {
 				if e.Offset >= 0 && e.Offset+e.Length <= len(u16) {
 					mention := string(utf16.Decode(u16[e.Offset : e.Offset+e.Length]))
-					if strings.EqualFold(mention, "@"+botUsername) {
+					if strings.EqualFold(mention, "@"+app.BotUsername) {
 						return true
 					}
 				}
@@ -106,7 +106,7 @@ func isBotMention(msg *models.Message) bool {
 		return true
 	}
 
-	atBot := "@" + botUsername
+	atBot := "@" + app.BotUsername
 	if msg.Text != "" && strings.Contains(strings.ToLower(msg.Text), strings.ToLower(atBot)) {
 		return true
 	}
@@ -197,8 +197,8 @@ func registerWithSetka(ctx context.Context, cfg *config.Config) {
 	}
 
 	data, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/api/v1/admin/webhooks", cfg.Setka.BaseURL),
+	req, err := http.NewRequestWithContext(ctx, "PUT",
+		fmt.Sprintf("%s/api/v1/admin/webhooks/by-url", cfg.Setka.BaseURL),
 		bytes.NewReader(data))
 	if err != nil {
 		slog.Error("failed to create setka registration request", "error", err)

@@ -81,6 +81,16 @@ type PersonaProvider interface {
 	SystemPrompt() string
 }
 
+// LLMClient is the public interface consumed by external packages.
+type LLMClient interface {
+	Call(ctx context.Context, reqType, systemExtra, userPrompt string, requiresVision bool) (*Response, error)
+	CallGroupHistory(ctx context.Context, chatID int64, reqType, systemExtra string, history []AgentMessage, tools []Tool, requiresVision bool) (*Response, error)
+	CallWithSystemHistory(ctx context.Context, chatID int64, reqType, systemPrompt string, history []AgentMessage, requiresVision bool) (*Response, error)
+	CallWithSystemPrompt(ctx context.Context, reqType, systemPrompt, userPrompt string) (*Response, error)
+	HasMultimodalProvider() bool
+	SetSkipFallbackModel(skip bool)
+}
+
 type Client struct {
 	agentChain        *Chain
 	simpleChain       *Chain
@@ -246,7 +256,7 @@ func (c *Client) callHistoryWithSystem(ctx context.Context, chatID int64, reqTyp
 					"input_tokens", resp.InputTokens,
 					"output_tokens", resp.OutputTokens,
 					"tool_calls_len", len(resp.ToolCalls),
-					"content", resp.Content,
+					"content_truncated", util.Truncate(resp.Content, logTruncateLen),
 				)
 				if err := c.tracker.LogRequest(ctx, reqType, provider.Name, model, resp.InputTokens, resp.OutputTokens, 0); err != nil {
 					return resp, fmt.Errorf("llm ok but failed to log: %w", err)
@@ -311,6 +321,7 @@ func (c *Client) callWhisper(ctx context.Context, provider *Provider, model stri
 	part, err := w.CreateFormFile("file", "audio.ogg")
 	if err != nil {
 		slog.Warn("whisper create form file", "error", err)
+		return nil, fmt.Errorf("whisper create form file failed: %w", err)
 	}
 	if _, err := part.Write(audioData); err != nil {
 		slog.Warn("whisper write audio", "error", err)
@@ -436,7 +447,7 @@ func stripCJK(s string) string {
 }
 
 func (c *Client) buildGeminiRequest(ctx context.Context, provider *Provider, model, systemContent string, history []AgentMessage, tools []Tool) (*http.Request, error) {
-	apiURL := provider.BaseURL + "/v1beta/models/" + model + ":generateContent?key=" + provider.APIKey
+	apiURL := provider.BaseURL + "/v1beta/models/" + model + ":generateContent"
 
 	geminiReq := map[string]interface{}{
 		"system_instruction": map[string]interface{}{
@@ -465,7 +476,12 @@ func (c *Client) buildGeminiRequest(ctx context.Context, provider *Provider, mod
 	if err != nil {
 		return nil, fmt.Errorf("gemini marshal: %w", err)
 	}
-	return http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(b))
+	if err != nil {
+		return nil, fmt.Errorf("gemini request: %w", err)
+	}
+	req.Header.Set("x-goog-api-key", provider.APIKey)
+	return req, nil
 }
 
 func (c *Client) buildOpenAIRequest(ctx context.Context, provider *Provider, model, systemContent string, history []AgentMessage, tools []Tool) (*http.Request, error) {

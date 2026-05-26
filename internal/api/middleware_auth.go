@@ -1,11 +1,13 @@
 package api
 
 import (
+	"crypto/subtle"
 	"database/sql"
 	"log/slog"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"omsu_bot/internal/db"
@@ -18,6 +20,9 @@ type AuthMiddleware struct {
 }
 
 func NewAuthMiddleware(adminSecret, jwtSecret string, database *sql.DB) *AuthMiddleware {
+	if len(adminSecret) < 16 {
+		slog.Warn("admin_secret is too short, minimum 16 characters recommended")
+	}
 	return &AuthMiddleware{
 		jwtSecret:  []byte(jwtSecret),
 		adminToken: adminSecret,
@@ -39,7 +44,7 @@ func (m *AuthMiddleware) Login(c *fiber.Ctx) error {
 		return respondError(c, fiber.StatusBadRequest, ErrInvalidRequest, "invalid JSON body")
 	}
 
-	if req.Secret != m.adminToken {
+	if subtle.ConstantTimeCompare([]byte(req.Secret), []byte(m.adminToken)) != 1 {
 		return respondError(c, fiber.StatusUnauthorized, ErrInvalidRequest, "invalid admin_secret")
 	}
 
@@ -68,6 +73,19 @@ func (m *AuthMiddleware) Login(c *fiber.Ctx) error {
 	})
 }
 
+func (m *AuthMiddleware) LoginWithRateLimit() fiber.Handler {
+	return limiter.New(limiter.Config{
+		Max:        5,
+		Expiration: time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			return respondError(c, fiber.StatusTooManyRequests, ErrRateLimited, "too many login attempts")
+		},
+	})
+}
+
 func (m *AuthMiddleware) Logout(c *fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
@@ -81,7 +99,7 @@ func (m *AuthMiddleware) Logout(c *fiber.Ctx) error {
 
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		return m.jwtSecret, nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil || !token.Valid {
 		// Token already invalid — treat as logged out.
 		return respondSuccess(c, fiber.Map{"status": "ok"})
@@ -119,7 +137,7 @@ func (m *AuthMiddleware) RequireAuth(c *fiber.Ctx) error {
 
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		return m.jwtSecret, nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}))
 
 	if err != nil || !token.Valid {
 		return respondError(c, fiber.StatusUnauthorized, ErrInvalidToken, "invalid or expired token")

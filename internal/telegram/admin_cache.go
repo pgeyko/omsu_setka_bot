@@ -13,6 +13,7 @@ import (
 
 type adminCacheEntry struct {
 	isAdmin   bool
+	isOwner   bool
 	checkedAt time.Time
 }
 
@@ -55,10 +56,16 @@ func (ac *AdminCache) IsAdmin(ctx context.Context, chatID int64, userID int64) b
 	}
 
 	isAdmin := false
-	adminIDs := make(map[int64]bool)
+	now := time.Now()
 	for _, m := range members {
 		if uid := GetChatMemberUserID(m); uid != 0 {
-			adminIDs[uid] = true
+			isOwner := m.Type == models.ChatMemberTypeOwner
+			k := fmt.Sprintf("%d:%d", chatID, uid)
+			ac.cache[k] = adminCacheEntry{
+				isAdmin:   true,
+				isOwner:   isOwner,
+				checkedAt: now,
+			}
 			if uid == userID {
 				isAdmin = true
 			}
@@ -68,17 +75,8 @@ func (ac *AdminCache) IsAdmin(ctx context.Context, chatID int64, userID int64) b
 	ac.mu.Lock()
 	// Clean up old entries
 	for k, e := range ac.cache {
-		if time.Since(e.checkedAt) > 10*time.Minute {
+		if now.Sub(e.checkedAt) > 10*time.Minute {
 			delete(ac.cache, k)
-		}
-	}
-
-	// Cache true for all current admins
-	for uid := range adminIDs {
-		k := fmt.Sprintf("%d:%d", chatID, uid)
-		ac.cache[k] = adminCacheEntry{
-			isAdmin:   true,
-			checkedAt: time.Now(),
 		}
 	}
 
@@ -86,7 +84,7 @@ func (ac *AdminCache) IsAdmin(ctx context.Context, chatID int64, userID int64) b
 	if !isAdmin {
 		ac.cache[key] = adminCacheEntry{
 			isAdmin:   false,
-			checkedAt: time.Now(),
+			checkedAt: now,
 		}
 	}
 
@@ -99,21 +97,19 @@ func (ac *AdminCache) IsOwner(ctx context.Context, chatID int64, userID int64) b
 	if chatID == 0 || ac.bot == nil {
 		return false
 	}
-	members, err := ac.bot.GetChatAdministrators(ctx, &tgbot.GetChatAdministratorsParams{
-		ChatID: chatID,
-	})
-	if err != nil {
-		slog.Error("failed to get admins for owner check", "error", err, "chat_id", chatID)
-		return false
+	key := fmt.Sprintf("%d:%d", chatID, userID)
+	ac.mu.RLock()
+	entry, ok := ac.cache[key]
+	ac.mu.RUnlock()
+	if ok && time.Since(entry.checkedAt) < 10*time.Minute {
+		return entry.isOwner
 	}
-	for _, m := range members {
-		if m.Type == models.ChatMemberTypeOwner {
-			if uid := GetChatMemberUserID(m); uid == userID {
-				return true
-			}
-		}
-	}
-	return false
+	// Cache miss — delegate to IsAdmin which populates the cache with all admins
+	ac.IsAdmin(ctx, chatID, userID)
+	ac.mu.RLock()
+	entry, ok = ac.cache[key]
+	ac.mu.RUnlock()
+	return ok && entry.isOwner
 }
 
 func GetChatMemberUserID(m models.ChatMember) int64 {

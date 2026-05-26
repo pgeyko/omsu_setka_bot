@@ -1,8 +1,7 @@
-package handlers
+package handler
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,12 +18,12 @@ import (
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"omsu_bot/internal/db"
+	omsudb "omsu_bot/internal/db"
 	"omsu_bot/internal/telegram"
 )
 
 type SettingsHandler struct {
-	db               *sql.DB
+	db               *omsudb.DB
 	sessionStore     *telegram.SessionStore
 	adminCache       *telegram.AdminCache
 	setkaBaseURL     string
@@ -41,9 +40,9 @@ type featuresCacheEntry struct {
 	expiresAt time.Time
 }
 
-func NewSettingsHandler(db *sql.DB, sessionStore *telegram.SessionStore, adminCache *telegram.AdminCache, setkaBaseURL, setkaAdminKey, webhookSecret, setkaPublicURL string, globalVoice, globalPhoto func() bool) *SettingsHandler {
+func NewSettingsHandler(database *omsudb.DB, sessionStore *telegram.SessionStore, adminCache *telegram.AdminCache, setkaBaseURL, setkaAdminKey, webhookSecret, setkaPublicURL string, globalVoice, globalPhoto func() bool) *SettingsHandler {
 	return &SettingsHandler{
-		db:               db,
+		db:               database,
 		sessionStore:     sessionStore,
 		adminCache:       adminCache,
 		setkaBaseURL:     setkaBaseURL,
@@ -69,8 +68,7 @@ type setkaBFFResponse struct {
 
 func (h *SettingsHandler) isAuthorized(ctx context.Context, chatID int64, userID int64) bool {
 	// First check superadmin
-	d := &db.DB{DB: h.db}
-	isSuper, err := d.IsSuperadmin(ctx, userID)
+	isSuper, err := h.db.IsSuperadmin(ctx, userID)
 	if err == nil && isSuper {
 		return true
 	}
@@ -256,7 +254,7 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 			slog.Error("failed to unlink Setka group", "error", err, "chat_id", chatID)
 		}
 		go func() {
-			_, _ = telegram.RegisterWebhooksWithSetka(context.Background(), h.db, h.setkaBaseURL, h.setkaAdminKey, h.webhookSecret, h.setkaPublicURL)
+			_, _ = telegram.RegisterWebhooksWithSetka(context.Background(), h.db.DB, h.setkaBaseURL, h.setkaAdminKey, h.webhookSecret, h.setkaPublicURL)
 		}()
 		h.showSetkaScreen(ctx, b, chatID, messageID)
 	case strings.HasPrefix(action, "setka_sel:"):
@@ -268,7 +266,7 @@ func (h *SettingsHandler) HandleCallbackQuery(ctx context.Context, b *tgbot.Bot,
 				slog.Error("failed to update omsu_group_id", "error", err, "chat_id", chatID)
 			}
 			go func() {
-		_, _ = telegram.RegisterWebhooksWithSetka(context.Background(), h.db, h.setkaBaseURL, h.setkaAdminKey, h.webhookSecret, h.setkaPublicURL)
+		_, _ = telegram.RegisterWebhooksWithSetka(context.Background(), h.db.DB, h.setkaBaseURL, h.setkaAdminKey, h.webhookSecret, h.setkaPublicURL)
 			}()
 		}
 		h.sessionStore.Clear(chatID, userID)

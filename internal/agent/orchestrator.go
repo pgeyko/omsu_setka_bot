@@ -21,9 +21,14 @@ type AdminChecker interface {
 	IsOwner(ctx context.Context, chatID int64, userID int64) bool
 }
 
+type ToolExecutorInterface interface {
+	SetMessageContext(sourceMessageID, replyToMessageID int)
+	Execute(ctx context.Context, chatID int64, name string, arguments string) (string, error)
+}
+
 type AgentOrchestrator struct {
-	llmClient        *llm.Client
-	executor         *ToolExecutor
+	llmClient        llm.LLMClient
+	executor         ToolExecutorInterface
 	adminChecker     AdminChecker
 	permService      *permissions.Service
 	featuresCache    sync.Map // key=chatID, value=featuresCacheEntry
@@ -40,7 +45,7 @@ type kbCacheEntry struct {
 	expiresAt time.Time
 }
 
-func NewAgentOrchestrator(llmClient *llm.Client, executor *ToolExecutor, adminChecker AdminChecker, permService *permissions.Service) *AgentOrchestrator {
+func NewAgentOrchestrator(llmClient llm.LLMClient, executor ToolExecutorInterface, adminChecker AdminChecker, permService *permissions.Service) *AgentOrchestrator {
 	return &AgentOrchestrator{
 		llmClient:    llmClient,
 		executor:     executor,
@@ -363,20 +368,9 @@ func injectProtocolNames(t llm.Tool) llm.Tool {
 		return t
 	}
 	desc := t.Description
-	desc += fmt.Sprintf(" Доступные протоколы: %s", stringsJoin(names, ", "))
+	desc += fmt.Sprintf(" Доступные протоколы: %s", strings.Join(names, ", "))
 	t.Description = desc
 	return t
-}
-
-func stringsJoin(strs []string, sep string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	result := strs[0]
-	for i := 1; i < len(strs); i++ {
-		result += sep + strs[i]
-	}
-	return result
 }
 
 // canExecuteTool checks whether a user is allowed to execute a given tool.

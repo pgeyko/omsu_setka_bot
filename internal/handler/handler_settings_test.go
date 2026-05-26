@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 )
 
 func TestSettingsHandler_Authorization(t *testing.T) {
+	t.Parallel()
 	database, err := db.New(":memory:")
 	if err != nil {
 		t.Fatalf("failed to create db: %v", err)
@@ -38,7 +39,7 @@ func TestSettingsHandler_Authorization(t *testing.T) {
 	sessionStore := telegram.NewSessionStore()
 	adminCache := telegram.NewAdminCache(nil, 12345)
 
-	h := NewSettingsHandler(database.DB, sessionStore, adminCache, "", "", "", "", nil, nil)
+	h := NewSettingsHandler(database, sessionStore, adminCache, "", "", "", "", nil, nil)
 
 	// 1. Superadmin should be authorized
 	if !h.isAuthorized(ctx, 12345, 777) {
@@ -52,6 +53,7 @@ func TestSettingsHandler_Authorization(t *testing.T) {
 }
 
 func TestSettingsHandler_LoadSaveFeatures(t *testing.T) {
+	t.Parallel()
 	chatID := int64(999999)
 	defer os.RemoveAll(fmt.Sprintf("data/groups/%d", chatID))
 
@@ -59,7 +61,7 @@ func TestSettingsHandler_LoadSaveFeatures(t *testing.T) {
 	defer database.Close()
 
 	sessionStore := telegram.NewSessionStore()
-	h := NewSettingsHandler(database.DB, sessionStore, nil, "", "", "", "", nil, nil)
+	h := 	NewSettingsHandler(database, sessionStore, nil, "", "", "", "", nil, nil)
 
 	// Test default features
 	features := h.LoadFeatures(chatID)
@@ -84,11 +86,12 @@ func TestSettingsHandler_LoadSaveFeatures(t *testing.T) {
 }
 
 func TestSettingsHandler_HandleAdminInput(t *testing.T) {
+	t.Parallel()
 	database, _ := db.New(":memory:")
 	defer database.Close()
 
 	sessionStore := telegram.NewSessionStore()
-	h := NewSettingsHandler(database.DB, sessionStore, nil, "", "", "", "", nil, nil)
+	h := 	NewSettingsHandler(database, sessionStore, nil, "", "", "", "", nil, nil)
 
 	chatID := int64(888888)
 	userID := int64(111)

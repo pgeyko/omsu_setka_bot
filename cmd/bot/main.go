@@ -24,6 +24,7 @@ import (
 	tgbot "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 
 	"omsu_bot/internal/agent"
 	"omsu_bot/internal/api"
@@ -32,7 +33,7 @@ import (
 	"omsu_bot/internal/config"
 	omsudb "omsu_bot/internal/db"
 	"omsu_bot/internal/forwarder"
-	handlers "omsu_bot/internal/handler"
+	"omsu_bot/internal/handler"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/media"
 	"omsu_bot/internal/messages"
@@ -65,54 +66,25 @@ func (p *telegramPoster) Send(ctx context.Context, chatID int64, text string) er
 	return err
 }
 
-func main() {
-	configPath := "config.yaml"
-	if p := os.Getenv("CONFIG_PATH"); p != "" {
-		configPath = p
-	}
+const (
+	processedMediaGroupsTTL = 10 * time.Minute
+	mediaGroupMessagesTTL   = 30 * time.Minute
+)
 
-	cfg := config.Load(configPath)
-	setupLogger(cfg)
+type App struct {
+	BotStartTime         time.Time
+	BotUsername          string
+	ProviderCount        int
+	GlobalLLM            llm.LLMClient
+	ProcessedMediaGroups sync.Map
+	MediaGroupMessages   sync.Map
+}
 
-	// Set timezone for all time.Now() calls
-	if cfg.Timezone != "" {
-		os.Setenv("TZ", cfg.Timezone)
-		if _, err := time.LoadLocation("Local"); err != nil {
-			slog.Warn("invalid timezone", "tz", cfg.Timezone, "error", err)
-		} else {
-			slog.Info("timezone set", "tz", cfg.Timezone)
-		}
-	}
+var app = &App{
+	BotStartTime: time.Now(),
+}
 
-	database, err := omsudb.New(cfg.DB.Path)
-	if err != nil {
-		slog.Error("failed to open database", "error", err)
-		os.Exit(1)
-	}
-	defer database.Close()
-
-	if err := database.Migrate(); err != nil {
-		slog.Error("failed to migrate database", "error", err)
-		os.Exit(1)
-	}
-	database.StartCleanup(context.Background())
-
-	personaStore := persona.NewStore(database.DB)
-	if err := personaStore.Load(context.Background(), "prompts/persona.md"); err != nil {
-		slog.Error("failed to load persona", "error", err)
-		os.Exit(1)
-	}
-
-	prompts, err := llm.NewPromptRegistry("prompts")
-	if err != nil {
-		slog.Error("failed to load prompts", "error", err)
-		os.Exit(1)
-	}
-
-	cmdReg := handlers.NewCommandRegistry()
-
-	botMessages := messages.Load("messages.yaml")
-
+func initLLM(cfg *config.Config, db *omsudb.DB, personaStore *persona.Store, prompts *llm.PromptRegistry) (agentChain, simpleChain, visionChain, audioChain, diagChain *llm.Chain, client *llm.Client) {
 	var agentProviders, simpleProviders, visionProviders, audioProviders []*llm.Provider
 	for _, pcfg := range cfg.LLM.Providers {
 		baseURL := pcfg.BaseURL
@@ -160,39 +132,89 @@ func main() {
 		}
 	}
 
-	// Sort providers within each chain by priority (ascending)
 	sort.Slice(agentProviders, func(i, j int) bool { return agentProviders[i].Priority < agentProviders[j].Priority })
 	sort.Slice(simpleProviders, func(i, j int) bool { return simpleProviders[i].Priority < simpleProviders[j].Priority })
 	sort.Slice(visionProviders, func(i, j int) bool { return visionProviders[i].Priority < visionProviders[j].Priority })
 	sort.Slice(audioProviders, func(i, j int) bool { return audioProviders[i].Priority < audioProviders[j].Priority })
 
-	agentChain := llm.NewChain(agentProviders)
-	simpleChain := llm.NewChain(simpleProviders)
-	visionChain := llm.NewChain(visionProviders)
-	audioChain := llm.NewChain(audioProviders)
+	agentChain = llm.NewChain(agentProviders)
+	simpleChain = llm.NewChain(simpleProviders)
+	visionChain = llm.NewChain(visionProviders)
+	audioChain = llm.NewChain(audioProviders)
 
-	// Combined chain for API diagnostics (shows all providers)
 	var allProviders []*llm.Provider
 	allProviders = append(allProviders, agentProviders...)
 	allProviders = append(allProviders, simpleProviders...)
 	allProviders = append(allProviders, visionProviders...)
 	allProviders = append(allProviders, audioProviders...)
-	llmChain := llm.NewChain(allProviders)
+	diagChain = llm.NewChain(allProviders)
 
-	tracker := llm.NewTracker(database.DB, int64(cfg.LLM.DailyTokenLimit), 0.8)
-	llmClient := llm.NewClient(agentChain, simpleChain, visionChain, audioChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
-	globalLLM = llmClient
+	tracker := llm.NewTracker(db.DB, int64(cfg.LLM.DailyTokenLimit), 0.8)
+	client = llm.NewClient(agentChain, simpleChain, visionChain, audioChain, tracker, personaStore, prompts, cfg.LLM.RequestTimeoutSec, cfg.LLM.SkipFallbackModel)
+	app.ProviderCount = len(allProviders)
+	return
+}
+
+func main() {
+	configPath := "config.yaml"
+	if p := os.Getenv("CONFIG_PATH"); p != "" {
+		configPath = p
+	}
+
+	cfg := config.Load(configPath)
+	setupLogger(cfg)
+
+	// Set timezone for all time.Now() calls
+	if cfg.Timezone != "" {
+		os.Setenv("TZ", cfg.Timezone)
+		if _, err := time.LoadLocation("Local"); err != nil {
+			slog.Warn("invalid timezone", "tz", cfg.Timezone, "error", err)
+		} else {
+			slog.Info("timezone set", "tz", cfg.Timezone)
+		}
+	}
+
+	database, err := omsudb.New(cfg.DB.Path)
+	if err != nil {
+		slog.Error("failed to open database", "error", err)
+		os.Exit(1)
+	}
+	defer database.Close()
+
+	if err := database.Migrate(); err != nil {
+		slog.Error("failed to migrate database", "error", err)
+		os.Exit(1)
+	}
+	database.StartCleanup(context.Background())
+
+	personaStore := persona.NewStore(database.DB)
+	if err := personaStore.Load(context.Background(), "prompts/persona.md"); err != nil {
+		slog.Error("failed to load persona", "error", err)
+		os.Exit(1)
+	}
+
+	prompts, err := llm.NewPromptRegistry("prompts")
+	if err != nil {
+		slog.Error("failed to load prompts", "error", err)
+		os.Exit(1)
+	}
+
+	cmdReg := handler.NewCommandRegistry()
+
+	botMessages := messages.Load("messages.yaml")
+
+	_, _, _, _, llmChain, llmClient := initLLM(cfg, database, personaStore, prompts)
+	app.GlobalLLM = llmClient
 
 	tgBot, err := tgbot.New(cfg.Telegram.Token)
 	if err != nil {
 		slog.Error("failed to create Telegram bot, continuing without bot", "error", err)
 	}
 
-	providerCount = len(allProviders)
 	if tgBot != nil {
 		me, err := tgBot.GetMe(context.Background())
 		if err == nil {
-			botUsername = me.Username
+			app.BotUsername = me.Username
 		}
 
 		// Register commands so they appear in Telegram's command menu
@@ -217,8 +239,8 @@ func main() {
 	slog.Info("GroupBot started",
 		"group_id", cfg.Telegram.GroupID,
 		"persona", personaStore.Get().Name,
-		"providers", providerCount,
-		"bot_username", botUsername,
+		"providers", app.ProviderCount,
+		"bot_username", app.BotUsername,
 	)
 
 	var poster *telegramPoster
@@ -226,7 +248,7 @@ func main() {
 		poster = &telegramPoster{b: tgBot, chatID: cfg.Telegram.GroupID}
 	}
 	diffEngine := schedule.NewDiffEngine(database.DB, poster, llmClient, schedule.NewAnnouncer(llmClient, prompts))
-	webhookHandler := handlers.NewWebhookHandler(diffEngine, database.DB, cfg.Webhook.ScheduleSecret, cfg.Webhook.AnnounceThreadID)
+	webhookHandler := handler.NewWebhookHandler(diffEngine, database.DB, cfg.Webhook.ScheduleSecret, cfg.Webhook.AnnounceThreadID)
 
 	var botSender api.BotSender
 	if poster != nil {
@@ -239,22 +261,24 @@ func main() {
 		personaStore,
 		prompts,
 		authMw,
-		cfg.SwaggerEnabled,
-		cfg.AppEnv,
-		cfg.API.CORSOrigin,
+		&api.ServerConfig{
+			SwaggerEnabled:     cfg.SwaggerEnabled,
+			AppEnv:             cfg.AppEnv,
+			CORSOrigin:         cfg.API.CORSOrigin,
+			SkipFallbackModel:  cfg.LLM.SkipFallbackModel,
+			TelegramGroupID:    cfg.Telegram.GroupID,
+			RateLimitGeneral:   cfg.RateLimit.APIGeneral,
+			RateLimitSearch:    cfg.RateLimit.APISearch,
+			RateLimitWindowSec: cfg.RateLimit.APIWindow,
+			SetkaBaseURL:       cfg.Setka.BaseURL,
+			SetkaAdminKey:      cfg.Setka.AdminKey,
+			SetkaPublicURL:     cfg.Setka.PublicURL,
+			WebhookSecret:      cfg.Webhook.ScheduleSecret,
+			ListenAddr:         cfg.API.Listen,
+		},
 		llmChain,
 		llmClient,
 		botSender,
-		cfg.Telegram.GroupID,
-		cfg.LLM.SkipFallbackModel,
-		cfg.RateLimit.APIGeneral,
-		cfg.RateLimit.APISearch,
-		cfg.RateLimit.APIWindow,
-		cfg.Setka.BaseURL,
-		cfg.Setka.AdminKey,
-		cfg.Setka.PublicURL,
-		cfg.Webhook.ScheduleSecret,
-		cfg.API.Listen,
 	)
 	// Restore persisted runtime config (skip_fallback_model, global_voice, global_photo)
 	// overriding the defaults set from environment variables.
@@ -264,20 +288,38 @@ func main() {
 	apiServer.App.Get("/admin/*", func(c *fiber.Ctx) error {
 		return c.SendFile("./admin/dist/index.html")
 	})
-	apiServer.App.Post("/webhook/schedule", webhookHandler.Handle)
+	apiServer.App.Post("/webhook/schedule", limiter.New(limiter.Config{
+		Max:        10,
+		Expiration: 1 * time.Minute,
+		KeyGenerator: func(c *fiber.Ctx) string {
+			return c.IP()
+		},
+		LimitReached: func(c *fiber.Ctx) error {
+			slog.Warn("webhook rate limit exceeded", "ip", c.IP())
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{"error": "rate limit exceeded"})
+		},
+	}), webhookHandler.Handle)
 
+	sighupCtx, sighupCancel := context.WithCancel(context.Background())
+	defer sighupCancel()
 	go func() {
 		sigHup := make(chan os.Signal, 1)
 		signal.Notify(sigHup, syscall.SIGHUP)
-		for range sigHup {
-			slog.Info("SIGHUP received, reloading prompts and protocols")
-			if err := prompts.Reload(); err != nil {
-				slog.Error("failed to reload prompts", "error", err)
-			} else {
-				slog.Info("prompts reloaded successfully")
+		for {
+			select {
+			case <-sigHup:
+				slog.Info("SIGHUP received, reloading prompts and protocols")
+				if err := prompts.Reload(); err != nil {
+					slog.Error("failed to reload prompts", "error", err)
+				} else {
+					slog.Info("prompts reloaded successfully")
+				}
+				agent.ReloadProtocols()
+				slog.Info("protocols reloaded")
+			case <-sighupCtx.Done():
+				signal.Stop(sigHup)
+				return
 			}
-			agent.ReloadProtocols()
-			slog.Info("protocols reloaded")
 		}
 	}()
 
@@ -285,16 +327,18 @@ func main() {
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for range t.C {
-			cutoff := time.Now().Add(-10 * time.Minute)
-			processedMediaGroups.Range(func(key, value interface{}) bool {
+			cutoff := time.Now().Add(-processedMediaGroupsTTL)
+			app.ProcessedMediaGroups.Range(func(key, value interface{}) bool {
 				if value.(time.Time).Before(cutoff) {
-					processedMediaGroups.Delete(key)
+					app.ProcessedMediaGroups.Delete(key)
 				}
 				return true
 			})
-			// Also clean mediaGroupMessages older than 30 minutes
-			mediaGroupMessages.Range(func(key, value interface{}) bool {
-				mediaGroupMessages.Delete(key)
+			mediaCutoff := time.Now().Add(-mediaGroupMessagesTTL)
+			app.MediaGroupMessages.Range(func(key, value interface{}) bool {
+				if entry, ok := value.(*agent.MediaGroupEntry); ok && entry.CreatedAt.Before(mediaCutoff) {
+					app.MediaGroupMessages.Delete(key)
+				}
 				return true
 			})
 		}
@@ -305,12 +349,13 @@ func main() {
 		fwd := forwarder.New(tgBot, personaStore)
 		summaryBuf := buffer.NewSummaryBuffer(database.DB, 200)
 		usernameCache := telegram.NewUsernameCache()
-		h := handlers.NewHandler(classif, fwd, tgBot, cfg.Telegram.Token, database.DB, summaryBuf, usernameCache)
+		h := handler.NewHandler(classif, fwd, tgBot, cfg.Telegram.Token, database, summaryBuf, usernameCache)
 
 		sessionStore := telegram.NewSessionStore()
+		sessionStore.StartCleanup(context.Background())
 		adminCache := telegram.NewAdminCache(tgBot, cfg.Telegram.GroupID)
-		settingsHandler := handlers.NewSettingsHandler(
-			database.DB,
+		settingsHandler := handler.NewSettingsHandler(
+			database,
 			sessionStore,
 			adminCache,
 			cfg.Setka.BaseURL,
@@ -322,24 +367,24 @@ func main() {
 		)
 
 		permService := permissions.NewService(database.DB)
-		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache, &mediaGroupMessages, classif)
+		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache, &app.MediaGroupMessages, classif)
 		orchestrator := agent.NewAgentOrchestrator(llmClient, toolExecutor, adminCache, permService)
-		mentionHandler := handlers.NewMentionHandler(orchestrator, database.DB, botUsername)
-		antispam := handlers.NewAntispam(settingsHandler.LoadFeatures)
+		mentionHandler := handler.NewMentionHandler(orchestrator, database.DB, app.BotUsername)
+		antispam := handler.NewAntispam(settingsHandler.LoadFeatures)
 		mediaProcessor := media.NewMediaProcessor(tgBot, cfg.Telegram.Token, llmClient, prompts)
 
 		botDisplayName := personaStore.Get().Name
 		helpHeader := botMessages.Format(botMessages.HelpHeader, map[string]string{"name": botDisplayName})
-		helpText := helpHeader + "\n\n" + botMessages.HelpCommands + "\n\n" + botMessages.Format(botMessages.HelpDetail, map[string]string{"username": botUsername})
+		helpText := helpHeader + "\n\n" + botMessages.HelpCommands + "\n\n" + botMessages.Format(botMessages.HelpDetail, map[string]string{"username": app.BotUsername})
 
 		// Fallback text for /start when LLM is unavailable — loaded from prompts/start_fallback.txt.
 		startFallback := strings.ReplaceAll(prompts.Get("start_fallback"), "{name}", botDisplayName)
 
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/start", tgbot.MatchTypeExact, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if database.IsGroupActive(ctx, update.Message.Chat.ID) {
-				if globalLLM != nil {
+				if app.GlobalLLM != nil {
 					greetingPrompt := strings.ReplaceAll(prompts.Get("greeting"), "{name}", botDisplayName)
-				resp, err := globalLLM.Call(ctx, "diagnostic", "", greetingPrompt, false)
+				resp, err := app.GlobalLLM.Call(ctx, "diagnostic", "", greetingPrompt, false)
 				if err == nil {
 					resp.Content = util.StripMarkdown(resp.Content)
 					b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: update.Message.Chat.ID, MessageThreadID: update.Message.MessageThreadID, Text: resp.Content, ParseMode: models.ParseModeHTML})
@@ -435,7 +480,7 @@ func main() {
 		})
 
 		// Rate-limit middleware for Telegram handlers (P1#6)
-		tgRateLimit := handlers.NewMiddleware(cfg.RateLimit.GlobalPerUserPerMin)
+		tgRateLimit := handler.NewMiddleware(cfg.RateLimit.GlobalPerUserPerMin)
 
 		// Active groups messaging
 		tgBot.RegisterHandlerMatchFunc(func(update *models.Update) bool {
@@ -482,12 +527,10 @@ func main() {
 
 			// Track media group messages regardless of photo processing — needed for album forwarding
 			if msg.MediaGroupID != "" {
-				mediaGroupMu.Lock()
-				existing, _ := mediaGroupMessages.Load(msg.MediaGroupID)
-				var items []agent.MediaGroupItem
-				if existing != nil {
-					items = existing.([]agent.MediaGroupItem)
-				}
+				now := time.Now()
+				entry := &agent.MediaGroupEntry{CreatedAt: now}
+				val, loaded := app.MediaGroupMessages.LoadOrStore(msg.MediaGroupID, entry)
+				entry = val.(*agent.MediaGroupEntry)
 				fileID := ""
 				mediaType := ""
 				switch {
@@ -504,14 +547,19 @@ func main() {
 					fileID = msg.Audio.FileID
 					mediaType = "audio"
 				}
-				items = append(items, agent.MediaGroupItem{
+				entry.Mu.Lock()
+				entry.Items = append(entry.Items, agent.MediaGroupItem{
 					MessageID: msg.ID,
 					FileID:    fileID,
 					Caption:   msg.Caption,
 					MediaType: mediaType,
 				})
-				mediaGroupMessages.Store(msg.MediaGroupID, items)
-				mediaGroupMu.Unlock()
+				itemsCount := len(entry.Items)
+				entry.Mu.Unlock()
+
+				if !loaded {
+					entry.CreatedAt = now
+				}
 
 				// Persist to DB so album forwarding survives restarts
 				database.DB.ExecContext(ctx,
@@ -519,7 +567,7 @@ func main() {
 				 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 					msg.MediaGroupID, msg.ID, msg.Chat.ID, fileID, msg.Caption, mediaType,
 				)
-				slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", len(items), "media_type", mediaType)
+				slog.Debug("media group tracked", "group_id", msg.MediaGroupID, "msg_id", msg.ID, "items_count", itemsCount, "media_type", mediaType)
 			}
 
 			if len(msg.Photo) > 0 && apiServer.GlobalPhotoProcessing.Load() && features["enable_photo_processing"] {
@@ -527,11 +575,11 @@ func main() {
 
 				// Skip duplicate OCR in already-processed media groups
 				if msg.MediaGroupID != "" {
-					if stored, seen := processedMediaGroups.LoadOrStore(msg.MediaGroupID, time.Now()); seen {
+					if stored, seen := app.ProcessedMediaGroups.LoadOrStore(msg.MediaGroupID, time.Now()); seen {
 						if time.Since(stored.(time.Time)) < 10*time.Minute {
 							shouldOCR = false
 						} else {
-							processedMediaGroups.Store(msg.MediaGroupID, time.Now())
+							app.ProcessedMediaGroups.Store(msg.MediaGroupID, time.Now())
 						}
 					}
 				}
@@ -644,14 +692,6 @@ func main() {
 	apiServer.App.Shutdown()
 }
 
-var (
-	botStartTime         = time.Now()
-	botUsername          string
-	providerCount        int
-	globalLLM            *llm.Client
-	processedMediaGroups sync.Map   // key=media_group_id, value=time.Time — dedup OCR per group
-	mediaGroupMessages   sync.Map   // key=media_group_id, value=[]agent.MediaGroupItem
-	mediaGroupMu         sync.Mutex // guards Load+append+Store for mediaGroupMessages
-)
+
 
 

@@ -81,7 +81,7 @@ func (s *Server) handleGetTopics(c *fiber.Ctx) error {
 	if groupIDStr != "" {
 		groupID, _ = strconv.ParseInt(groupIDStr, 10, 64)
 	} else {
-		groupID = s.TelegramGroupID
+		groupID = s.Config.TelegramGroupID
 	}
 
 	limit, offset := parsePagination(c)
@@ -146,7 +146,7 @@ func (s *Server) handleCreateTopic(c *fiber.Ctx) error {
 		if groupIDStr != "" {
 			groupID, _ = strconv.ParseInt(groupIDStr, 10, 64)
 		} else {
-			groupID = s.TelegramGroupID
+			groupID = s.Config.TelegramGroupID
 		}
 	}
 

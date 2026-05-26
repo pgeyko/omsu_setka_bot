@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"context"
@@ -98,8 +98,13 @@ func (h *WebhookHandler) Handle(c *fiber.Ctx) error {
 		"timestamp", timestamp,
 		"changes", len(payload.Changes),
 	)
+	bodyPreview := string(body)
+	if len(bodyPreview) > 500 {
+		bodyPreview = bodyPreview[:500] + "..."
+	}
 	slog.Debug("webhook payload",
-		"body", string(body),
+		"body", bodyPreview,
+		"body_size", len(body),
 	)
 
 	// Resolve Telegram chat_id from omsu_group_id (P0#2: multi-tenancy)

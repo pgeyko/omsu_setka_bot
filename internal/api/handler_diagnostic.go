@@ -306,7 +306,7 @@ func (s *Server) handleSendMessage(c *fiber.Ctx) error {
 	// Use the request chat_id when provided; fall back to the global default.
 	targetChatID := req.ChatID
 	if targetChatID == 0 {
-		targetChatID = s.TelegramGroupID
+		targetChatID = s.Config.TelegramGroupID
 	}
 	if targetChatID == 0 {
 		return respondError(c, fiber.StatusUnprocessableEntity, ErrValidation, "chat_id is required (no default configured)")
