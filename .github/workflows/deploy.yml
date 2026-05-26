@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main')
     steps:
+      - uses: actions/checkout@v4
+
       - name: Deploy via SSH
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -40,6 +42,17 @@ jobs:
           mkdir -p ~/.ssh
           echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+
+          # Prepare deploy dir and compose file on server
+          ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" \
+            "mkdir -p ~/bot"
+
+          # Upload docker-compose.prod.yml
+          scp -o StrictHostKeyChecking=no \
+            docker-compose.prod.yml \
+            "$DEPLOY_USER@$DEPLOY_HOST:~/bot/docker-compose.yml"
+
+          # Deploy
           ssh -o StrictHostKeyChecking=no "$DEPLOY_USER@$DEPLOY_HOST" \
             "export BOT_TOKEN='$BOT_TOKEN'
              export ADMIN_SECRET='$ADMIN_SECRET'
@@ -55,7 +68,7 @@ jobs:
              export APP_ENV='$APP_ENV'
              export ANNOUNCE_THREAD_ID='$ANNOUNCE_THREAD_ID'
              export CORS_ORIGIN='$CORS_ORIGIN'
-             cd /app
+             cd ~/bot
              docker compose pull bot
              docker compose up -d bot"
           echo "Deploy completed"
