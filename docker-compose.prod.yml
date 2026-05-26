@@ -5,8 +5,26 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8081:8081"
-    env_file:
-      - .env.prod
+    environment:
+      - BOT_TOKEN
+      - ADMIN_SECRET
+      - JWT_SECRET
+      - SCHEDULE_WEBHOOK_SECRET
+      - GROQ_API_KEY
+      - GROQ_API_KEY_2
+      - GEMINI_API_KEY
+      - OPENROUTER_API_KEY
+      - SETKA_BASE_URL
+      - SETKA_ADMIN_KEY
+      - SETKA_PUBLIC_URL
+      - APP_ENV
+      - ANNOUNCE_THREAD_ID
+      - CORS_ORIGIN
+      - LOG_LEVEL
+      - LOG_FORMAT
+      - TZ
+      - DB_PATH
+      - API_LISTEN
     volumes:
       - bot_data:/app/data
       - bot_prompts:/app/prompts
