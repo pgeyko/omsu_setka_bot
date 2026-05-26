@@ -45,8 +45,7 @@ import (
 )
 
 type telegramPoster struct {
-	b      *tgbot.Bot
-	chatID int64
+	b *tgbot.Bot
 }
 
 func (p *telegramPoster) PostToThread(ctx context.Context, chatID int64, threadID int, text string) error {
@@ -245,7 +244,7 @@ func main() {
 
 	var poster *telegramPoster
 	if tgBot != nil {
-		poster = &telegramPoster{b: tgBot, chatID: cfg.Telegram.GroupID}
+		poster = &telegramPoster{b: tgBot}
 	}
 	diffEngine := schedule.NewDiffEngine(database.DB, poster, llmClient, schedule.NewAnnouncer(llmClient, prompts))
 	webhookHandler := handler.NewWebhookHandler(diffEngine, database.DB, cfg.Webhook.ScheduleSecret, cfg.Webhook.AnnounceThreadID)
@@ -353,7 +352,7 @@ func main() {
 
 		sessionStore := telegram.NewSessionStore()
 		sessionStore.StartCleanup(context.Background())
-		adminCache := telegram.NewAdminCache(tgBot, cfg.Telegram.GroupID)
+		adminCache := telegram.NewAdminCache(tgBot)
 		settingsHandler := handler.NewSettingsHandler(
 			database,
 			sessionStore,

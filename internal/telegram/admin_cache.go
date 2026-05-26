@@ -23,7 +23,7 @@ type AdminCache struct {
 	mu      sync.RWMutex
 }
 
-func NewAdminCache(bot *tgbot.Bot, groupID int64) *AdminCache {
+func NewAdminCache(bot *tgbot.Bot) *AdminCache {
 	return &AdminCache{
 		bot:   bot,
 		cache: make(map[string]adminCacheEntry),

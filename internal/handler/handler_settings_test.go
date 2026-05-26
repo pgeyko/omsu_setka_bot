@@ -37,7 +37,7 @@ func TestSettingsHandler_Authorization(t *testing.T) {
 	_ = database.AddSuperadmin(ctx, 777, "Superadmin Note")
 
 	sessionStore := telegram.NewSessionStore()
-	adminCache := telegram.NewAdminCache(nil, 12345)
+	adminCache := telegram.NewAdminCache(nil)
 
 	h := NewSettingsHandler(database, sessionStore, adminCache, "", "", "", "", nil, nil)
 

@@ -9,7 +9,7 @@ import (
 
 type telegramConfig struct {
 	Token       string `yaml:"token" env:"BOT_TOKEN" env-required:"true"`
-	GroupID     int64  `yaml:"group_id" env:"GROUP_ID" env-required:"true"`
+	GroupID     int64  `yaml:"group_id" env:"GROUP_ID" env-default:"0"`
 	OmsuGroupID int    `yaml:"omsu_group_id" env:"OMSU_GROUP_ID" env-default:"0"`
 }
 
