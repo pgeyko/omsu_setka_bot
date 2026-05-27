@@ -72,28 +72,55 @@ Add `✅ Completed: YYYY-MM-DD` on the line below the stage heading.
 
 ```
 omsu_bot/
-├── cmd/bot/main.go
+├── cmd/bot/
+│   ├── main.go            # Entry point — config, init, signal handling
+│   ├── commands.go        # CommandHandler type + registry
+│   ├── commands_init.go   # /init, /help, /start, /status
+│   ├── commands_topics.go # /register, /topics, /id
+│   ├── commands_misc.go   # /resend, /tag, /settings, /summary
+│   ├── helpers.go         # setupLogger, isBotCommand, isBotMention
+│   └── slash.go           # handleSlashCommand dispatch
 ├── internal/
-│   ├── agent/            # Agent orchestrator + tool executor
-│   ├── handler/          # Telegram handlers (message, mention, webhook, settings, antispam)
-│   ├── classifier/       # LLM classification logic
-│   ├── forwarder/        # Message duplication
-│   ├── schedule/         # Diff engine + LLM announcer
-│   ├── persona/          # Bot persona store (name + system_prompt)
-│   ├── api/              # Fiber REST admin API
-│   ├── llm/              # LLM provider chain + circuit breaker
-│   ├── db/               # SQLite + migrations
-│   ├── buffer/           # Summary message buffer
-│   ├── media/            # Photo OCR + Voice STT
-│   ├── messages/         # messages.yaml loader
-│   ├── telegram/         # Admin cache, session store, username cache
-│   ├── config/           # cleanenv config
-│   └── util/             # Date/slug helpers
-├── prompts/              # LLM prompt templates (*.txt)
-├── persona.md            # Seed file for bot persona (first-run)
-├── config.yaml           # Runtime configuration
-├── messages.yaml         # Bot response messages
-├── protocols.json        # Moderation action protocols
+│   ├── agent/             # Agent orchestrator + tool executor (map-based dispatch)
+│   ├── app/               # InitDB, SetupLogger, InitPersona, StartSighupHandler
+│   ├── handler/           # Telegram handlers (message, mention, webhook, settings, antispam)
+│   ├── classifier/        # LLM classification logic
+│   ├── forwarder/         # Message duplication
+│   ├── schedule/          # Diff engine + LLM announcer + BotPoster
+│   ├── persona/           # Bot persona store (name + system_prompt)
+│   ├── api/               # Fiber REST admin API
+│   ├── llm/               # LLM provider chain
+│   ├── circuitbreaker/    # Circuit breaker (trip→cooldown→reset)
+│   ├── db/                # SQLite + migrations + repositories
+│   │   ├── groups.go      # Group CRUD
+│   │   ├── topics_repo.go # Topic queries (GetBySlug, Create, SearchByPrefix, …)
+│   │   ├── processed_repo.go # Processed message dedup (INSERT OR IGNORE)
+│   │   ├── media_repo.go  # Media group items
+│   │   ├── tags.go        # Hashtag search
+│   │   ├── config.go      # bot_config key-value
+│   │   └── migrate.go     # Schema migrations
+│   ├── buffer/            # Summary message buffer
+│   ├── media/             # Photo OCR + Voice STT
+│   ├── messages/          # messages.yaml loader
+│   ├── permissions/       # Command permission checks
+│   ├── skills/            # YAML-based skill registry
+│   ├── telegram/          # Admin cache, session store, username cache, webhook sync
+│   ├── config/            # cleanenv config
+│   └── util/              # Date/slug/truncate helpers
+├── prompts/               # LLM prompt templates (*.txt, *.md)
+├── skills/                # LLM-tool YAML definitions
+│   ├── manifest.yaml      # Skill → handler mapping
+│   ├── get_schedule.yaml
+│   ├── forward_message.yaml
+│   ├── generate_summary.yaml
+│   ├── manage_topic.yaml
+│   ├── moderate_user.yaml
+│   └── run_protocol.yaml
+├── admin/                 # React SPA (admin panel)
+├── persona.md             # Seed file for bot persona (first-run)
+├── config.yaml            # Runtime configuration
+├── messages.yaml          # Bot response messages
+├── protocols.json         # Moderation action protocols
 └── Dockerfile
 ```
 
@@ -139,6 +166,10 @@ If tests cannot run due to missing deps, report the exact blocker.
 - LLM via plain `net/http` — no SDK. Three providers: Groq (primary, OpenAI-compatible) + Gemini (fallback) + OpenRouter (last-resort free tier).
 - Four specialized chains: agent (llama-3.3-70b → qwen3-32b → gemma-31b → gemma-26b → openai/gpt-oss-120b:free → openrouter/free), simple (llama-3.1-8b-instant → qwen3-32b → gemini-3.1-flash-lite → gpt-oss-20b:free → openrouter/free), vision (scout-17b → flash-lite → gemma-31b → gemma-26b), audio (flash-lite → whisper-turbo → whisper-v3).
 - All SQL must be parameterized — no string formatting for queries.
+- SQL is organized in repository methods under `internal/db/` (topics_repo, processed_repo, media_repo).
+- ToolExecutor uses `map[string]ToolFunc` dispatch (not switch). New tool = add entry to map + implement method.
+- Slash commands use `CommandHandler` registry with `init()` registration (not switch). New command = register in `init()` + implement handler.
+- No global `var app` — package-level vars (botUsername, globalLLM, providerCount) used instead.
 - Persona system prompt injected as `system` role in every LLM call.
 - Rate limit: 10 LLM requests / min / user (in-memory, per user_id).
 - HMAC-SHA256 on webhook endpoint (`X-Webhook-Signature` header).
