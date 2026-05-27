@@ -9,15 +9,15 @@ type MediaItem struct {
 	MessageID    int
 	MediaGroupID string
 	ChatID       int64
-	FileType     string
+	MediaType    string
 }
 
 // InsertMediaItem records a media group item.
-func (d *DB) InsertMediaItem(ctx context.Context, messageID int, mediaGroupID string, chatID int64, fileType string) error {
+func (d *DB) InsertMediaItem(ctx context.Context, messageID int, mediaGroupID string, chatID int64, mediaType string) error {
 	_, err := d.ExecContext(ctx,
-		`INSERT OR IGNORE INTO media_group_items (message_id, media_group_id, chat_id, file_type, created_at)
+		`INSERT OR IGNORE INTO media_group_items (message_id, media_group_id, chat_id, media_type, created_at)
 		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-		messageID, mediaGroupID, chatID, fileType,
+		messageID, mediaGroupID, chatID, mediaType,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to insert media item: %w", err)
@@ -28,7 +28,7 @@ func (d *DB) InsertMediaItem(ctx context.Context, messageID int, mediaGroupID st
 // GetMediaItemsByGroupID returns all items for a given media group.
 func (d *DB) GetMediaItemsByGroupID(ctx context.Context, mediaGroupID string) ([]MediaItem, error) {
 	rows, err := d.QueryContext(ctx,
-		"SELECT message_id, media_group_id, chat_id, file_type FROM media_group_items WHERE media_group_id = ?",
+		"SELECT message_id, media_group_id, chat_id, COALESCE(media_type, '') FROM media_group_items WHERE media_group_id = ?",
 		mediaGroupID,
 	)
 	if err != nil {
@@ -39,7 +39,7 @@ func (d *DB) GetMediaItemsByGroupID(ctx context.Context, mediaGroupID string) ([
 	var items []MediaItem
 	for rows.Next() {
 		var item MediaItem
-		if err := rows.Scan(&item.MessageID, &item.MediaGroupID, &item.ChatID, &item.FileType); err != nil {
+		if err := rows.Scan(&item.MessageID, &item.MediaGroupID, &item.ChatID, &item.MediaType); err != nil {
 			return nil, err
 		}
 		items = append(items, item)

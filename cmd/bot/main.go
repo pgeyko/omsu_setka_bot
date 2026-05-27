@@ -209,7 +209,7 @@ func main() {
 
 	personaStore := initPersona(database, prompts)
 
-	_ = handler.NewCommandRegistry() // kept for backward compat, commands migrated to registry
+	// CommandRegistry removed — commands migrated to new commands.go registry
 
 	botMessages := messages.Load("messages.yaml")
 
