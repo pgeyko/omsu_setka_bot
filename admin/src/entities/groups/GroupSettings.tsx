@@ -26,8 +26,8 @@ export default function GroupSettings({
   onSave, onDelete, savePending, deletePending,
 }: GroupSettingsProps) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '100%' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem', width: '100%' }}>
         <div>
           <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Название группы</label>
           <input className="input" value={metaForm.title} onChange={(e) => onMetaChange({ title: e.target.value })} />
@@ -54,7 +54,7 @@ export default function GroupSettings({
         {featuresLoading ? (
           <LoadingSpinner />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem', width: '100%' }}>
             {[
               { id: 'enable_schedule', label: 'Расписание занятий' },
               { id: 'enable_summary', label: 'Суммаризация топиков' },
@@ -89,7 +89,7 @@ export default function GroupSettings({
         {featuresLoading ? (
           <LoadingSpinner />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', width: '100%' }}>
             {[
               { id: 'enable_moderation', label: 'Общая модерация' },
               { id: 'enable_captcha', label: 'Математическая капча' },

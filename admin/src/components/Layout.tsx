@@ -83,7 +83,7 @@ export default function Layout() {
         <header style={{
           height: 'var(--header-h)', display: 'flex', alignItems: 'center', gap: '0.5rem',
           padding: '0 1.5rem', borderBottom: '1px solid var(--glass-border)',
-          background: 'var(--glass-bg)', backdropFilter: 'blur(var(--glass-blur))',
+          background: 'var(--bg-card)',
           position: 'sticky', top: 0, zIndex: 50,
         }}>
           <button className="btn btn-sm mobile-menu-toggle" onClick={() => setSidebarOpen(!sidebarOpen)}>

@@ -132,7 +132,7 @@ textarea.input { resize: vertical; min-height: 80px; }
   gap: 0.5rem;
   cursor: pointer;
   padding: 0.5rem 0.75rem;
-  background: var(--glass-bg);
+  background: var(--bg-card);
   border-radius: var(--radius-sm);
   border: 1px solid var(--glass-border);
   font-size: 0.85rem;
@@ -141,6 +141,19 @@ textarea.input { resize: vertical; min-height: 80px; }
 }
 .toggle-label:hover { background: var(--bg-elevated); }
 .toggle-label input[type="checkbox"] { accent-color: var(--accent); }
+
+/* AMOLED: dark checkboxes with visible checkmark */
+.toggle-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.toggle-label input[type="checkbox"]:checked {
+  accent-color: var(--accent);
+  border-color: var(--accent);
+}
 
 .spinner {
   width: 20px; height: 20px;
@@ -262,7 +275,17 @@ textarea.input { resize: vertical; min-height: 80px; }
   .groups-list-pane.hidden-mobile { display: none !important; }
   .groups-detail-pane.hidden-mobile { display: none !important; }
   .groups-detail-pane .card { max-width: 100%; overflow-x: hidden; }
-  .groups-detail-pane .card > div { max-width: 100%; }
+  .groups-detail-pane .card > div { max-width: 100%; overflow-x: hidden; }
+  
+  /* Fix content overflow on mobile */
+  main { overflow-x: hidden; }
+  .groups-detail-pane { overflow-x: hidden; }
+  .groups-detail-pane * { max-width: 100%; box-sizing: border-box; }
+  
+  /* Fix grid items on mobile */
+  .groups-detail-pane div[style*="grid"] {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 /* Modal responsive */
