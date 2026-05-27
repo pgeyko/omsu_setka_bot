@@ -26,8 +26,8 @@ export default function GroupSettings({
   onSave, onDelete, savePending, deletePending,
 }: GroupSettingsProps) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%', maxWidth: '100%' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
         <div>
           <label style={{ display: 'block', marginBottom: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Название группы</label>
           <input className="input" value={metaForm.title} onChange={(e) => onMetaChange({ title: e.target.value })} />
@@ -54,7 +54,7 @@ export default function GroupSettings({
         {featuresLoading ? (
           <LoadingSpinner />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
             {[
               { id: 'enable_schedule', label: 'Расписание занятий' },
               { id: 'enable_summary', label: 'Суммаризация топиков' },
@@ -89,7 +89,7 @@ export default function GroupSettings({
         {featuresLoading ? (
           <LoadingSpinner />
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem' }}>
             {[
               { id: 'enable_moderation', label: 'Общая модерация' },
               { id: 'enable_captcha', label: 'Математическая капча' },
@@ -105,7 +105,7 @@ export default function GroupSettings({
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap', justifyContent: 'space-between' }}>
         <button className="btn btn-primary" onClick={onSave} disabled={savePending}>
           <Save size={16} /> Сохранить настройки
         </button>
