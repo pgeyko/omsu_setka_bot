@@ -76,9 +76,9 @@ jobs:
 
   deploy:
     name: Deploy
-    runs-on: ubuntu-latest
-    if: always() && needs.build-and-push.result == 'success'
     needs: [build-and-push]
+    if: always() && needs.build-and-push.result == 'success'
+    runs-on: ubuntu-latest
     env:
       DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
       DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
