@@ -6,8 +6,6 @@ on:
     workflows: ["CI/CD"]
     types:
       - completed
-    branches:
-      - main
 
 jobs:
   deploy:
