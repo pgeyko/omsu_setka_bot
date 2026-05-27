@@ -387,6 +387,24 @@
 - [x] 6.4 `t.Parallel()` добавлен во все DB-backed тесты (56+ test functions в 10+ файлах)
 - [x] 6.7 Race detector: `go test -race` проходит на всех ключевых пакетах (agent, api, handler, llm, telegram)
 
+## Этап 22 — Core refactoring
+✅ Completed: 2026-05-27
+
+> Ветка: `feat/core-refactor`
+> Skills: `golang-pro`, `lint-and-validate`
+
+- [x] Repository layer: topics_repo (10 методов), processed_repo (3 метода), media_repo (3 метода)
+- [x] 11 table-driven тестов репозиториев (topics, processed, media)
+- [x] handler_message.go: SQL-запросы заменены на вызовы репозиториев (-35 строк)
+- [x] ToolExecutor: switch → map[string]ToolFunc, 9 позиционных аргументов → ToolDeps
+- [x] CommandHandler: реестр команд с init()-регистрацией
+- [x] slash.go (340→61 строка): dispatch через CommandHandler registry
+- [x] telegramPoster → schedule.BotPoster (вынесен из main.go)
+- [x] Глобальный `var app` удалён, заменён на package-level vars
+- [x] initPersona, startSighupHandler, setupLogger → internal/app/
+- [x] Мёртвый код: App struct, BotPosterAdapter, dispatchSlashCommand удалены
+- [x] docs: AGENTS.md и ARHITEKTURA.md синхронизированы
+
 ## Легенда
 
 ```

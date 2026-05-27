@@ -24,6 +24,22 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+// ToolFunc is the signature for a tool handler.
+type ToolFunc func(ctx context.Context, chatID int64, args string) (string, error)
+
+// ToolDeps groups all dependencies for the ToolExecutor.
+type ToolDeps struct {
+	DB                 *sql.DB
+	Bot                *tgbot.Bot
+	Buffer             *buffer.SummaryBuffer
+	UsernameCache      *telegram.UsernameCache
+	SetkaBaseURL       string
+	SetkaPublicURL     string
+	AdminChecker       AdminChecker
+	MediaGroupMessages *sync.Map
+	Classifier         *classifier.Classifier
+}
+
 // Define the schemas for tools
 var AvailableTools = []llm.Tool{
 	{
@@ -173,6 +189,7 @@ type MediaGroupEntry struct {
 }
 
 type ToolExecutor struct {
+	tools               map[string]ToolFunc
 	db                  *sql.DB
 	bot                 *tgbot.Bot
 	buffer              *buffer.SummaryBuffer
@@ -194,19 +211,28 @@ type ToolExecutor struct {
 	summaryLastCalled    map[int64]time.Time
 }
 
-func NewToolExecutor(db *sql.DB, bot *tgbot.Bot, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, setkaBase, setkaPublic string, adminChecker AdminChecker, mediaGroupMessages *sync.Map, classif *classifier.Classifier) *ToolExecutor {
-	return &ToolExecutor{
-		db:                 db,
-		bot:                bot,
-		buffer:             buf,
-		usernameCache:      uc,
-		setkaBaseURL:       setkaBase,
-		setkaPublicURL:     setkaPublic,
-		adminChecker:       adminChecker,
-		mediaGroupMessages: mediaGroupMessages,
-		classifier:         classif,
+func NewToolExecutor(deps *ToolDeps) *ToolExecutor {
+	e := &ToolExecutor{
+		db:                 deps.DB,
+		bot:                deps.Bot,
+		buffer:             deps.Buffer,
+		usernameCache:      deps.UsernameCache,
+		setkaBaseURL:       deps.SetkaBaseURL,
+		setkaPublicURL:     deps.SetkaPublicURL,
+		adminChecker:       deps.AdminChecker,
+		mediaGroupMessages: deps.MediaGroupMessages,
+		classifier:         deps.Classifier,
 		summaryLastCalled:  make(map[int64]time.Time),
 	}
+	e.tools = map[string]ToolFunc{
+		"get_schedule":     e.getSchedule,
+		"generate_summary": e.generateSummary,
+		"manage_topic":     e.manageTopic,
+		"moderate_user":    e.moderateUser,
+		"run_protocol":     e.runProtocol,
+		"forward_message":  e.forwardMessage,
+	}
+	return e
 }
 
 func (e *ToolExecutor) SetMessageContext(sourceMessageID, replyToMessageID int) {
@@ -216,22 +242,11 @@ func (e *ToolExecutor) SetMessageContext(sourceMessageID, replyToMessageID int) 
 
 func (e *ToolExecutor) Execute(ctx context.Context, chatID int64, name string, arguments string) (string, error) {
 	slog.Info("Executing tool", "name", name, "chat_id", chatID)
-	switch name {
-	case "get_schedule":
-		return e.getSchedule(ctx, chatID, arguments)
-	case "generate_summary":
-		return e.generateSummary(ctx, chatID, arguments)
-	case "manage_topic":
-		return e.manageTopic(ctx, chatID, arguments)
-	case "moderate_user":
-		return e.moderateUser(ctx, chatID, arguments)
-	case "run_protocol":
-		return e.runProtocol(ctx, chatID, arguments)
-	case "forward_message":
-		return e.forwardMessage(ctx, chatID, arguments)
-	default:
+	fn, ok := e.tools[name]
+	if !ok {
 		return "", fmt.Errorf("unknown tool name: %s", name)
 	}
+	return fn(ctx, chatID, arguments)
 }
 
 func (e *ToolExecutor) getSchedule(ctx context.Context, chatID int64, argsJSON string) (string, error) {

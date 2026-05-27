@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -103,13 +104,7 @@ func TestRunProtocol_DeleteMessagesAndCloseTopic(t *testing.T) {
 
 	// 4. Create UsernameCache and ToolExecutor
 	uc := telegram.NewUsernameCache()
-	executor := &ToolExecutor{
-		db:                  database.DB,
-		bot:                 nil, // bot is nil, which skips Telegram API calls safely
-		buffer:              buf,
-		usernameCache:       uc,
-		ProtocolsConfigPath: protoPath,
-	}
+	executor := newTestExecutor(database.DB, buf, uc, protoPath)
 
 	// 5. Execute run_protocol
 	args := `{"protocol_name": "зачистка", "thread_id": "1"}`
@@ -214,13 +209,7 @@ func TestRunProtocol_ModerateUser(t *testing.T) {
 	uc.Store("troublemaker", 999)
 
 	buf := buffer.NewSummaryBuffer(database.DB, 10)
-	executor := &ToolExecutor{
-		db:                  database.DB,
-		bot:                 nil,
-		buffer:              buf,
-		usernameCache:       uc,
-		ProtocolsConfigPath: protoPath,
-	}
+	executor := newTestExecutor(database.DB, buf, uc, protoPath)
 
 	// 1. Success case
 	argsSuccess := `{"protocol_name": "мут_хулигана", "username": "@troublemaker"}`
@@ -263,13 +252,7 @@ func TestRunProtocol_ProtocolNotFound(t *testing.T) {
 	protoBytes, _ := json.Marshal(protoConfig)
 	_ = os.WriteFile(protoPath, protoBytes, 0644)
 
-	executor := &ToolExecutor{
-		db:                  database.DB,
-		bot:                 nil,
-		buffer:              buffer.NewSummaryBuffer(database.DB, 10),
-		usernameCache:       telegram.NewUsernameCache(),
-		ProtocolsConfigPath: protoPath,
-	}
+	executor := newTestExecutor(database.DB, buffer.NewSummaryBuffer(database.DB, 10), telegram.NewUsernameCache(), protoPath)
 
 	args := `{"protocol_name": "неизвестный"}`
 	res, err := executor.Execute(context.Background(), 12345, "run_protocol", args)
@@ -279,4 +262,20 @@ func TestRunProtocol_ProtocolNotFound(t *testing.T) {
 	if !strings.Contains(res, "Протокол 'неизвестный' не найден в конфигурации.") {
 		t.Errorf("expected not found message, got: %s", res)
 	}
+}
+
+// newTestExecutor creates a ToolExecutor with minimal dependencies for testing.
+func newTestExecutor(database *sql.DB, buf *buffer.SummaryBuffer, uc *telegram.UsernameCache, protoPath string) *ToolExecutor {
+	e := &ToolExecutor{
+		db:                  database,
+		bot:                 nil,
+		buffer:              buf,
+		usernameCache:       uc,
+		ProtocolsConfigPath: protoPath,
+		summaryLastCalled:   make(map[int64]time.Time),
+	}
+	e.tools = map[string]ToolFunc{
+		"run_protocol": e.runProtocol,
+	}
+	return e
 }

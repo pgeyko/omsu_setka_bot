@@ -368,7 +368,7 @@ UNIQUE(message_id, chat_id)
 
 | Лимит | Где | Значение |
 |---|---|---|---|
-| Глобальный | `internal/handler/middleware.go` | 10 запросов/мин/user **(не подключён — см. `cmd/bot/main.go`)** |
+| Глобальный | `internal/handler/middleware.go` | 5 запросов/мин/user **(подключён в main.go через `handler.NewMiddleware`)** |
 | API General | `internal/api/router.go` | 120 запросов/мин/IP |
 | API Search | `internal/api/router.go` | 30 запросов/мин/IP |
 | Саммари | `summary_requests` таблица | 1 запрос/60 мин/user |
@@ -514,12 +514,19 @@ SIGHUP — перезагрузка промптов без рестарта.
 
 ```
 omsu_bot/
-├── cmd/bot/main.go              ← точка входа
+├── cmd/bot/
+│   ├── main.go              ← точка входа (конфиг, инициализация, сигналы)
+│   ├── commands.go          ← CommandHandler + реестр команд
+│   ├── commands_init.go     ← /init, /help, /start, /status
+│   ├── commands_topics.go   ← /register, /topics, /id
+│   ├── commands_misc.go     ← /resend, /tag, /settings, /summary
+│   ├── helpers.go           ← isBotMention, generateAPIToken
+│   └── slash.go             ← dispatch команды через реестр
 ├── internal/
-│   ├── api/                     ← REST API (Fiber + JWT)
-│   │   ├── router.go            ← маршруты + Server struct
-│   │   ├── middleware_auth.go   ← JWT аутентификация
-│   │   ├── response.go          ← единый формат ответов
+│   ├── api/                 ← REST API (Fiber + JWT)
+│   │   ├── router.go        ← маршруты + Server struct
+│   │   ├── middleware_auth.go ← JWT аутентификация
+│   │   ├── response.go      ← единый формат ответов
 │   │   ├── handler_persona.go
 │   │   ├── handler_topics.go
 │   │   ├── handler_permissions.go
@@ -530,26 +537,45 @@ omsu_bot/
 │   │   ├── handler_config.go
 │   │   ├── handler_superadmin.go
 │   │   └── context_handler.go
-│   ├── classifier/              ← LLM классификация
-│   ├── config/                  ← cleanenv конфиг
-│   ├── db/                      ← SQLite + миграции
-│   ├── forwarder/               ← дублирование сообщений
-│   ├── handler/                 ← Telegram handlers
-│   │   ├── handler_message.go   ← автоклассификация
-│   │   ├── handler_mention.go   ← @bot команды + agent loop
-│   │   ├── handler_webhook.go   ← вебхук от setka
-│   │   ├── handler_settings.go  ← настройки группы
-│   │   ├── antispam.go          ← капча, flood control, фильтр ссылок
-│   │   └── middleware.go        ← rate-limit (не подключён)
-│   ├── llm/                     ← LLM chain + circuit breaker
-│   │   ├── client.go            ← HTTP клиент + failover
-│   │   ├── provider.go          ← Provider + Chain
-│   │   ├── tracker.go           ← дневной лимит токенов
-│   │   └── prompts.go           ← загрузка промптов
-│   ├── persona/                 ← Store + seed_parser
-│   └── schedule/                ← diff engine + announcer
-├── admin/                       ← React SPA (admin panel)
-├── prompts/                     ← *.txt/*.md файлы промптов (включая persona.md)
+│   ├── agent/               ← Agent orchestrator + ToolExecutor (map dispatch)
+│   ├── app/                 ← InitDB, SetupLogger, InitPersona, StartSighupHandler
+│   ├── buffer/              ← Summary message buffer
+│   ├── circuitbreaker/      ← Circuit breaker (trip→cooldown→reset)
+│   ├── classifier/          ← LLM классификация
+│   ├── config/              ← cleanenv конфиг
+│   ├── db/                  ← SQLite + миграции + репозитории
+│   │   ├── groups.go        ← CRUD групп
+│   │   ├── topics_repo.go   ← GetBySlug, SearchByPrefix, Create, ...
+│   │   ├── processed_repo.go ← INSERT OR IGNORE dedup
+│   │   ├── media_repo.go    ← media group items
+│   │   ├── tags.go          ← поиск по хэштегам
+│   │   ├── config.go        ← bot_config key-value
+│   │   └── migrate.go       ← миграции схемы
+│   ├── forwarder/           ← дублирование сообщений
+│   ├── handler/             ← Telegram handlers
+│   │   ├── handler_message.go ← автоклассификация (SQL через repo)
+│   │   ├── handler_mention.go ← @bot команды + agent loop
+│   │   ├── handler_webhook.go ← вебхук от setka
+│   │   ├── handler_settings.go ← настройки группы
+│   │   ├── antispam.go      ← капча, flood control, фильтр ссылок
+│   │   ├── command_registry.go ← шаблоны ответов
+│   │   └── middleware.go    ← rate-limit
+│   ├── llm/                 ← LLM chain + provider chain
+│   │   ├── client.go        ← HTTP клиент + failover
+│   │   ├── provider.go      ← Provider + Chain
+│   │   ├── tracker.go       ← дневной лимит токенов
+│   │   └── prompts.go       ← загрузка промптов
+│   ├── media/               ← Photo OCR + Voice STT
+│   ├── messages/            ← messages.yaml loader
+│   ├── permissions/         ← command_permissions таблица
+│   ├── persona/             ← Store + seed_parser
+│   ├── schedule/            ← diff engine + announcer + BotPoster
+│   ├── skills/              ← YAML registry для инструментов
+│   ├── telegram/            ← admin cache, session, username cache, webhook sync
+│   └── util/                ← date/slug/truncate/api token helpers
+├── admin/                   ← React SPA (admin panel)
+├── prompts/                 ← *.txt/*.md файлы промптов
+├── skills/                  ← YAML-определения инструментов (6 шт.)
 ├── config.yaml
 ├── Dockerfile
 └── docker-compose*.yml
