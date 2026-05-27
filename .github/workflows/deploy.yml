@@ -1,0 +1,29 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy via SSH
+        env:
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          USER: ${{ secrets.DEPLOY_USER }}
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          if [ -z "$HOST" ]; then
+            echo "SSH secrets not configured, skipping deploy"
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh "$USER@$HOST" "mkdir -p ~/bot"
+          scp docker-compose.prod.yml "$USER@$HOST:~/bot/docker-compose.yml"
+          ssh "$USER@$HOST" "cd ~/bot && docker compose pull bot && docker compose up -d bot"
+          echo "Deploy completed"
