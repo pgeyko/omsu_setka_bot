@@ -368,7 +368,7 @@ UNIQUE(message_id, chat_id)
 
 | Лимит | Где | Значение |
 |---|---|---|---|
-| Глобальный | `internal/handler/middleware.go` | 10 запросов/мин/user **(не подключён — см. `cmd/bot/main.go`)** |
+| Глобальный | `internal/handler/middleware.go` | 5 запросов/мин/user **(подключён в main.go через `handler.NewMiddleware`)** |
 | API General | `internal/api/router.go` | 120 запросов/мин/IP |
 | API Search | `internal/api/router.go` | 30 запросов/мин/IP |
 | Саммари | `summary_requests` таблица | 1 запрос/60 мин/user |

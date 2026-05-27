@@ -83,6 +83,7 @@ docker compose -f docker-compose.local.yml up -d
 | Инструмент | Доступ | Описание |
 |---|---|---|
 | `get_schedule` | Все | Расписание на день |
+| `forward_message` | Все | Пересылка сообщения в другой топик |
 | `generate_summary` | Все | Саммари топика |
 | `manage_topic` | Админ | Создание/закрытие/переименование топиков |
 | `moderate_user` | Админ | Мут/бан/размут |
@@ -92,24 +93,36 @@ docker compose -f docker-compose.local.yml up -d
 
 ```
 omsu_bot/
-├── cmd/bot/main.go           # Точка входа
+├── cmd/bot/
+│   ├── main.go               # Точка входа
+│   ├── commands.go           # Реестр команд
+│   ├── commands_init.go      # /init, /help, /start, /status
+│   ├── commands_topics.go    # /register, /topics, /id
+│   ├── commands_misc.go      # /resend, /tag, /settings, /summary
+│   ├── helpers.go            # isBotMention, generateAPIToken
+│   └── slash.go              # dispatch команд
 ├── internal/
-│   ├── agent/                # ИИ-агент + инструменты
+│   ├── agent/                # ИИ-агент + инструменты (map dispatch)
 │   ├── api/                  # REST API (Fiber)
+│   ├── app/                  # InitDB, SetupLogger, InitPersona
 │   ├── buffer/               # Кольцевой буфер сообщений
+│   ├── circuitbreaker/       # Circuit breaker
 │   ├── classifier/           # LLM-классификация
 │   ├── config/               # Конфигурация (cleanenv)
-│   ├── db/                   # SQLite + миграции
+│   ├── db/                   # SQLite + миграции + репозитории
 │   ├── forwarder/            # Пересылка сообщений
 │   ├── handler/              # Обработчики Telegram
 │   ├── llm/                  # LLM-клиент + провайдеры
 │   ├── media/                # Голос/фото обработка
 │   ├── messages/             # Тексты ответов (YAML)
+│   ├── permissions/          # Права команд
 │   ├── persona/              # Персона бота
-│   ├── schedule/             # Webhook расписания
+│   ├── schedule/             # Webhook расписания + BotPoster
+│   ├── skills/               # YAML-определения инструментов
 │   ├── telegram/             # Админ-кэш, синхронизация
 │   └── util/                 # Утилиты (slug, даты)
 ├── prompts/                  # LLM-промпты (включая persona.md)
+├── skills/                   # YAML инструментов (6 шт.)
 ├── admin/                    # React SPA админка
 ├── config.yaml               # Конфигурация
 ├── messages.yaml             # Тексты ответов
