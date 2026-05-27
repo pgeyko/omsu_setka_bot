@@ -27,6 +27,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 
 	"omsu_bot/internal/agent"
+	omsuapp "omsu_bot/internal/app"
 	"omsu_bot/internal/api"
 	"omsu_bot/internal/buffer"
 	"omsu_bot/internal/classifier"
@@ -155,20 +156,6 @@ func initLLM(cfg *config.Config, db *omsudb.DB, personaStore *persona.Store, pro
 	return
 }
 
-func initDB(cfg *config.Config) *omsudb.DB {
-	database, err := omsudb.New(cfg.DB.Path)
-	if err != nil {
-		slog.Error("failed to open database", "error", err)
-		os.Exit(1)
-	}
-	if err := database.Migrate(); err != nil {
-		slog.Error("failed to migrate database", "error", err)
-		os.Exit(1)
-	}
-	database.StartCleanup(context.Background())
-	return database
-}
-
 func initPersona(db *omsudb.DB, _ *llm.PromptRegistry) *persona.Store {
 	personaStore := persona.NewStore(db.DB)
 	if err := personaStore.Load(context.Background(), "prompts/persona.md"); err != nil {
@@ -211,7 +198,7 @@ func main() {
 		}
 	}
 
-	database := initDB(cfg)
+	database := omsuapp.InitDB(cfg.DB.Path)
 	defer database.Close()
 
 	prompts, err := llm.NewPromptRegistry("prompts")
@@ -222,7 +209,7 @@ func main() {
 
 	personaStore := initPersona(database, prompts)
 
-	cmdReg := handler.NewCommandRegistry()
+	_ = handler.NewCommandRegistry() // kept for backward compat, commands migrated to registry
 
 	botMessages := messages.Load("messages.yaml")
 
@@ -375,7 +362,17 @@ func main() {
 		)
 
 		permService := permissions.NewService(database.DB)
-		toolExecutor := agent.NewToolExecutor(database.DB, tgBot, summaryBuf, usernameCache, cfg.Setka.BaseURL, cfg.Setka.PublicURL, adminCache, &app.MediaGroupMessages, classif)
+		toolExecutor := agent.NewToolExecutor(&agent.ToolDeps{
+			DB:                 database.DB,
+			Bot:                tgBot,
+			Buffer:             summaryBuf,
+			UsernameCache:      usernameCache,
+			SetkaBaseURL:       cfg.Setka.BaseURL,
+			SetkaPublicURL:     cfg.Setka.PublicURL,
+			AdminChecker:       adminCache,
+			MediaGroupMessages: &app.MediaGroupMessages,
+			Classifier:         classif,
+		})
 		skillRegistry, err := skills.Load("skills")
 		if err != nil {
 			slog.Warn("failed to load skills registry, using built-in tools", "error", err)
@@ -421,8 +418,10 @@ func main() {
 		// Init command — dedicated handler (works regardless of IsGroupActive)
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/init", tgbot.MatchTypePrefix, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if database != nil && settingsHandler != nil {
-				// Reuse handleSlashCommand for the actual logic
-				handleSlashCommand(ctx, b, update, database.DB, update.Message.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
+			handleSlashCommand(ctx, b, update, &commandDeps{
+				db: database, sqlDB: database.DB, mh: mentionHandler, settingsH: settingsHandler,
+				helpText: helpText, botMsgs: botMessages, promptReg: prompts,
+			})
 			}
 		})
 
@@ -644,7 +643,10 @@ func main() {
 			}
 
 			if isBotCommand(msg) {
-				handleSlashCommand(ctx, b, update, database.DB, msg.Chat.ID, mentionHandler, helpText, cmdReg, settingsHandler, botMessages, prompts)
+				handleSlashCommand(ctx, b, update, &commandDeps{
+				db: database, sqlDB: database.DB, mh: mentionHandler, settingsH: settingsHandler,
+				helpText: helpText, botMsgs: botMessages, promptReg: prompts,
+			})
 				return
 			}
 
