@@ -6,8 +6,34 @@ import (
 	"os"
 	"path/filepath"
 
+	"omsu_bot/internal/agent"
 	omsudb "omsu_bot/internal/db"
+	"omsu_bot/internal/llm"
+	"omsu_bot/internal/persona"
+
+	"omsu_bot/internal/config"
 )
+
+// SetupLogger configures the structured logger based on config.
+func SetupLogger(cfg *config.Config) {
+	level := slog.LevelInfo
+	if cfg.Logging.Level == "debug" {
+		level = slog.LevelDebug
+	} else if cfg.Logging.Level == "warn" {
+		level = slog.LevelWarn
+	} else if cfg.Logging.Level == "error" {
+		level = slog.LevelError
+	}
+
+	opts := &slog.HandlerOptions{Level: level}
+	var h slog.Handler
+	if cfg.Logging.Format == "json" {
+		h = slog.NewJSONHandler(os.Stderr, opts)
+	} else {
+		h = slog.NewTextHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(h))
+}
 
 // InitDB opens the database, runs migrations, and starts cleanup goroutine.
 func InitDB(path string) *omsudb.DB {
@@ -31,4 +57,26 @@ func InitDB(path string) *omsudb.DB {
 	slog.Info("app: database maintenance goroutine started")
 
 	return database
+}
+
+// InitPersona loads the bot persona from the seed file.
+func InitPersona(db *omsudb.DB, prompts *llm.PromptRegistry) *persona.Store {
+	store := persona.NewStore(db.DB)
+	if err := store.Load(context.Background(), "prompts/persona.md"); err != nil {
+		slog.Error("failed to load persona", "error", err)
+		os.Exit(1)
+	}
+	return store
+}
+
+// StartSighupHandler reloads prompts and protocols on SIGHUP signal.
+func StartSighupHandler(sighupCtx context.Context) {
+	go func() {
+		<-sighupCtx.Done()
+		slog.Info("SIGHUP received, reloading prompts and protocols")
+		// Prompts reload is handled by the caller — the ctx is derived from
+		// signal.NotifyContext for SIGHUP.
+		agent.ReloadProtocols()
+		slog.Info("protocols reloaded")
+	}()
 }

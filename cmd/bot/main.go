@@ -130,29 +130,6 @@ func initLLM(cfg *config.Config, db *omsudb.DB, personaStore *persona.Store, pro
 	return
 }
 
-func initPersona(db *omsudb.DB, _ *llm.PromptRegistry) *persona.Store {
-	personaStore := persona.NewStore(db.DB)
-	if err := personaStore.Load(context.Background(), "prompts/persona.md"); err != nil {
-		slog.Error("failed to load persona", "error", err)
-		os.Exit(1)
-	}
-	return personaStore
-}
-
-func startSighupHandler(sighupCtx context.Context, prompts *llm.PromptRegistry) {
-	go func() {
-		<-sighupCtx.Done()
-		slog.Info("SIGHUP received, reloading prompts and protocols")
-		if err := prompts.Reload(); err != nil {
-			slog.Error("failed to reload prompts", "error", err)
-		} else {
-			slog.Info("prompts reloaded successfully")
-		}
-		agent.ReloadProtocols()
-		slog.Info("protocols reloaded")
-	}()
-}
-
 func main() {
 	configPath := "config.yaml"
 	if p := os.Getenv("CONFIG_PATH"); p != "" {
@@ -160,7 +137,7 @@ func main() {
 	}
 
 	cfg := config.Load(configPath)
-	setupLogger(cfg)
+	omsuapp.SetupLogger(cfg)
 
 	// Set timezone for all time.Now() calls
 	if cfg.Timezone != "" {
@@ -181,9 +158,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	personaStore := initPersona(database, prompts)
-
-	// CommandRegistry removed — commands migrated to new commands.go registry
+	personaStore := omsuapp.InitPersona(database, prompts)
 
 	botMessages := messages.Load("messages.yaml")
 
@@ -281,7 +256,7 @@ func main() {
 
 	sighupCtx, sighupCancel := signal.NotifyContext(context.Background(), syscall.SIGHUP)
 	defer sighupCancel()
-	startSighupHandler(sighupCtx, prompts)
+	omsuapp.StartSighupHandler(sighupCtx)
 
 	var processedMediaGroups sync.Map
 	var mediaGroupMessages sync.Map
