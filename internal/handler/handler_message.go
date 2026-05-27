@@ -87,8 +87,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		return
 	}
 
-	var active int
-	if err := h.db.QueryRowContext(ctx, "SELECT is_active FROM groups WHERE chat_id = ?", msg.Chat.ID).Scan(&active); err != nil || active != 1 {
+	if !h.db.IsGroupActive(ctx, msg.Chat.ID) {
 		return
 	}
 
@@ -115,8 +114,7 @@ func (h *Handler) HandleMessage(ctx context.Context, b *tgbot.Bot, update *model
 		h.buffer.Push(msg.Chat.ID, msg.MessageThreadID, msg.ID, msg.From.Username, text)
 	}
 
-	var activeTopicsCount int
-	err := h.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM topics WHERE group_id = ? AND is_active = 1", msg.Chat.ID).Scan(&activeTopicsCount)
+	activeTopicsCount, err := h.db.CountActiveByGroup(ctx, msg.Chat.ID)
 	if err != nil || activeTopicsCount == 0 {
 		h.finishProcessing(ctx, msg.ID, msg.Chat.ID, msg.MessageThreadID, "skipped_no_topics", 0)
 		return
@@ -240,44 +238,29 @@ func (h *Handler) prefilter(msg *models.Message) bool {
 }
 
 func (h *Handler) tryMarkProcessing(ctx context.Context, messageID int, chatID int64) bool {
-	result, err := h.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO processed_messages (message_id, chat_id, action, processed_at)
-		 VALUES (?, ?, 'pending', CURRENT_TIMESTAMP)`,
-		messageID, chatID,
-	)
-	if err != nil {
-		return false
-	}
-	rows, _ := result.RowsAffected()
-	return rows > 0
+	err := h.db.InsertProcessedMessage(ctx, messageID, chatID, "pending")
+	return err == nil
 }
 
 func (h *Handler) finishProcessing(ctx context.Context, messageID int, chatID int64, threadID int, action string, targetThreadID int) {
-	var threadIDPtr *int
-	if threadID != 0 {
-		threadIDPtr = &threadID
-	}
-	h.db.ExecContext(ctx,
-		`UPDATE processed_messages SET thread_id = ?, action = ?, target_thread_id = ?, processed_at = CURRENT_TIMESTAMP
-		 WHERE message_id = ? AND chat_id = ? AND action = 'pending'`,
-		threadIDPtr, action, targetThreadID, messageID, chatID,
-	)
+	h.db.UpdateProcessedMessage(ctx, messageID, chatID, threadID, action, targetThreadID)
 }
 
 func (h *Handler) getTopicName(ctx context.Context, chatID int64, threadID int) string {
-	var name string
-	if err := h.db.QueryRowContext(ctx, `SELECT name FROM topics WHERE group_id = ? AND tg_thread_id = ?`, chatID, threadID).Scan(&name); err != nil {
-		slog.Warn("getTopicName query", "error", err)
+	name, err := h.db.GetByThreadID(ctx, chatID, threadID)
+	if err != nil {
+		slog.Warn("getTopicName failed", "error", err)
+		return ""
 	}
 	return name
 }
 
 func (h *Handler) lookupThreadID(ctx context.Context, chatID int64, slug string) (int, error) {
-	var tgThreadID int
-	err := h.db.QueryRowContext(ctx,
-		`SELECT tg_thread_id FROM topics WHERE group_id = ? AND slug = ? AND is_active = 1`, chatID, slug,
-	).Scan(&tgThreadID)
-	return tgThreadID, err
+	threadID, err := h.db.GetBySlug(ctx, chatID, slug)
+	if err != nil {
+		return 0, err
+	}
+	return threadID, nil
 }
 
 func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, topic string, confidence float64) (int, error) {
@@ -318,10 +301,7 @@ func (h *Handler) findOrCreateTopic(ctx context.Context, msg *models.Message, to
 	}
 
 	slug := util.MakeSlug(topicName)
-	h.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO topics (group_id, tg_thread_id, name, slug, is_active) VALUES (?, ?, ?, ?, 1)`,
-		msg.Chat.ID, forum.MessageThreadID, topicName, slug,
-	)
+	h.db.CreateTopic(ctx, msg.Chat.ID, forum.MessageThreadID, topicName, slug)
 
 	slog.Info("auto-created topic for important message",
 		"name", topicName, "thread_id", forum.MessageThreadID, "slug", slug,
