@@ -20,13 +20,13 @@ func handleRegister(ctx context.Context, b *tgbot.Bot, msg *models.Message, args
 		return nil
 	}
 	var existing int
-	deps.SQLDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM topics WHERE group_id = ? AND tg_thread_id = ?`, msg.Chat.ID, msg.MessageThreadID).Scan(&existing)
+	deps.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM topics WHERE group_id = ? AND tg_thread_id = ?`, msg.Chat.ID, msg.MessageThreadID).Scan(&existing)
 	if existing > 0 {
 		b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: deps.BotMsgs.RegisterExists})
 		return nil
 	}
 	slug := util.MakeSlug(args)
-	_, err := deps.SQLDB.ExecContext(ctx,
+	_, err := deps.DB.ExecContext(ctx,
 		`INSERT INTO topics (group_id, tg_thread_id, name, slug, aliases, description, hashtags, is_active, created_at)
 		 VALUES (?, ?, ?, ?, '[]', '', '[]', 1, CURRENT_TIMESTAMP)`,
 		msg.Chat.ID, msg.MessageThreadID, args, slug)
@@ -40,7 +40,7 @@ func handleRegister(ctx context.Context, b *tgbot.Bot, msg *models.Message, args
 }
 
 func handleTopics(ctx context.Context, b *tgbot.Bot, msg *models.Message, args string, deps *CommandDeps) error {
-	rows, err := deps.SQLDB.QueryContext(ctx, `SELECT name, COALESCE(slug, ''), is_active FROM topics WHERE group_id = ? ORDER BY name`, msg.Chat.ID)
+	rows, err := deps.DB.QueryContext(ctx, `SELECT name, COALESCE(slug, ''), is_active FROM topics WHERE group_id = ? ORDER BY name`, msg.Chat.ID)
 	if err != nil {
 		return nil
 	}

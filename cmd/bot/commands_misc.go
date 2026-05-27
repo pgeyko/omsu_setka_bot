@@ -17,7 +17,7 @@ func handleResend(ctx context.Context, b *tgbot.Bot, msg *models.Message, args s
 	}
 
 	var tgThreadID int
-	err := deps.SQLDB.QueryRowContext(ctx,
+	err := deps.DB.QueryRowContext(ctx,
 		`SELECT tg_thread_id FROM topics WHERE group_id = ? AND (slug = ? OR name = ?) AND is_active = 1 LIMIT 1`,
 		msg.Chat.ID, args, args,
 	).Scan(&tgThreadID)

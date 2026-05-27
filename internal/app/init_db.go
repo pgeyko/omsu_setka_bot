@@ -10,7 +10,6 @@ import (
 	omsudb "omsu_bot/internal/db"
 	"omsu_bot/internal/llm"
 	"omsu_bot/internal/persona"
-
 	"omsu_bot/internal/config"
 )
 
@@ -70,12 +69,15 @@ func InitPersona(db *omsudb.DB, prompts *llm.PromptRegistry) *persona.Store {
 }
 
 // StartSighupHandler reloads prompts and protocols on SIGHUP signal.
-func StartSighupHandler(sighupCtx context.Context) {
+func StartSighupHandler(sighupCtx context.Context, prompts *llm.PromptRegistry) {
 	go func() {
 		<-sighupCtx.Done()
 		slog.Info("SIGHUP received, reloading prompts and protocols")
-		// Prompts reload is handled by the caller — the ctx is derived from
-		// signal.NotifyContext for SIGHUP.
+		if err := prompts.Reload(); err != nil {
+			slog.Error("failed to reload prompts", "error", err)
+		} else {
+			slog.Info("prompts reloaded successfully")
+		}
 		agent.ReloadProtocols()
 		slog.Info("protocols reloaded")
 	}()

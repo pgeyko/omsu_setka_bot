@@ -2,7 +2,6 @@ package schedule
 
 import (
 	"context"
-	"fmt"
 
 	tgbot "github.com/go-telegram/bot"
 )
@@ -38,15 +37,3 @@ func (p *BotPoster) SendMessage(ctx context.Context, chatID int64, text string) 
 	return p.Send(ctx, chatID, text)
 }
 
-// BotPosterAdapter wraps BotPoster as an api.BotSender.
-type BotPosterAdapter struct {
-	Bot *tgbot.Bot
-}
-
-func (a *BotPosterAdapter) SendMessage(ctx context.Context, chatID int64, text string) error {
-	_, err := a.Bot.SendMessage(ctx, &tgbot.SendMessageParams{
-		ChatID: chatID,
-		Text:   text,
-	})
-	return fmt.Errorf("send message: %w", err)
-}

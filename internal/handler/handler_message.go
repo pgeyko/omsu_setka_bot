@@ -238,8 +238,11 @@ func (h *Handler) prefilter(msg *models.Message) bool {
 }
 
 func (h *Handler) tryMarkProcessing(ctx context.Context, messageID int, chatID int64) bool {
-	err := h.db.InsertProcessedMessage(ctx, messageID, chatID, "pending")
-	return err == nil
+	inserted, err := h.db.InsertProcessedMessage(ctx, messageID, chatID, "pending")
+	if err != nil {
+		return false
+	}
+	return inserted
 }
 
 func (h *Handler) finishProcessing(ctx context.Context, messageID int, chatID int64, threadID int, action string, targetThreadID int) {

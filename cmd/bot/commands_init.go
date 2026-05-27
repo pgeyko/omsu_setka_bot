@@ -41,7 +41,7 @@ func handleInit(ctx context.Context, b *tgbot.Bot, msg *models.Message, args str
 	existingGroup, _ := deps.DB.GetGroup(ctx, msg.Chat.ID)
 
 	var restrictedStr string
-	deps.SQLDB.QueryRowContext(ctx, `SELECT value FROM bot_config WHERE key = 'group_registration_restricted'`).Scan(&restrictedStr)
+	deps.DB.QueryRowContext(ctx, `SELECT value FROM bot_config WHERE key = 'group_registration_restricted'`).Scan(&restrictedStr)
 	if restrictedStr == "true" && existingGroup == nil {
 		b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, Text: "❌ Регистрация групп через /init отключена. Обратитесь к суперадмину."})
 		return nil
@@ -103,9 +103,9 @@ func init() {
 func handleStatus(ctx context.Context, b *tgbot.Bot, msg *models.Message, args string, deps *CommandDeps) error {
 	uptime := time.Since(botStartTime).Round(time.Second)
 	var msgCount, fwdCount, llmToday int
-	deps.SQLDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ?`, msg.Chat.ID).Scan(&msgCount)
-	deps.SQLDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ? AND action = 'forwarded'`, msg.Chat.ID).Scan(&fwdCount)
-	deps.SQLDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_requests WHERE group_id = ? AND date(created_at) = date('now')`, msg.Chat.ID).Scan(&llmToday)
+	deps.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ?`, msg.Chat.ID).Scan(&msgCount)
+	deps.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ? AND action = 'forwarded'`, msg.Chat.ID).Scan(&fwdCount)
+	deps.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_requests WHERE group_id = ? AND date(created_at) = date('now')`, msg.Chat.ID).Scan(&llmToday)
 
 	statsStr := fmt.Sprintf("Аптайм: %s\nОбработано сообщений: %d\nПереслано: %d\nLLM запросов сегодня: %d\nПровайдеров: %d\nБот: @%s",
 		uptime, msgCount, fwdCount, llmToday, providerCount, botUsername)

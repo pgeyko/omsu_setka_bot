@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"strings"
 
 	tgbot "github.com/go-telegram/bot"
@@ -20,8 +19,7 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 		return
 	}
 
-	text := msg.Text
-	parts := strings.SplitN(text, " ", 2)
+	parts := strings.SplitN(msg.Text, " ", 2)
 	cmdName := strings.TrimPrefix(parts[0], "/")
 	cmdName = strings.Split(cmdName, "@")[0]
 	args := ""
@@ -31,7 +29,6 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 
 	deps := &CommandDeps{
 		DB:              d.db,
-		SQLDB:           d.sqlDB,
 		MentionHandler:  d.mh,
 		SettingsHandler: d.settingsH,
 		BotMsgs:         d.botMsgs,
@@ -51,11 +48,10 @@ func handleSlashCommand(ctx context.Context, b *tgbot.Bot, update *models.Update
 }
 
 type commandDeps struct {
-	db          *omsudb.DB
-	sqlDB       *sql.DB
-	mh          *handler.MentionHandler
-	settingsH   *handler.SettingsHandler
-	helpText    string
-	botMsgs     *messages.Messages
-	promptReg   *llm.PromptRegistry
+	db        *omsudb.DB
+	mh        *handler.MentionHandler
+	settingsH *handler.SettingsHandler
+	helpText  string
+	botMsgs   *messages.Messages
+	promptReg *llm.PromptRegistry
 }

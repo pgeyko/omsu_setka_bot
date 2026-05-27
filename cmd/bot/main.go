@@ -256,7 +256,7 @@ func main() {
 
 	sighupCtx, sighupCancel := signal.NotifyContext(context.Background(), syscall.SIGHUP)
 	defer sighupCancel()
-	omsuapp.StartSighupHandler(sighupCtx)
+	omsuapp.StartSighupHandler(sighupCtx, prompts)
 
 	var processedMediaGroups sync.Map
 	var mediaGroupMessages sync.Map
@@ -366,7 +366,7 @@ func main() {
 		tgBot.RegisterHandler(tgbot.HandlerTypeMessageText, "/init", tgbot.MatchTypePrefix, func(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 			if database != nil && settingsHandler != nil {
 			handleSlashCommand(ctx, b, update, &commandDeps{
-				db: database, sqlDB: database.DB, mh: mentionHandler, settingsH: settingsHandler,
+				db: database, mh: mentionHandler, settingsH: settingsHandler,
 				helpText: helpText, botMsgs: botMessages, promptReg: prompts,
 			})
 			}
@@ -590,8 +590,8 @@ func main() {
 			}
 
 			if isBotCommand(msg) {
-				handleSlashCommand(ctx, b, update, &commandDeps{
-				db: database, sqlDB: database.DB, mh: mentionHandler, settingsH: settingsHandler,
+			handleSlashCommand(ctx, b, update, &commandDeps{
+				db: database, mh: mentionHandler, settingsH: settingsHandler,
 				helpText: helpText, botMsgs: botMessages, promptReg: prompts,
 			})
 				return
