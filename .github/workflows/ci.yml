@@ -94,5 +94,5 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          scp docker-compose.prod.yml "$USER@$HOST:~/bot/docker-compose.yml"
-          ssh "$USER@$HOST" "cd ~/bot && docker compose pull bot && docker compose up -d bot"
+          scp -o StrictHostKeyChecking=no docker-compose.prod.yml "$USER@$HOST:~/bot/docker-compose.yml"
+          ssh -o StrictHostKeyChecking=no "$USER@$HOST" "cd ~/bot && docker compose pull bot && docker compose up -d bot"
