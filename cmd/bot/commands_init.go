@@ -101,18 +101,18 @@ func init() {
 }
 
 func handleStatus(ctx context.Context, b *tgbot.Bot, msg *models.Message, args string, deps *CommandDeps) error {
-	uptime := time.Since(app.BotStartTime).Round(time.Second)
+	uptime := time.Since(botStartTime).Round(time.Second)
 	var msgCount, fwdCount, llmToday int
 	deps.SQLDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ?`, msg.Chat.ID).Scan(&msgCount)
 	deps.SQLDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ? AND action = 'forwarded'`, msg.Chat.ID).Scan(&fwdCount)
 	deps.SQLDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_requests WHERE group_id = ? AND date(created_at) = date('now')`, msg.Chat.ID).Scan(&llmToday)
 
 	statsStr := fmt.Sprintf("Аптайм: %s\nОбработано сообщений: %d\nПереслано: %d\nLLM запросов сегодня: %d\nПровайдеров: %d\nБот: @%s",
-		uptime, msgCount, fwdCount, llmToday, app.ProviderCount, app.BotUsername)
+		uptime, msgCount, fwdCount, llmToday, providerCount, botUsername)
 
-	if app.GlobalLLM != nil {
+	if globalLLM != nil {
 		statusPrompt := strings.ReplaceAll(deps.PromptRegistry.Get("status_report"), "{stats}", statsStr)
-		resp, err := app.GlobalLLM.Call(ctx, "diagnostic", "", statusPrompt, false)
+		resp, err := globalLLM.Call(ctx, "diagnostic", "", statusPrompt, false)
 		if err == nil {
 			resp.Content = util.StripMarkdown(resp.Content)
 			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: resp.Content, ParseMode: models.ParseModeHTML})

@@ -11,11 +11,11 @@ import (
 
 func TestIsBotMention(t *testing.T) {
 	// Setup global botUsername for test
-	oldBotUsername := app.BotUsername
-	app.BotUsername = "my_test_bot"
+	oldBotUsername := botUsername
+	botUsername = "my_test_bot"
 
 	defer func() {
-		app.BotUsername = oldBotUsername
+		botUsername = oldBotUsername
 	}()
 
 	tests := []struct {

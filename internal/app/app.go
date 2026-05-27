@@ -30,6 +30,8 @@ type App struct {
 	Buffer             *buffer.SummaryBuffer
 	UsernameCache      *telegram.UsernameCache
 
+	GlobalLLM           llm.LLMClient
+
 	ProcessedMediaGroups sync.Map
 	MediaGroupMessages   sync.Map
 	BotStartTime         time.Time

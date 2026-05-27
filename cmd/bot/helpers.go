@@ -85,7 +85,7 @@ func isBotMention(msg *models.Message) bool {
 			if e.Type == models.MessageEntityTypeMention {
 				if e.Offset >= 0 && e.Offset+e.Length <= len(u16) {
 					mention := string(utf16.Decode(u16[e.Offset : e.Offset+e.Length]))
-					if strings.EqualFold(mention, "@"+app.BotUsername) {
+					if strings.EqualFold(mention, "@"+botUsername) {
 						return true
 					}
 				}
@@ -101,7 +101,7 @@ func isBotMention(msg *models.Message) bool {
 		return true
 	}
 
-	atBot := "@" + app.BotUsername
+	atBot := "@" + botUsername
 	if msg.Text != "" && strings.Contains(strings.ToLower(msg.Text), strings.ToLower(atBot)) {
 		return true
 	}
