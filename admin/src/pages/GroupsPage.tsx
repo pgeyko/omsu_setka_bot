@@ -29,7 +29,7 @@ export default function GroupsPage() {
           onBack={() => setSelectedGroupId(null)}
         />
       ) : (
-        <div className={`groups-detail-pane ${!selectedGroupId ? '' : 'hidden-mobile'}`}
+        <div className={`groups-detail-pane ${!selectedGroupId ? 'hidden-mobile' : ''}`}
           style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <div className="card" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div className="empty-state">
