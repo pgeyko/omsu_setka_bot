@@ -774,11 +774,13 @@ func (e *ToolExecutor) forwardMessage(ctx context.Context, chatID int64, argsJSO
 	if err != nil {
 		// Fuzzy fallback: try matching by partial name or slug
 		fuzzySlug := strings.ReplaceAll(strings.ToLower(args.TargetTopic), " ", "_")
+		cleanName := strings.NewReplacer(" ", "", "_", "", "-", "").Replace(strings.ToLower(args.TargetTopic))
 		err = e.db.QueryRowContext(ctx,
 			`SELECT tg_thread_id, name FROM topics WHERE group_id = ? AND is_active = 1
-			 AND (LOWER(name) LIKE '%' || ? || '%' OR slug LIKE '%' || ? || '%')
+			 AND (LOWER(name) LIKE '%' || ? || '%' OR slug LIKE '%' || ? || '%'
+			  OR LOWER(REPLACE(REPLACE(name, ' ', ''), '_', '')) LIKE '%' || ? || '%')
 			 ORDER BY LENGTH(name) LIMIT 1`,
-			chatID, fuzzySlug, fuzzySlug,
+			chatID, fuzzySlug, fuzzySlug, cleanName,
 		).Scan(&tgThreadID, &topicName)
 		if err != nil {
 			return fmt.Sprintf("Топик «%s» не найден. Проверь название через /topics.", args.TargetTopic), nil

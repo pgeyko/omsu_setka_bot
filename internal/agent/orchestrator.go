@@ -274,6 +274,9 @@ func (ao *AgentOrchestrator) RunWithContext(ctx context.Context, chatID int64, t
 				if !ao.canExecuteTool(ctx, chatID, userID, tc.Function.Name) {
 					toolResult = fmt.Sprintf("⛔ Инструмент «%s» доступен только администраторам группы.", tc.Function.Name)
 					slog.Warn("non-admin tried to use restricted tool", "tool", tc.Function.Name, "user_id", userID, "chat_id", chatID)
+				} else if !createIntentGuard(query, tc.Function.Name, tc.Function.Arguments) {
+					toolResult = "Создание топика без явной команды запрещено. Если хотите создать топик, напишите «создай топик <название>»."
+					slog.Warn("blocked auto-create topic", "tool", tc.Function.Name, "user_id", userID, "chat_id", chatID)
 				} else {
 					toolResult, execErr = ao.executor.Execute(ctx, chatID, tc.Function.Name, tc.Function.Arguments)
 					if execErr != nil {
@@ -411,4 +414,36 @@ func (ao *AgentOrchestrator) canExecuteTool(ctx context.Context, chatID int64, u
 	}
 
 	return true
+}
+
+// createIntentGuard blocks manage_topic create calls when the user didn't explicitly ask for it.
+func createIntentGuard(query string, toolName string, argsJSON string) bool {
+	if toolName != "manage_topic" {
+		return true
+	}
+	var args struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return true
+	}
+	if args.Action != "create" {
+		return true
+	}
+
+	queryLower := strings.ToLower(query)
+	keywords := []string{
+		"создай", "создать", "создаём", "создайте",
+		"зарегистрируй", "зарегистрировать",
+		"завести", "заведи",
+		"новый топик", "новую тему", "новый раздел",
+		"добавь топик", "добавить топик",
+		"create",
+	}
+	for _, kw := range keywords {
+		if strings.Contains(queryLower, kw) {
+			return true
+		}
+	}
+	return false
 }

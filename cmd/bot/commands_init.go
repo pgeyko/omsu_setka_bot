@@ -11,7 +11,6 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	omsudb "omsu_bot/internal/db"
-	"omsu_bot/internal/util"
 )
 
 func handleInit(ctx context.Context, b *tgbot.Bot, msg *models.Message, args string, deps *CommandDeps) error {
@@ -107,18 +106,9 @@ func handleStatus(ctx context.Context, b *tgbot.Bot, msg *models.Message, args s
 	deps.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM processed_messages WHERE chat_id = ? AND action = 'forwarded'`, msg.Chat.ID).Scan(&fwdCount)
 	deps.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM llm_requests WHERE group_id = ? AND date(created_at) = date('now')`, msg.Chat.ID).Scan(&llmToday)
 
-	statsStr := fmt.Sprintf("Аптайм: %s\nОбработано сообщений: %d\nПереслано: %d\nLLM запросов сегодня: %d\nПровайдеров: %d\nБот: @%s",
+	statsStr := fmt.Sprintf("<b>🤖 Статус бота</b>\nАптайм: %s\nОбработано: %d\nПереслано: %d\nLLM запросов сегодня: %d\nПровайдеров: %d\nБот: @%s",
 		uptime, msgCount, fwdCount, llmToday, providerCount, botUsername)
 
-	if globalLLM != nil {
-		statusPrompt := strings.ReplaceAll(deps.PromptRegistry.Get("status_report"), "{stats}", statsStr)
-		resp, err := globalLLM.Call(ctx, "diagnostic", "", statusPrompt, false)
-		if err == nil {
-			resp.Content = util.StripMarkdown(resp.Content)
-			b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: resp.Content, ParseMode: models.ParseModeHTML})
-			return nil
-		}
-	}
 	b.SendMessage(ctx, &tgbot.SendMessageParams{ChatID: msg.Chat.ID, MessageThreadID: msg.MessageThreadID, Text: statsStr, ParseMode: models.ParseModeHTML})
 	return nil
 }
