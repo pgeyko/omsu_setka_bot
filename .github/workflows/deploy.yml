@@ -16,20 +16,6 @@ jobs:
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER: ${{ secrets.DEPLOY_USER }}
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DOTENV: |
-            BOT_TOKEN=${{ secrets.BOT_TOKEN }}
-            ADMIN_SECRET=${{ secrets.ADMIN_SECRET }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            SCHEDULE_WEBHOOK_SECRET=${{ secrets.SCHEDULE_WEBHOOK_SECRET }}
-            GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
-            GROQ_API_KEY_2=${{ secrets.GROQ_API_KEY_2 }}
-            GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
-            OPENROUTER_API_KEY=${{ secrets.OPENROUTER_API_KEY }}
-            SETKA_BASE_URL=${{ secrets.SETKA_BASE_URL }}
-            SETKA_ADMIN_KEY=${{ secrets.SETKA_ADMIN_KEY }}
-            SETKA_PUBLIC_URL=${{ secrets.SETKA_PUBLIC_URL }}
-            APP_ENV=${{ secrets.APP_ENV }}
-            CORS_ORIGIN=${{ secrets.CORS_ORIGIN }}
         run: |
           if [ -z "$HOST" ]; then
             echo "SSH secrets not configured, skipping deploy"
@@ -38,6 +24,20 @@ jobs:
           mkdir -p ~/.ssh && echo "$SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
           ssh "$USER@$HOST" "mkdir -p ~/bot"
           scp docker-compose.prod.yml "$USER@$HOST:~/bot/docker-compose.yml"
-          echo "$DOTENV" | ssh "$USER@$HOST" "cat > ~/bot/.env"
+          ssh "$USER@$HOST" "cat > ~/bot/.env" << DONE
+BOT_TOKEN=$BOT_TOKEN
+ADMIN_SECRET=$ADMIN_SECRET
+JWT_SECRET=$JWT_SECRET
+SCHEDULE_WEBHOOK_SECRET=$SCHEDULE_WEBHOOK_SECRET
+GROQ_API_KEY=$GROQ_API_KEY
+GROQ_API_KEY_2=$GROQ_API_KEY_2
+GEMINI_API_KEY=$GEMINI_API_KEY
+OPENROUTER_API_KEY=$OPENROUTER_API_KEY
+SETKA_BASE_URL=$SETKA_BASE_URL
+SETKA_ADMIN_KEY=$SETKA_ADMIN_KEY
+SETKA_PUBLIC_URL=$SETKA_PUBLIC_URL
+APP_ENV=$APP_ENV
+CORS_ORIGIN=$CORS_ORIGIN
+DONE
           ssh "$USER@$HOST" "cd ~/bot && docker compose pull bot && docker compose up -d bot"
           echo "Deploy completed"
